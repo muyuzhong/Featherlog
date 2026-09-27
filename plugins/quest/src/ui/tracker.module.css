@@ -11,7 +11,7 @@
 .kicker {
   display: flex;
   gap: 10px;
-  font: 13px var(--fl-font-print);
+  font: 13px var(--fl-font-hand);
   color: var(--fl-rubric);
   letter-spacing: 0.3em;
 }
@@ -23,7 +23,7 @@
 
 .name {
   margin: 6px 0 2px;
-  font: 27px/1.2 var(--fl-font-print);
+  font: 27px/1.2 var(--fl-font-title);
   font-weight: normal;
   letter-spacing: 0.14em;
 }
@@ -46,7 +46,7 @@
 }
 
 .label {
-  font: 14px var(--fl-font-print);
+  font: 14px var(--fl-font-hand);
   color: var(--fl-ink-soft);
   letter-spacing: 0.2em;
   width: 76px;

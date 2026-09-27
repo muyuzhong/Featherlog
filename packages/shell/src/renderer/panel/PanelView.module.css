@@ -20,7 +20,7 @@
 }
 
 .mark {
-  font-family: var(--fl-font-print);
+  font-family: var(--fl-font-display);
   font-size: 14px;
   letter-spacing: 0.4em;
   color: rgba(236, 220, 184, 0.55);
@@ -33,7 +33,7 @@
 }
 
 .tabs button {
-  font: 13px var(--fl-font-print);
+  font: 13px var(--fl-font-hand);
   color: rgba(236, 220, 184, 0.5);
   background: none;
   border: 0;

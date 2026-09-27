@@ -62,12 +62,15 @@ importers:
 
   packages/shell:
     dependencies:
-      '@chinese-fonts/lxgwwenkai':
+      '@chinese-fonts/xiaolai':
         specifier: ^3.0.0
         version: 3.0.0
-      '@chinese-fonts/zqfs':
-        specifier: ^3.0.0
-        version: 3.0.0
+      '@fontsource/ma-shan-zheng':
+        specifier: ^5.3.1
+        version: 5.3.1
+      '@fontsource/zhi-mang-xing':
+        specifier: ^5.3.0
+        version: 5.3.0
       motion:
         specifier: ^13.4.4
         version: 13.4.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -112,11 +115,14 @@ importers:
 
 packages:
 
-  '@chinese-fonts/lxgwwenkai@3.0.0':
-    resolution: {integrity: sha512-mpgFYE8ro0TcbJdxmnvkPNKnsF3VqzJVRfDbRvDx83JHaLEVAht9pL8SqbqbduoPHXX+2ekgC+45sf74ljLe7g==}
+  '@chinese-fonts/xiaolai@3.0.0':
+    resolution: {integrity: sha512-22d5xFPzxPQZuvx8doHn6sHrzvrdG/0QuQWBXQoX9TlKVVAyTvEADWHQv9FBGHIYTINaCZTCnQ6O4rfic/bWdg==}
 
-  '@chinese-fonts/zqfs@3.0.0':
-    resolution: {integrity: sha512-acAwVumo+lWsA8Z2aY9eSsfwe17DlEIJojRFkxT7KMU0izs0bwk2I86XDk8Jd2s9RLFyo+7dzfWDxka2YCG41Q==}
+  '@fontsource/ma-shan-zheng@5.3.1':
+    resolution: {integrity: sha512-cGGn7Yje2RSduXVxEk+rCfNZyD/T/7FMGj03LNPiK8TRL9Sing0tq1zJF3n+W29szPqgb2RNs5oIvmm+ikeI+Q==}
+
+  '@fontsource/zhi-mang-xing@5.3.0':
+    resolution: {integrity: sha512-V21yCCm5o2PHdXF2P9KKh7uiqL8QFFuII4DRQkpG24tfyDzJPchXKsxkcvKM43xEPvQKdbhHCBbXEFjcm/TUCQ==}
 
   '@jridgewell/resolve-uri@3.1.2':
     resolution: {integrity: sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==}
@@ -696,9 +702,11 @@ packages:
 
 snapshots:
 
-  '@chinese-fonts/lxgwwenkai@3.0.0': {}
+  '@chinese-fonts/xiaolai@3.0.0': {}
 
-  '@chinese-fonts/zqfs@3.0.0': {}
+  '@fontsource/ma-shan-zheng@5.3.1': {}
+
+  '@fontsource/zhi-mang-xing@5.3.0': {}
 
   '@jridgewell/resolve-uri@3.1.2': {}
 

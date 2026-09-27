@@ -34,7 +34,7 @@ body {
 }
 
 .hint b {
-  font: 22px var(--fl-font-print);
+  font: 22px var(--fl-font-title);
   letter-spacing: 0.5em;
   color: rgba(240, 232, 214, 0.8);
 }

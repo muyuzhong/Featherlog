@@ -1,8 +1,19 @@
 import type { Badge, Envelope, PluginManifest } from '@featherlog/contracts';
-import { CollapsedView, PAPERS, PanelView, setPaper, type Paper, type SlotRegistry } from '@featherlog/shell/renderer';
+import {
+  CollapsedView,
+  PAPERS,
+  PanelView,
+  TITLE_SCRIPTS,
+  setPaper,
+  setTitleScript,
+  type Paper,
+  type SlotRegistry,
+  type TitleScript,
+} from '@featherlog/shell/renderer';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 import type { MockKernel } from './mock/kernel';
+import { loadPreference, savePreference } from './preferences';
 import { useValue, type Value } from './value';
 
 type Props = {
@@ -73,23 +84,23 @@ export function Desktop({ registry, manifests, badges, panel, kernel, onNextDay 
 
 function DevTools({ kernel, onNextDay }: { kernel: MockKernel; onNextDay(): void }) {
   const [showLog, setShowLog] = useState(false);
-  const [paper, setPaperState] = useState<Paper>(() => {
-    try {
-      return (localStorage.getItem('featherlog.paper') as Paper | null) ?? 'golden';
-    } catch {
-      return 'golden';
-    }
-  });
+  const [paper, setPaperState] = useState<Paper>(() => loadPreference('paper', 'vellum'));
+  const [title, setTitleState] = useState<TitleScript>(() => loadPreference('title', 'brush'));
+  const cycle = <T extends string>(options: Record<T, unknown>, current: T) => {
+    const names = Object.keys(options) as T[];
+    return names[(names.indexOf(current) + 1) % names.length]!;
+  };
   const cyclePaper = () => {
-    const names = Object.keys(PAPERS) as Paper[];
-    const next = names[(names.indexOf(paper) + 1) % names.length]!;
+    const next = cycle(PAPERS, paper);
     setPaper(next);
     setPaperState(next);
-    try {
-      localStorage.setItem('featherlog.paper', next);
-    } catch {
-      // Private windows may refuse storage; the choice just won't persist.
-    }
+    savePreference('paper', next);
+  };
+  const cycleTitle = () => {
+    const next = cycle(TITLE_SCRIPTS, title);
+    setTitleScript(next);
+    setTitleState(next);
+    savePreference('title', next);
   };
   const [log, setLog] = useState<Envelope[]>([]);
   useEffect(() => {
@@ -103,6 +114,7 @@ function DevTools({ kernel, onNextDay }: { kernel: MockKernel; onNextDay(): void
       <div className="devbar">
         <span>dev</span>
         <button onClick={cyclePaper}>纸张：{PAPERS[paper].label}</button>
+        <button onClick={cycleTitle}>标题：{TITLE_SCRIPTS[title].label}</button>
         <button onClick={onNextDay}>翌日 →</button>
         <button onClick={() => setShowLog(!showLog)}>{showLog ? '收起总线' : '总线记录'}</button>
         <button onClick={() => location.reload()}>重置</button>

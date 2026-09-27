@@ -100,7 +100,7 @@
 
 .listHead h1 {
   margin: 0;
-  font: 32px/1.2 var(--fl-font-print);
+  font: 32px/1.2 var(--fl-font-title);
   letter-spacing: 0.55em;
   padding-left: 0.55em;
   color: var(--fl-ink);
@@ -131,7 +131,7 @@
   align-items: baseline;
   gap: 12px;
   margin: 0 0 6px;
-  font: 15px var(--fl-font-print);
+  font: 15px var(--fl-font-display);
   font-weight: normal;
   color: var(--fl-rubric);
   letter-spacing: 0.4em;
@@ -208,7 +208,7 @@
 }
 
 .entryName {
-  font: 19px/1.3 var(--fl-font-print);
+  font: 19px/1.3 var(--fl-font-display);
   color: var(--fl-ink);
   letter-spacing: 0.06em;
   text-shadow: 0 0 0.4px currentColor;
@@ -310,7 +310,7 @@
   border: 0;
   border-radius: 8px;
   background: none;
-  font: 15px var(--fl-font-print);
+  font: 15px var(--fl-font-hand);
   color: var(--fl-ink-faded);
   cursor: pointer;
 }
@@ -327,7 +327,7 @@
 
 .folio {
   text-align: center;
-  font: 14px var(--fl-font-print);
+  font: 14px var(--fl-font-hand);
   color: var(--fl-ink-faded);
   letter-spacing: 0.3em;
 }
@@ -372,12 +372,12 @@
 }
 
 .nodeMark b {
-  font: 16px var(--fl-font-print);
+  font: 16px var(--fl-font-display);
   font-weight: normal;
 }
 
 .nodeTitle {
-  font: 13.5px var(--fl-font-print);
+  font: 13.5px var(--fl-font-hand);
   color: var(--fl-ink-faded);
   letter-spacing: 0.1em;
   white-space: nowrap;
@@ -446,14 +446,14 @@
 }
 
 .kicker {
-  font: 14px var(--fl-font-print);
+  font: 14px var(--fl-font-hand);
   color: var(--fl-rubric);
   letter-spacing: 0.3em;
 }
 
 .title {
   margin: 6px 0 4px;
-  font: 44px/1.15 var(--fl-font-print);
+  font: 44px/1.15 var(--fl-font-title);
   letter-spacing: 0.14em;
   color: var(--fl-ink);
   text-wrap: balance;
@@ -498,7 +498,7 @@
   border: 0;
   background: none;
   color: var(--fl-ink-ghost);
-  font: 15px var(--fl-font-print);
+  font: 15px var(--fl-font-hand);
   letter-spacing: 0.2em;
   padding-left: 0.2em;
   cursor: pointer;
@@ -511,7 +511,7 @@
 
 .story {
   margin: 16px 0 0;
-  font: 16px/2 var(--fl-font-print);
+  font: 16px/2 var(--fl-font-hand);
   color: var(--fl-ink-soft);
   text-indent: 2em;
   text-align: justify;
@@ -522,7 +522,7 @@
   align-items: baseline;
   gap: 12px;
   margin: 20px 0 6px;
-  font: 14px var(--fl-font-print);
+  font: 14px var(--fl-font-display);
   color: var(--fl-rubric);
   letter-spacing: 0.35em;
 }
@@ -565,7 +565,7 @@
 }
 
 .ledger dt {
-  font: 14.5px var(--fl-font-print);
+  font: 14.5px var(--fl-font-hand);
   color: var(--fl-ink-soft);
   letter-spacing: 0.2em;
 }
@@ -606,7 +606,7 @@
 }
 
 .ceremonyKicker {
-  font: 15px var(--fl-font-print);
+  font: 15px var(--fl-font-display);
   color: var(--fl-rubric);
   letter-spacing: 0.8em;
   padding-left: 0.8em;
@@ -614,7 +614,7 @@
 
 .ceremonyCard h3 {
   margin: 14px 0 4px;
-  font: 42px/1.2 var(--fl-font-print);
+  font: 42px/1.2 var(--fl-font-title);
   font-weight: normal;
   letter-spacing: 0.16em;
   padding-left: 0.16em;
@@ -651,7 +651,7 @@
   justify-items: center;
   gap: 4px;
   padding: 18px 44px 16px;
-  font: 24px var(--fl-font-print);
+  font: 24px var(--fl-font-title);
   letter-spacing: 0.14em;
 }
 

@@ -166,7 +166,7 @@
   border: 3px solid var(--fl-rubric);
   border-radius: 3px;
   color: var(--fl-rubric);
-  font-family: var(--fl-font-print);
+  font-family: var(--fl-font-display);
   font-size: 25px;
   line-height: 1;
   mix-blend-mode: multiply;
