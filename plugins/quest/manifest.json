@@ -2,15 +2,19 @@
   "id": "quest",
   "name": "任务面板",
   "version": "0.1.0",
-  "description": "主线、支线、日常任务，以及首页的今日任务。",
+  "description": "任务日志：主线、支线与每日委托；追踪一个任务，逐个解锁目标。",
   "main": "src/main/index.ts",
   "ui": "src/ui/index.tsx",
   "emits": [
     "quest/created",
     "quest/updated",
+    "quest/objective-completed",
+    "quest/objective-reopened",
+    "quest/chapter-completed",
     "quest/completed",
     "quest/uncompleted",
-    "quest/progressed",
+    "quest/counted",
+    "quest/tracked",
     "quest/deleted",
     "quest/period-rolled"
   ],
@@ -18,38 +22,56 @@
     "kernel/ready",
     "quest/created",
     "quest/updated",
+    "quest/objective-completed",
+    "quest/objective-reopened",
+    "quest/chapter-completed",
     "quest/completed",
     "quest/uncompleted",
-    "quest/progressed",
+    "quest/counted",
+    "quest/tracked",
     "quest/deleted",
     "quest/period-rolled"
   ],
   "handles": [
     "quest/list",
     "quest/get",
-    "quest/today",
     "quest/create",
     "quest/update",
+    "quest/set-chapters",
+    "quest/complete-objective",
+    "quest/reopen-objective",
+    "quest/count",
     "quest/complete",
     "quest/uncomplete",
-    "quest/progress",
+    "quest/track",
     "quest/archive",
     "quest/delete",
     "quest/reorder"
   ],
-  "requests": ["shell/set-badge", "shell/notify", "shell/open-panel"],
+  "requests": [
+    "shell/set-badge",
+    "shell/notify",
+    "shell/open-panel"
+  ],
   "contributes": {
     "collapsedIcons": [
       {
-        "id": "quest/today",
-        "title": "今日任务",
-        "icon": "list-checks",
+        "id": "quest/tracker",
+        "title": "追踪中的任务",
+        "icon": "scroll-text",
         "order": 0,
         "preview": true,
-        "opens": "quest/home"
+        "opens": "quest/journal"
       }
     ],
-    "panelTabs": [{ "id": "quest/home", "title": "任务", "icon": "swords", "order": 0 }],
+    "panelTabs": [
+      {
+        "id": "quest/journal",
+        "title": "任务日志",
+        "icon": "book-open",
+        "order": 0
+      }
+    ],
     "settings": {
       "title": "任务",
       "schema": {

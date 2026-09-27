@@ -1,9 +1,9 @@
 import type { IsoDateTime, LocalDate } from './envelope';
 
 /**
- * main  = 主线: long-term goal or study plan, measured by numeric progress or by its children.
- * side  = 支线: one-off to-do. May belong to a main quest.
- * daily = 日常: recurring habit; completion resets every period.
+ * main  = 主线: a quest line split into chapters; each chapter is a sequence of objectives.
+ * side  = 支线: a single-chapter quest; may have no objectives at all (one deed).
+ * daily = 每日委托: recurring; completion resets every period.
  */
 export type QuestKind = 'main' | 'side' | 'daily';
 
@@ -11,11 +11,28 @@ export type QuestStatus = 'active' | 'completed' | 'archived';
 
 export type QuestPriority = 'none' | 'low' | 'medium' | 'high';
 
-export interface QuestProgress {
+export interface Count {
   current: number;
   target: number;
-  /** Display unit, e.g. "张", "页", "章". */
+  /** Display unit, e.g. "张", "页". */
   unit?: string;
+}
+
+export interface Objective {
+  id: string;
+  text: string;
+  detail?: string;
+  /** A counted objective ("背 30 张卡片", 12/30) completes when `current` reaches `target`. */
+  count?: Count;
+  doneAt?: IsoDateTime;
+}
+
+export interface Chapter {
+  id: string;
+  /** Empty for a side quest's only chapter. */
+  title: string;
+  objectives: Objective[];
+  doneAt?: IsoDateTime;
 }
 
 export type Recurrence =
@@ -27,20 +44,24 @@ export type Recurrence =
 export interface QuestCycle {
   /** Local date of the current period, shifted by the `dayStartHour` setting. */
   periodKey: LocalDate;
-  /** Count toward `progress.target` for this period (for "背 10 张卡"-style dailies). */
+  /** Count toward `quota.target` in this period. */
   current: number;
   done: boolean;
 }
 
 /** Computed by the quest plugin on every read. Clients never write these. */
 export interface QuestDerived {
-  /** 0..1. main: progress.current/target, else children done/total. side: 0 or 1. daily: this period. */
+  /** Index of the first unfinished chapter; `chapters.length` when all are done. */
+  chapterIndex: number;
+  /** Index of the current objective inside that chapter; -1 when there is none. */
+  objectiveIndex: number;
+  /** 0..1 over every objective of the quest. daily: this period. */
   ratio: number;
-  childCount: number;
-  childDone: number;
-  /** daily: consecutive due periods completed, counting the current one only if done. Otherwise 0. */
+  /** 0..1 inside the current chapter. */
+  chapterRatio: number;
+  /** daily: consecutive due periods completed. Otherwise 0. */
   streak: number;
-  /** Would appear in "quest/today". */
+  /** daily due this period, or a side/main quest scheduled/due today or earlier. */
   dueToday: boolean;
   /** Active and `deadline` is before today. */
   overdue: boolean;
@@ -49,24 +70,30 @@ export interface QuestDerived {
 export interface Quest {
   id: string;
   kind: QuestKind;
+  /** The real-world goal, e.g. "背完 Redis 八股". Always present. */
   title: string;
-  notes?: string;
-  /** Only a side quest may have a parent, and the parent must be a main quest. */
-  parentId?: string;
-  /** daily quests stay "active" and track completion in `cycle`. */
+  /** Optional in-world name, e.g. "内存之王". UIs fall back to `title`. */
+  name?: string;
+  /** Optional briefing or story. */
+  story?: string;
   status: QuestStatus;
   priority: QuestPriority;
-  /** main: optional numeric progress. daily: optional per-period target. side: unused. */
-  progress?: QuestProgress;
+  /** At most one quest is tracked at a time. */
+  tracked: boolean;
+  /** Show objectives the player has not reached yet. Default false: they stay hidden. */
+  revealed: boolean;
+  /** main: one or more chapters. side: exactly one. daily: none. */
+  chapters: Chapter[];
   deadline?: LocalDate;
-  /** The day the user plans to do it; puts a side quest into "today". */
+  /** The day the player plans to do it. */
   scheduledFor?: LocalDate;
-  estimateMinutes?: number;
   /** daily only. */
   recurrence?: Recurrence;
+  /** daily only: per-period target, e.g. 10 for "背 10 张卡片". */
+  quota?: { target: number; unit?: string };
   /** daily only. */
   cycle?: QuestCycle;
-  /** Manual sort key among siblings, ascending. */
+  /** Manual sort key within its kind, ascending. */
   order: number;
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
@@ -75,43 +102,68 @@ export interface Quest {
   derived: QuestDerived;
 }
 
+export interface ObjectiveDraft {
+  /** Present when editing an existing objective; keeps its progress. */
+  id?: string;
+  text: string;
+  detail?: string;
+  count?: { target: number; unit?: string };
+}
+
+export interface ChapterDraft {
+  id?: string;
+  title: string;
+  objectives: ObjectiveDraft[];
+}
+
 export interface QuestInput {
   kind: QuestKind;
   title: string;
-  notes?: string;
-  parentId?: string;
+  name?: string;
+  story?: string;
   priority?: QuestPriority;
-  progress?: { target: number; current?: number; unit?: string };
+  /** main: required, at least one. side: at most one; omitted = one untitled chapter. daily: forbidden. */
+  chapters?: ChapterDraft[];
   deadline?: LocalDate;
   scheduledFor?: LocalDate;
-  estimateMinutes?: number;
   /** Required for daily, forbidden otherwise. */
   recurrence?: Recurrence;
+  /** daily only. */
+  quota?: { target: number; unit?: string };
 }
 
-/** Omitted = unchanged, `null` = clear the field. `kind` cannot change. */
+/** Omitted = unchanged, `null` = clear. Structure is edited with "quest/set-chapters". */
 export type QuestPatch = {
-  [K in Exclude<keyof QuestInput, 'kind'>]?: QuestInput[K] | null;
-};
+  [K in 'title' | 'name' | 'story' | 'priority' | 'deadline' | 'scheduledFor' | 'recurrence' | 'quota']?:
+    | QuestInput[K]
+    | null;
+} & { revealed?: boolean };
 
 export interface QuestFilter {
   kind?: QuestKind;
   status?: QuestStatus;
-  /** `null` = top-level quests only. */
-  parentId?: string | null;
 }
 
 /** Error codes thrown by quest handlers. */
-export type QuestErrorCode = 'quest/not-found' | 'quest/invalid-input' | 'quest/has-children';
+export type QuestErrorCode =
+  | 'quest/not-found'
+  | 'quest/invalid-input'
+  /** The objective is not the current one; objectives unlock in order. */
+  | 'quest/objective-locked';
 
 export interface QuestEvents {
   'quest/created': { quest: Quest };
   /** `changed` lists the top-level Quest fields that changed. */
   'quest/updated': { quest: Quest; changed: string[] };
+  'quest/objective-completed': { quest: Quest; chapterId: string; objectiveId: string };
+  'quest/objective-reopened': { quest: Quest; chapterId: string; objectiveId: string };
+  'quest/chapter-completed': { quest: Quest; chapterId: string };
   /** For a daily quest, `periodKey` is the period that was completed. */
   'quest/completed': { quest: Quest; periodKey?: LocalDate };
   'quest/uncompleted': { quest: Quest; periodKey?: LocalDate };
-  'quest/progressed': { quest: Quest; previous: number; current: number };
+  /** A counted objective or a daily quota moved. `objectiveId` is absent for a daily quota. */
+  'quest/counted': { quest: Quest; objectiveId?: string; previous: number; current: number };
+  'quest/tracked': { questId: string | null; previous: string | null };
   'quest/deleted': { id: string };
   /** The day boundary passed while running; daily cycles have been reset. */
   'quest/period-rolled': { previous: LocalDate; current: LocalDate };
@@ -120,25 +172,30 @@ export interface QuestEvents {
 export interface QuestRequests {
   'quest/list': { req: { filter?: QuestFilter }; res: { quests: Quest[] } };
   'quest/get': { req: { id: string }; res: { quest: Quest } };
-  /**
-   * The "今日任务" list, already sorted (see docs/design.md §8.4). Used by
-   * both the panel home and the collapsed preview so they always agree.
-   */
-  'quest/today': { req: Record<string, never>; res: { date: LocalDate; quests: Quest[] } };
   'quest/create': { req: { input: QuestInput }; res: { quest: Quest } };
   'quest/update': { req: { id: string; patch: QuestPatch }; res: { quest: Quest } };
-  /** side/main: mark completed. daily: complete the current period. */
-  'quest/complete': { req: { id: string }; res: { quest: Quest } };
-  /** Undo of "quest/complete". */
-  'quest/uncomplete': { req: { id: string }; res: { quest: Quest } };
-  /** Exactly one of `delta` / `set`. Applies to `progress` (main) or `cycle.current` (daily). */
-  'quest/progress': {
-    req: { id: string; delta?: number; set?: number };
+  /** Replace the chapter/objective structure. Drafts with an `id` keep their progress. */
+  'quest/set-chapters': { req: { id: string; chapters: ChapterDraft[] }; res: { quest: Quest } };
+  /** Only the current objective can be completed ("quest/objective-locked" otherwise). */
+  'quest/complete-objective': { req: { id: string; objectiveId: string }; res: { quest: Quest } };
+  /** Reopens the objective and every objective after it. */
+  'quest/reopen-objective': { req: { id: string; objectiveId: string }; res: { quest: Quest } };
+  /**
+   * Counts toward the current objective's `count` (with `objectiveId`) or a daily quota
+   * (without). Exactly one of `delta` / `set`. Reaching the target completes it.
+   */
+  'quest/count': {
+    req: { id: string; objectiveId?: string; delta?: number; set?: number };
     res: { quest: Quest };
   };
+  /** daily: complete this period. side/main: complete every remaining objective, then the quest. */
+  'quest/complete': { req: { id: string }; res: { quest: Quest } };
+  /** Undo "quest/complete". side/main: back to active with the last objective reopened. */
+  'quest/uncomplete': { req: { id: string }; res: { quest: Quest } };
+  /** Track one quest (untracking the previous one), or none with `null`. */
+  'quest/track': { req: { id: string | null }; res: { quest: Quest | null } };
   'quest/archive': { req: { id: string }; res: { quest: Quest } };
-  /** Fails with "quest/has-children" unless `cascade` is true. */
-  'quest/delete': { req: { id: string; cascade?: boolean }; res: null };
-  /** Sets `order` of the given siblings to their index in `ids`. */
+  'quest/delete': { req: { id: string }; res: null };
+  /** Sets `order` of the given quests to their index in `ids`. */
   'quest/reorder': { req: { ids: string[] }; res: null };
 }

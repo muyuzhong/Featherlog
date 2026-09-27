@@ -4,7 +4,7 @@
 
 ## 1. 项目概述
 
-羽记是一个游戏任务风格的个人面板桌面客户端。待办、学习进度、日常习惯都是"任务"，用正反馈（完成动效、进度变化、连续记录）帮助人坚持下去。
+羽记是一个游戏任务风格的个人面板桌面客户端。学习计划、要做的事、日常习惯都被组织成游戏式的"任务"：任务线分章节推进，目标逐个解锁，完成时有仪式感，帮助人坚持下去。
 
 交互形态：一个收起视图（贴边竖栏，或在不支持的平台上退化为浮窗），鼠标悬停显示预览，点击打开完整面板。
 
@@ -226,97 +226,85 @@ preload 通过 `contextBridge` 暴露最底层的传输接口（`send`、`onDeli
 
 ## 8. 任务面板插件（quest）
 
+羽记的"任务"是游戏意义上的任务，而不是待办清单：同一时间只追踪一个任务，屏幕上只显示它的**当前目标**；目标按顺序一个个解锁；任务线分章节推进；完成时有仪式感。
+
 ### 8.1 分类
 
-| kind | 名称 | 进度 | 例子 |
+| kind | 名称 | 结构 | 例子 |
 |---|---|---|---|
-| `main` | 主线 | 数值进度（`progress`），或没有数值进度时由子任务完成情况汇总 | 背完 Redis 八股（37/120 张） |
-| `side` | 支线 | 完成 / 未完成 | 修掉登录 bug |
-| `daily` | 日常 | 每个周期重置；可以有每周期的目标数量 | 每天背 10 张卡 |
+| `main` | 主线 | 任务线 → 若干章节 → 每章若干目标 | 「内存之王」：背完 Redis 八股，分数据结构、持久化、高可用、集群四章 |
+| `side` | 支线 | 只有一章（无章名），零到多个目标 | 「登录门外的怪物」：修掉登录页 bug |
+| `daily` | 每日委托 | 没有章节；每个周期重置；可以有每周期的配额 | 背 10 张卡片 |
 
-层级最多两层：只有支线可以有父任务，父任务必须是未归档的主线。
+- `title` 是真实目标，必填。`name`（任务名）和 `story`（简报）可选，界面缺省时直接显示 `title`。以后由 AI 插件把真实目标改写成任务名和简报。
+- 没有目标的支线就是"一件事"，直接 `quest/complete`。
 
 ### 8.2 字段校验（不满足时抛 `quest/invalid-input`）
 
-- `title`：去掉首尾空白后非空，最长 200 字符。
+- `title`：去掉首尾空白后非空，最长 200 字符；`name` 最长 40；`story` 最长 2000。
+- `main` 至少一章，每章至少一个目标；`side` 最多一章；`daily` 不能有章节。
+- 目标 `text` 非空；`count.target` 为正整数。
 - `recurrence`：`daily` 必填，其他类型禁止。`weekly` 的 `weekdays` 非空、不重复、取值 0–6。
-- `progress`：`side` 禁止。`target` 必须大于 0；`current` 不小于 0，可以超过 `target`（`derived.ratio` 截断到 1）。
-- `parentId`：只有 `side` 可以有；父任务必须存在（否则 `quest/not-found`）、是 `main`、未归档。
+- `quota`：只有 `daily` 可以有，`target` 为正整数。
 - `deadline`、`scheduledFor`：合法的 `YYYY-MM-DD`。
-- `estimateMinutes`：正整数。
 - `kind` 创建后不能修改。
 
-### 8.3 周期与日常
+### 8.3 目标与章节的推进
 
-- **周期键** `periodKey` = 把当前时间减去 `dayStartHour` 小时后，在系统本地时区下的日期。默认 `dayStartHour = 4`，即凌晨 4 点前算前一天。
-- 日常在某个周期"应做"：`freq: daily` 每天都应做；`freq: weekly` 在 `weekdays` 包含该日期的星期几时应做。
-- **跨周期**：发现周期键变化时，把所有日常的 `cycle` 重置为 `{ periodKey: 新值, current: 0, done: false }`，并发一次 `quest/period-rolled`。检测时机：
-  1. `setup` 时（和上次保存的周期键比较）；
-  2. 用 `ctx.clock.setTimeout` 定到下一个周期边界；
-  3. **每次处理请求前都检查一次**，因为笔记本睡眠时定时器不可靠。
-- 完成规则：
-  - 没有 `progress` 的日常：`quest/complete` 设 `done = true`。
-  - 有 `progress.target` 的日常：`done` 等价于 `cycle.current >= target`。`quest/progress` 达到目标时自动完成，并额外发出 `quest/completed`。`quest/complete` 把 `current` 设为 `target`；`quest/uncomplete` 把 `current` 设为 `max(0, target - 1)`。
-  - 日常的 `status` 始终是 `active`（除非归档），没有 `completedAt`。
-- **连续记录** `derived.streak`：从上一个应做周期往前数，连续完成的应做周期个数；当前周期已完成则再加 1。不应做的日子不中断连续；早于任务创建日期的周期不计。这只是展示，**没有惩罚**。
-- 为了计算连续记录，需要保存每个日常的历史完成周期。
+- **顺序解锁**：当前章 = 第一个还有未完成目标的章；当前目标 = 当前章里第一个未完成的目标。只有当前目标能被完成，否则抛 `quest/objective-locked`。
+- 计数目标：`quest/count` 累加到 `target` 时自动完成该目标。
+- 一章的最后一个目标完成时，该章 `doneAt` 被设置，发 `quest/chapter-completed`。
+- 最后一章完成时，任务**自动完成**（`status: completed`），发 `quest/completed`。这是游戏里的"任务完成"时刻，界面据此播放完成仪式。
+- `quest/reopen-objective` 用于撤销：该目标及其后所有目标恢复为未完成；受影响的章节和任务一并恢复。
+- `quest/complete` 对主线和支线表示"直接完成"：剩余目标全部完成，再完成任务。
+- `revealed` 为 `false` 时，界面只显示已完成的目标和当前目标，后面的目标显示为"尚未揭晓"；未到达的章节只显示章序号。这只影响显示，不影响数据。
 
-### 8.4 今日任务（`quest/today`）
+### 8.4 追踪
 
-面板首页和收起视图的预览都用这个请求，保证两处一致。
+- 同一时间最多追踪一个任务。`quest/track` 追踪一个任务时，自动取消之前的追踪，发一次 `quest/tracked`。
+- 被追踪的任务完成、归档或删除时，追踪自动清空（`questId: null`）。
+- 收起视图的悬停预览显示：被追踪任务的名字、当前章、当前目标，以及每日委托完成数和进行中的支线数。
 
-**包含**：
+### 8.5 周期与每日委托
 
-1. 未归档、当前周期应做的日常（无论是否已完成）。
-2. `active` 的支线，且 `scheduledFor ≤ 今天` 或 `deadline ≤ 今天`。
-3. 在当前周期内完成的支线，且满足第 2 条的日期条件（完成后仍然显示为已完成，而不是消失）。
+- **周期键** `periodKey` = 把当前时间减去 `dayStartHour` 小时后，在系统本地时区下的日期。默认 `dayStartHour = 4`。
+- 每日委托在某个周期"应做"：`freq: daily` 每天都应做；`freq: weekly` 在 `weekdays` 包含该日期星期几时应做。
+- **跨周期**：发现周期键变化时，把所有每日委托的 `cycle` 重置为 `{ periodKey: 新值, current: 0, done: false }`，并发一次 `quest/period-rolled`。检测时机：`setup` 时；用 `ctx.clock.setTimeout` 定到下一个边界；**每次处理请求前**（笔记本睡眠时定时器不可靠）。
+- 有 `quota` 的委托：`done` 等价于 `cycle.current >= quota.target`；`quest/count`（不带 `objectiveId`）达到配额时自动完成并发 `quest/completed`。`quest/complete` 把 `current` 设为 `target`；`quest/uncomplete` 把 `current` 设为 `max(0, target - 1)`。
+- **连续记录** `derived.streak`：从上一个应做周期往前数连续完成的应做周期数，当前周期已完成再加 1。不应做的日子不中断，早于创建日期的周期不计。只做展示，**没有惩罚**。
 
-主线不进入今日任务，它在首页"进行中的主线"区域，用 `quest/list` 获取。
+### 8.6 列表与排序
 
-**排序**（依次比较）：
+`quest/list` 返回按 `kind` 分组后各自按 `order` 升序的任务。界面自行分组显示：主线、支线、每日委托。
 
-1. 未完成在前，已完成在后
-2. 已逾期在前
-3. 优先级 high → medium → low → none
-4. `deadline` 早的在前，没有 deadline 的在后
-5. 日常在支线前
-6. `order` 升序
-7. `createdAt` 升序
+`derived.dueToday`：应做的每日委托；或 `scheduledFor ≤ 今天`、`deadline ≤ 今天` 的进行中主线和支线。
 
-`derived.dueToday` 为真，当且仅当该任务会出现在今日任务中。
-
-### 8.5 请求与事件
+### 8.7 请求与事件
 
 | 请求 | 成功时发出的事件 |
 |---|---|
 | `quest/create` | `quest/created` |
-| `quest/update` | `quest/updated`（没有字段变化时不发） |
-| `quest/complete` | `quest/completed`（已完成时幂等返回，不发事件） |
-| `quest/uncomplete` | `quest/uncompleted`（未完成时幂等返回，不发事件） |
-| `quest/progress` | `quest/progressed`；日常达到目标时再发 `quest/completed` |
+| `quest/update` | `quest/updated`（没有变化时不发） |
+| `quest/set-chapters` | `quest/updated`（`changed: ["chapters"]`） |
+| `quest/complete-objective` | `quest/objective-completed`；必要时再发 `quest/chapter-completed`、`quest/completed`、`quest/tracked` |
+| `quest/reopen-objective` | `quest/objective-reopened`；任务因此重新打开时再发 `quest/uncompleted` |
+| `quest/count` | `quest/counted`；达到目标时同上 |
+| `quest/complete` | `quest/completed`（已完成时幂等，不发事件） |
+| `quest/uncomplete` | `quest/uncompleted`（未完成时幂等） |
+| `quest/track` | `quest/tracked`（没有变化时不发） |
 | `quest/archive` | `quest/updated`（`changed: ["status"]`） |
-| `quest/delete` | 每删除一个任务发一次 `quest/deleted`，先子后父 |
+| `quest/delete` | `quest/deleted` |
 | `quest/reorder` | 每个 `order` 变化的任务发一次 `quest/updated` |
 
-补充规则：
+- 事件携带完整的 `quest` 快照（包含 `derived`），界面收到后直接替换本地数据。
+- 请求处理过程中发出的事件，`causedBy` 设为该请求的 id；同一请求引发的多个事件按上表顺序发出。
+- 收起视图图标的角标：`kernel/ready` 之后及每次变化时，按被追踪任务当前章的进度请求 `shell/set-badge`（`{ kind: "progress", value: chapterRatio }`，没有追踪任务时设为 `null`）。请求失败只记日志。
 
-- 事件携带完整的 `quest` 快照（包含 `derived`），界面收到后直接替换本地数据，不必再请求一次。
-- 请求处理过程中发出的事件，`causedBy` 设为该请求的 id。
-- 子任务变化影响父主线的 `derived` 时，父任务也发一次 `quest/updated`（`changed: ["derived"]`）。
-- 主线**不会自动完成**。`derived.ratio` 到 1 时，由界面提示用户确认完成。
-- 删除有子任务的主线：没有 `cascade: true` 时抛 `quest/has-children`。
-- 收起视图图标的角标：`kernel/ready` 之后、每次任务变化、每次跨周期时，按今日任务的完成比例请求 `shell/set-badge`（`{ kind: "progress", value }`，今日为空时设为 `null`）。请求失败只记日志。
+### 8.8 存储
 
-### 8.6 存储
+建议的键（实现可调整，但要写在代码注释里）：`schemaVersion`、`quests`（不含 `derived`）、`history`（`{ [dailyId]: LocalDate[] }`）、`meta`（`{ lastPeriodKey }`）。
 
-建议的键（实现可调整，但要写在代码注释里）：
-
-- `schemaVersion`：数字。
-- `quests`：任务数组，不含 `derived`（`derived` 每次读取时计算）。
-- `history`：`{ [dailyId]: LocalDate[] }`，日常的历史完成周期。
-- `meta`：`{ lastPeriodKey }`。
-
-### 8.7 设置
+### 8.9 设置
 
 | 键 | 类型 | 默认 | 说明 |
 |---|---|---|---|
@@ -336,10 +324,14 @@ preload 通过 `contextBridge` 暴露最底层的传输接口（`send`、`onDeli
 
 ## 10. 前端
 
-- React + TypeScript，动效用 Motion。
-- 设计 token 用 CSS 变量定义，这同时是插件可用的主题接口；组件样式用 CSS Modules。
-- 不使用 Tailwind 和成品组件库；需要复杂交互时引入无样式组件（如 Radix），外观全部自行设计。
-- 设计规范另见 `docs/design-system.md`（待写）。
+- React + TypeScript，动效用 Motion；组件样式用 CSS Modules；不使用 Tailwind 和成品组件库。
+- **视觉方向：羊皮纸任务日志**。完整面板是一本摊开的冒险者日志（左页任务列表、右页任务详情），收起视图是贴边的小卷轴。质感来自纸纤维、污渍、毛边、墨迹和火漆，但克制使用，保证每天看很多次也不累。
+- 字体只用两种，都是 SIL OFL 开源授权，随应用打包，不依赖网络：
+  - **朱雀仿宋**：标题与正文，古籍印刷的气质。
+  - **霞鹜文楷**：手写的部分——目标、勾选、数字、批注。
+  - 不使用拉丁装饰字体。
+- 纸张纹理在构建时预先生成为静态图片，运行时不使用实时 SVG 滤镜。
+- 主题通过外壳提供的 CSS 变量暴露给所有插件（颜色、字体、纸张纹理），插件用它们画出同一种纸。
 
 ## 11. 协作流程
 
