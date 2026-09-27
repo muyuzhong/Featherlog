@@ -18,4 +18,7 @@
 pnpm install
 pnpm typecheck
 pnpm test
+pnpm dev        # 浏览器演示台：http://127.0.0.1:5173
 ```
+
+演示台（`packages/playground`）在浏览器里运行外壳的界面和各插件的界面，后端由内存里的模拟总线和模拟任务服务代替，方便在 Electron 外壳就绪之前开发和预览前端。

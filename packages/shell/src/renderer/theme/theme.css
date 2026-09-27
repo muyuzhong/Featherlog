@@ -1,0 +1,64 @@
+/*
+ * Featherlog theme: a parchment quest journal.
+ * These custom properties are the theme contract for every plugin UI.
+ * Textures (--fl-tex-*) are set from index.ts so asset URLs resolve reliably.
+ */
+@import '@chinese-fonts/zqfs/dist/ZhuqueFangsong-Regular/result.css';
+@import '@chinese-fonts/lxgwwenkai/dist/LXGWWenKai-Regular/result.css';
+@import '@chinese-fonts/lxgwwenkai/dist/LXGWWenKai-Medium/result.css';
+
+:root {
+  /* Ink */
+  --fl-ink: #2a1c11;
+  --fl-ink-soft: #5b4430;
+  --fl-ink-faded: rgba(42, 28, 17, 0.5);
+  --fl-ink-ghost: rgba(42, 28, 17, 0.26);
+  --fl-ink-wash: rgba(90, 58, 26, 0.08);
+  --fl-rubric: #8a2b1d;
+  --fl-rubric-wash: rgba(138, 43, 29, 0.09);
+
+  /* Paper and binding */
+  --fl-paper: #ecdcb8;
+  --fl-paper-light: #f3e7cb;
+  --fl-paper-edge: rgba(122, 78, 32, 0.4);
+  --fl-leather: #1f150d;
+  --fl-wax: #7d1d14;
+
+  /* Type: print for titles and body, hand for anything written by the player */
+  --fl-font-print: 'Zhuque Fangsong (technical preview)', 'Noto Serif SC', 'Songti SC', serif;
+  --fl-font-hand: 'LXGW WenKai', 'Kaiti SC', 'KaiTi', serif;
+
+  /* Motion */
+  --fl-ease-ink: cubic-bezier(0.22, 0.8, 0.32, 1);
+}
+
+/*
+ * A sheet of parchment. Put it on a wrapper that has a drop-shadow filter if the
+ * sheet should cast a shadow (the deckle mask would clip a box-shadow).
+ */
+.fl-paper {
+  background-color: var(--fl-paper);
+  background-image:
+    var(--fl-tex-fibers),
+    var(--fl-tex-stains),
+    radial-gradient(130% 115% at 50% 45%, transparent 58%, var(--fl-paper-edge) 100%);
+  background-size: 512px 512px, 100% 100%, 100% 100%;
+  -webkit-mask-image: var(--fl-mask-deckle);
+  mask-image: var(--fl-mask-deckle);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  color: var(--fl-ink);
+}
+
+.fl-leather {
+  background-color: var(--fl-leather);
+  background-image:
+    radial-gradient(120% 90% at 50% 40%, rgba(255, 220, 170, 0.05), transparent 60%),
+    var(--fl-tex-leather);
+  background-size: 100% 100%, 512px 512px;
+}
+
+/* Ink that has soaked a little into the paper. */
+.fl-ink-bleed {
+  text-shadow: 0 0 0.5px currentColor, 0 0 0.5px currentColor;
+}

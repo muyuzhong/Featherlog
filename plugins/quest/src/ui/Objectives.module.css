@@ -1,0 +1,192 @@
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  font-family: var(--fl-font-hand);
+}
+
+.list > li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+}
+
+.text {
+  position: relative;
+  display: inline-block;
+}
+
+.done {
+  color: var(--fl-ink-faded);
+  font-size: 17px;
+  padding: 0 4px;
+}
+
+.undo {
+  margin-left: auto;
+  font: 13px var(--fl-font-hand);
+  color: var(--fl-ink-ghost);
+  background: none;
+  border: 0;
+  padding: 2px 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, color 0.2s;
+}
+
+.done:hover .undo,
+.undo:focus-visible {
+  opacity: 1;
+}
+
+.undo:hover {
+  color: var(--fl-rubric);
+}
+
+/* The one objective the player can act on. */
+.current {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 6px 0;
+  padding: 12px 14px 12px 6px;
+  border: 0;
+  border-radius: 10px 16px 12px 14px;
+  background: linear-gradient(90deg, var(--fl-rubric-wash), transparent 85%);
+  color: var(--fl-ink);
+  font: inherit;
+  font-family: var(--fl-font-hand);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.current:hover {
+  background: linear-gradient(90deg, rgba(138, 43, 29, 0.15), transparent 90%);
+}
+
+.current:focus-visible {
+  outline: 1.5px dashed var(--fl-rubric);
+  outline-offset: 2px;
+}
+
+.quill {
+  color: var(--fl-rubric);
+  margin-top: 3px;
+}
+
+.body {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+}
+
+.current .text {
+  font-size: 20px;
+  line-height: 1.35;
+  font-weight: 500;
+}
+
+.detail {
+  font-size: 14.5px;
+  color: var(--fl-ink-soft);
+}
+
+.hint {
+  position: absolute;
+  right: 14px;
+  bottom: 9px;
+  font-size: 12.5px;
+  color: var(--fl-rubric);
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.25s, transform 0.25s;
+}
+
+.current:hover .hint,
+.current:focus-visible .hint {
+  opacity: 0.75;
+  transform: none;
+}
+
+.count {
+  align-self: center;
+  font-size: 22px;
+  color: var(--fl-rubric);
+  white-space: nowrap;
+}
+
+.count small {
+  font-size: 14px;
+  color: var(--fl-ink-soft);
+}
+
+.later {
+  color: var(--fl-ink-faded);
+  font-size: 16.5px;
+  padding: 0 4px;
+}
+
+.dot {
+  width: 20px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.dot::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--fl-ink-ghost);
+}
+
+.hidden {
+  color: var(--fl-ink-ghost);
+  font-size: 14.5px;
+  padding: 0 4px;
+}
+
+.ellipsis {
+  width: 20px;
+  letter-spacing: -2px;
+  text-align: center;
+  flex: none;
+}
+
+.more {
+  color: var(--fl-ink-ghost);
+  font-size: 13px;
+  min-height: 0 !important;
+  padding: 0 4px;
+}
+
+/* ---- compact: inside the edge tracker ---- */
+.compact.list > li {
+  min-height: 30px;
+}
+
+.compact .done {
+  font-size: 14.5px;
+}
+
+.compact .current .text,
+.current.compact .text {
+  font-size: 18px;
+}
+
+.compact .current,
+.current.compact {
+  margin: 4px 0;
+  padding: 10px 10px 10px 4px;
+}
+
+.compact .hidden {
+  font-size: 13px;
+}

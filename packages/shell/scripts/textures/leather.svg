@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512">
+  <!-- Dark leather: fine, low-contrast grain; tiles seamlessly. -->
+  <filter id="l" x="0" y="0" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency=".55" numOctaves="3" stitchTiles="stitch" seed="3"/>
+    <feColorMatrix values="0 0 0 0 .30  0 0 0 0 .20  0 0 0 0 .12  0 0 0 .5 -.1"/>
+  </filter>
+  <rect width="100%" height="100%" fill="#1f150d"/>
+  <rect width="100%" height="100%" filter="url(#l)" opacity=".45"/>
+</svg>
