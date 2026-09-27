@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000">
+  <defs>
+    <radialGradient id="g" cx="50%" cy="50%" r="71%">
+      <stop offset=".5" stop-color="#8a5420" stop-opacity="0"/>
+      <stop offset=".78" stop-color="#8a5420" stop-opacity=".2"/>
+      <stop offset=".93" stop-color="#6e3f14" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#4a2a0c" stop-opacity=".78"/>
+    </radialGradient>
+    <filter id="warp" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency=".005 .007" numOctaves="4" seed="21" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="150"/>
+      <feGaussianBlur stdDeviation="4"/>
+    </filter>
+    <filter id="rim"><feTurbulence type="fractalNoise" baseFrequency=".03" numOctaves="3" seed="8" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="8"/><feGaussianBlur stdDeviation="7"/></filter>
+  </defs>
+  <rect x="-80" y="-80" width="1160" height="1160" fill="url(#g)" filter="url(#warp)"/>
+  <rect x="2" y="2" width="996" height="996" fill="none" stroke="#4a2a0c" stroke-width="10" stroke-opacity=".28" filter="url(#rim)"/>
+</svg>

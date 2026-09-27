@@ -1,7 +1,7 @@
 import type { Badge, PluginManifest, UiContext } from '@featherlog/contracts';
 import questManifest from '@featherlog/plugin-quest/manifest.json';
 import { setup as setupQuestUi } from '@featherlog/plugin-quest/ui';
-import { applyTheme, createSlotRegistry, createUiBus } from '@featherlog/shell/renderer';
+import { applyTheme, createSlotRegistry, createUiBus, type Paper } from '@featherlog/shell/renderer';
 import { createRoot } from 'react-dom/client';
 import { Desktop } from './Desktop';
 import { createMockKernel } from './mock/kernel';
@@ -9,7 +9,14 @@ import { createQuestService } from './mock/quest-service';
 import { createValue } from './value';
 import './playground.css';
 
-applyTheme();
+const savedPaper = (() => {
+  try {
+    return localStorage.getItem('featherlog.paper') as Paper | null;
+  } catch {
+    return null;
+  }
+})();
+applyTheme({ paper: savedPaper ?? 'golden' });
 
 const kernel = createMockKernel();
 const registry = createSlotRegistry();

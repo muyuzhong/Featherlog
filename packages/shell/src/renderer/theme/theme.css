@@ -1,7 +1,8 @@
 /*
  * Featherlog theme: a parchment quest journal.
  * These custom properties are the theme contract for every plugin UI.
- * Textures (--fl-tex-*) are set from index.ts so asset URLs resolve reliably.
+ * Textures (--fl-tex-*, --fl-mask-*) and the paper colour are set from index.ts
+ * so asset URLs resolve reliably and the paper can be switched at runtime.
  */
 @import '@chinese-fonts/zqfs/dist/ZhuqueFangsong-Regular/result.css';
 @import '@chinese-fonts/lxgwwenkai/dist/LXGWWenKai-Regular/result.css';
@@ -18,9 +19,8 @@
   --fl-rubric-wash: rgba(138, 43, 29, 0.09);
 
   /* Paper and binding */
-  --fl-paper: #ecdcb8;
-  --fl-paper-light: #f3e7cb;
-  --fl-paper-edge: rgba(122, 78, 32, 0.4);
+  --fl-paper: #e9d19b;
+  --fl-paper-light: #f5e5c0;
   --fl-leather: #1f150d;
   --fl-wax: #7d1d14;
 
@@ -33,16 +33,14 @@
 }
 
 /*
- * A sheet of parchment. Put it on a wrapper that has a drop-shadow filter if the
- * sheet should cast a shadow (the deckle mask would clip a box-shadow).
+ * A sheet of parchment: a tileable surface with an edge burn stretched over it,
+ * cut by a rough deckle mask. Put it inside a wrapper with a drop-shadow filter
+ * if it should cast a shadow (the mask would clip a box-shadow).
  */
 .fl-paper {
   background-color: var(--fl-paper);
-  background-image:
-    var(--fl-tex-fibers),
-    var(--fl-tex-stains),
-    radial-gradient(130% 115% at 50% 45%, transparent 58%, var(--fl-paper-edge) 100%);
-  background-size: 512px 512px, 100% 100%, 100% 100%;
+  background-image: var(--fl-tex-burn), var(--fl-tex-parchment);
+  background-size: 100% 100%, 1024px 1024px;
   -webkit-mask-image: var(--fl-mask-deckle);
   mask-image: var(--fl-mask-deckle);
   -webkit-mask-size: 100% 100%;

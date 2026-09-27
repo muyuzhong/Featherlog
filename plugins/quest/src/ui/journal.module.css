@@ -46,14 +46,12 @@
 
 .left {
   padding: 44px 54px 30px 50px;
-  background-position: 0 0, 30% 10%, 0 0;
-  background-size: 512px 512px, 150% 130%, 100% 100%;
 }
 
+/* Offset the tile so the two pages don't mirror each other. */
 .right {
   padding: 34px 50px 30px 60px;
-  background-position: 200px 90px, 80% 70%, 0 0;
-  background-size: 512px 512px, 140% 125%, 100% 100%;
+  background-position: 0 0, 377px 211px;
 }
 
 /* The fold of the spine, laid over both pages. */

@@ -1,4 +1,4 @@
-export { applyTheme } from './theme';
+export { applyTheme, setPaper, PAPERS, type Paper } from './theme';
 export { createUiBus, type BusTransport } from './bus/ui-bus';
 export { createSlotRegistry, type SlotRegistry } from './slots/registry';
 export { SlotMount } from './slots/SlotMount';

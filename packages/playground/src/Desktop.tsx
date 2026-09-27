@@ -1,5 +1,5 @@
 import type { Badge, Envelope, PluginManifest } from '@featherlog/contracts';
-import { CollapsedView, PanelView, type SlotRegistry } from '@featherlog/shell/renderer';
+import { CollapsedView, PAPERS, PanelView, setPaper, type Paper, type SlotRegistry } from '@featherlog/shell/renderer';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 import type { MockKernel } from './mock/kernel';
@@ -73,6 +73,24 @@ export function Desktop({ registry, manifests, badges, panel, kernel, onNextDay 
 
 function DevTools({ kernel, onNextDay }: { kernel: MockKernel; onNextDay(): void }) {
   const [showLog, setShowLog] = useState(false);
+  const [paper, setPaperState] = useState<Paper>(() => {
+    try {
+      return (localStorage.getItem('featherlog.paper') as Paper | null) ?? 'golden';
+    } catch {
+      return 'golden';
+    }
+  });
+  const cyclePaper = () => {
+    const names = Object.keys(PAPERS) as Paper[];
+    const next = names[(names.indexOf(paper) + 1) % names.length]!;
+    setPaper(next);
+    setPaperState(next);
+    try {
+      localStorage.setItem('featherlog.paper', next);
+    } catch {
+      // Private windows may refuse storage; the choice just won't persist.
+    }
+  };
   const [log, setLog] = useState<Envelope[]>([]);
   useEffect(() => {
     if (!showLog) return;
@@ -84,6 +102,7 @@ function DevTools({ kernel, onNextDay }: { kernel: MockKernel; onNextDay(): void
     <div className="devtools">
       <div className="devbar">
         <span>dev</span>
+        <button onClick={cyclePaper}>纸张：{PAPERS[paper].label}</button>
         <button onClick={onNextDay}>翌日 →</button>
         <button onClick={() => setShowLog(!showLog)}>{showLog ? '收起总线' : '总线记录'}</button>
         <button onClick={() => location.reload()}>重置</button>

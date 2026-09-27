@@ -6,6 +6,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 out="$here/../src/renderer/theme/textures"
 chrome=${CHROME:-$(command -v google-chrome-stable || command -v chromium || command -v google-chrome)}
 mkdir -p "$out"
+python3 "$here/parchment.py" "$here/textures"
 for svg in "$here"/textures/*.svg; do
   name=$(basename "$svg" .svg)
   size=$(grep -oE 'width="[0-9]+" height="[0-9]+"' "$svg" | head -1 | grep -oE '[0-9]+' | paste -sd,)
@@ -16,8 +17,13 @@ for svg in "$here"/textures/*.svg; do
   rm -rf "$profile"
   # Grain textures compress far better as WebP; the deckle mask stays a crisp PNG.
   if [ "$name" != deckle ]; then
-    scale=100%; [ "$name" = stains ] && scale=50%
-    magick "$out/$name.png" -resize "$scale" -quality 82 "$out/$name.webp" && rm "$out/$name.png"
+    scale=100%
+    # Parchment is soft, low-contrast texture: ordinary WebP quality turns it into blocks.
+    case "$name" in
+      parchment-*) opts=(-quality 96 -define webp:use-sharp-yuv=true -define webp:method=6) ;;
+      *) opts=(-quality 82) ;;
+    esac
+    magick "$out/$name.png" -resize "$scale" "${opts[@]}" "$out/$name.webp" && rm "$out/$name.png"
     echo "$name.webp ($size @ $scale)"
   else
     echo "$name.png ($size)"
