@@ -43,7 +43,11 @@ export type KernelErrorCode =
   | 'timeout'
   | 'handler-error'
   | 'disposed'
-  | 'not-json';
+  | 'not-json'
+  // Thrown synchronously by `handle` / `emit` / `load`; never sent as a response.
+  | 'duplicate-handler'
+  | 'forbidden-namespace'
+  | 'invalid-plugin';
 
 export interface BusErrorInfo {
   /** A KernelErrorCode, or a plugin code such as "quest/not-found". */

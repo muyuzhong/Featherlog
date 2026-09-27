@@ -73,7 +73,7 @@ featherlog/
 - **事件**用完成时：`quest/created`、`quest/period-rolled`。
 - **请求**用动词：`quest/get`、`shell/show-popup`。
 - **命令**（只需要对方执行、不需要返回数据）也用请求表达，返回 `null`。这样发起方能知道有没有人处理。
-- 一个插件**只能发出自己命名空间下的事件、只能应答自己命名空间下的请求**。可以请求任何命名空间。
+- 一个插件**只能发出自己命名空间下的事件、只能应答自己命名空间下的请求**。可以请求任何命名空间。开发模式下违反时同步抛出 `forbidden-namespace`。
 - 保留命名空间：`kernel/*`（内核生命周期）、`shell/*`（外壳）、`external/*`（以后给外部程序）。
 
 ### 4.3 投递语义
@@ -89,13 +89,20 @@ featherlog/
 
 - 发出请求时查找应答者；没有应答者时，Promise **立即** 以 `no-handler` 拒绝（异步拒绝，不是同步抛出）。
 - 默认超时 5000 ms，可通过 `timeoutMs` 调整。超时后以 `timeout` 拒绝，之后到达的响应被丢弃。
-- 应答者抛出带字符串 `code` 的 Error，则把 `code`、`message`、`data` 原样转给请求方；抛出其他错误则变成 `handler-error`。
-- 同一个请求类型注册第二个应答者时，`handle` **同步抛错**。
+- 应答者抛出的 Error 若带有形如 `<模块>/<原因>` 的字符串 `code`（如 `quest/not-found`），则把 `code`、`message`、`data` 原样转给请求方。其他任何错误都变成 `handler-error`，`message` 保留原文。"其他错误"包括 Node 的系统错误（`ENOENT` 等），也包括应答者内部再发请求时收到的 `timeout`、`no-handler`：请求方只应看到"它请求的那个应答者"的结果，不应把下游的超时误认为自己的超时。
+- 同一个请求类型注册第二个应答者时，`handle` **同步抛出** `duplicate-handler`。
+
+**复制语义**
+
+- 消息进入总线时，内核把 payload 深拷贝一份（`structuredClone`）并**深度冻结**，所有接收方（监听器、应答者、观察者）拿到的是这份只读副本。响应数据同样如此。
+- 因此：发送方之后修改自己的对象，不影响已经发出的消息；接收方也无法通过收到的对象改动发送方的内部状态，接收方之间也互不影响。这与跨 IPC 时的行为一致。
+- 开发模式和生产模式行为相同。
 
 **纯 JSON 校验**
 
-- 开发模式下，内核校验每个 payload 和响应数据能否通过 JSON 往返而不变（没有 `undefined`、函数、`Date`、`Map`、类实例、循环引用）。不通过时 `emit`/`request` 同步抛出 `not-json` 错误。
-- 生产模式跳过校验。
+- 开发模式下，内核校验每个 payload 和响应数据是否为纯 JSON：只允许 `null`、布尔、字符串、有限数字、数组（非稀疏、无额外属性）、普通对象（原型为 `Object.prototype` 或 `null`，只有可枚举的字符串键数据属性），且无循环引用。`-0` 视为合法（序列化后是 `0`，数值上相等）。
+- 不通过时 `emit`/`request` 同步抛出 `not-json`；应答者返回的数据不通过时，请求以 `not-json` 失败。
+- 生产模式跳过校验（复制和冻结仍然进行）。
 
 ### 4.4 兼容规则
 
@@ -132,11 +139,13 @@ featherlog/
 
 1. 外壳主进程读取所有清单。
 2. 外壳注册自己的 `shell/*` 应答者（外壳不是插件，但先于插件就绪）。
-3. 依次调用每个插件主进程部分的 `setup(ctx)`，成功后发 `kernel/plugin-loaded`。
+3. 外壳调用一次 `load(整批插件)`。内核**先校验整批清单**：id 为小写 kebab-case、不是保留名（`kernel`、`shell`、`external`）、批内和已加载插件之间不重复。任何一项不合法，就在调用任何 `setup` 之前以 `invalid-plugin` 拒绝整批（这是宿主的编程错误，应当立刻暴露，而不是留下加载了一半的状态）。
+4. 依次调用每个插件主进程部分的 `setup(ctx)`，成功后发 `kernel/plugin-loaded`。
    - `setup` 抛错或 rejected：发 `kernel/plugin-failed`，清理它已注册的一切，其他插件照常加载。
+   - `setup` 超时（默认 10 秒，可在创建内核时配置）：视为失败，以 `timeout` 发 `kernel/plugin-failed` 并清理，继续加载下一个。之后即使 `setup` 完成也不会"复活"。
    - 插件不得假设其他插件已加载。**跨插件的请求放到 `kernel/ready` 之后再发。**
-4. 全部处理完后发 `kernel/ready`。
-5. 卸载：按注册的逆序执行所有清理，发 `kernel/plugin-unloaded`。
+5. 全部处理完后发 `kernel/ready`。外壳在启动时只调用一次 `load`。
+6. 卸载：按注册的逆序执行所有清理，发 `kernel/plugin-unloaded`。
 
 ### 5.4 自动清理
 
