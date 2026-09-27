@@ -1,0 +1,70 @@
+{
+  "id": "quest",
+  "name": "任务面板",
+  "version": "0.1.0",
+  "description": "主线、支线、日常任务，以及首页的今日任务。",
+  "main": "src/main/index.ts",
+  "ui": "src/ui/index.tsx",
+  "emits": [
+    "quest/created",
+    "quest/updated",
+    "quest/completed",
+    "quest/uncompleted",
+    "quest/progressed",
+    "quest/deleted",
+    "quest/period-rolled"
+  ],
+  "listens": [
+    "kernel/ready",
+    "quest/created",
+    "quest/updated",
+    "quest/completed",
+    "quest/uncompleted",
+    "quest/progressed",
+    "quest/deleted",
+    "quest/period-rolled"
+  ],
+  "handles": [
+    "quest/list",
+    "quest/get",
+    "quest/today",
+    "quest/create",
+    "quest/update",
+    "quest/complete",
+    "quest/uncomplete",
+    "quest/progress",
+    "quest/archive",
+    "quest/delete",
+    "quest/reorder"
+  ],
+  "requests": ["shell/set-badge", "shell/notify", "shell/open-panel"],
+  "contributes": {
+    "collapsedIcons": [
+      {
+        "id": "quest/today",
+        "title": "今日任务",
+        "icon": "list-checks",
+        "order": 0,
+        "preview": true,
+        "opens": "quest/home"
+      }
+    ],
+    "panelTabs": [{ "id": "quest/home", "title": "任务", "icon": "swords", "order": 0 }],
+    "settings": {
+      "title": "任务",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "dayStartHour": {
+            "type": "integer",
+            "title": "一天从几点开始",
+            "description": "在这个时间之前完成的日常，算作前一天。",
+            "minimum": 0,
+            "maximum": 23,
+            "default": 4
+          }
+        }
+      }
+    }
+  }
+}

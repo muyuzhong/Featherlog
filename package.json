@@ -1,0 +1,16 @@
+{
+  "name": "featherlog",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}
