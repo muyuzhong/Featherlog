@@ -10,7 +10,7 @@ import { loadPreference } from './preferences';
 import { createValue } from './value';
 import './playground.css';
 
-applyTheme({ paper: loadPreference('paper', 'vellum'), titleScript: loadPreference('title', 'brush') });
+applyTheme({ paper: loadPreference('paper', 'vellum') });
 
 const kernel = createMockKernel();
 const registry = createSlotRegistry();

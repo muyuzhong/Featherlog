@@ -14,30 +14,14 @@ export const PAPERS: Record<Paper, { label: string; url: string; base: string }>
   aged: { label: '陈旧', url: aged, base: '#e2c188' },
 };
 
-/** How the largest headings are lettered: brush regular script or running script. */
-export type TitleScript = 'brush' | 'running';
-
-export const TITLE_SCRIPTS: Record<TitleScript, { label: string }> = {
-  brush: { label: '楷书' },
-  running: { label: '行书' },
-};
-
 const url = (href: string) => `url("${href}")`;
 
 /** Publishes texture URLs as CSS custom properties on the document root. */
-export function applyTheme(
-  options: { paper?: Paper; titleScript?: TitleScript } = {},
-  root: HTMLElement = document.documentElement,
-): void {
+export function applyTheme(options: { paper?: Paper } = {}, root: HTMLElement = document.documentElement): void {
   root.style.setProperty('--fl-tex-burn', url(burn));
   root.style.setProperty('--fl-tex-leather', url(leather));
   root.style.setProperty('--fl-mask-deckle', url(deckle));
   setPaper(options.paper ?? 'vellum', root);
-  setTitleScript(options.titleScript ?? 'brush', root);
-}
-
-export function setTitleScript(script: TitleScript, root: HTMLElement = document.documentElement): void {
-  root.dataset.flTitle = script;
 }
 
 export function setPaper(paper: Paper, root: HTMLElement = document.documentElement): void {

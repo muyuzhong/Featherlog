@@ -5,7 +5,6 @@
  * so asset URLs resolve reliably and the paper can be switched at runtime.
  */
 @import '@fontsource/ma-shan-zheng/400.css';
-@import '@fontsource/zhi-mang-xing/400.css';
 @import '@chinese-fonts/xiaolai/dist/Xiaolai/result.css';
 
 :root {
@@ -36,11 +35,6 @@
 
   /* Motion */
   --fl-ease-ink: cubic-bezier(0.22, 0.8, 0.32, 1);
-}
-
-/* Running-script titles; brush regular script stays for smaller headings. */
-:root[data-fl-title='running'] {
-  --fl-font-title: 'Zhi Mang Xing', 'Ma Shan Zheng', 'KaiTi', serif;
 }
 
 /*

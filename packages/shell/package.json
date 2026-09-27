@@ -13,7 +13,6 @@
   "dependencies": {
     "@chinese-fonts/xiaolai": "^3.0.0",
     "@fontsource/ma-shan-zheng": "^5.3.1",
-    "@fontsource/zhi-mang-xing": "^5.3.0",
     "motion": "^13.4.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
