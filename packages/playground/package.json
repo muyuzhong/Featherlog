@@ -1,0 +1,26 @@
+{
+  "name": "@featherlog/playground",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser harness: runs the shell renderer and plugin UIs against an in-memory bus and mock backends.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@featherlog/plugin-quest": "workspace:*",
+    "@featherlog/shell": "workspace:*",
+    "motion": "^13.4.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@featherlog/contracts": "workspace:*",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "vite": "^8.3.1"
+  }
+}

@@ -1,0 +1,85 @@
+.note,
+.note * {
+  box-sizing: border-box;
+}
+
+.note {
+  padding: 26px 28px 22px 30px;
+  color: var(--fl-ink);
+}
+
+.kicker {
+  display: flex;
+  gap: 10px;
+  font: 13px var(--fl-font-hand);
+  color: var(--fl-rubric);
+  letter-spacing: 0.3em;
+}
+
+.kicker span {
+  color: var(--fl-ink-faded);
+  letter-spacing: 0.12em;
+}
+
+.name {
+  margin: 6px 0 2px;
+  font: 27px/1.2 var(--fl-font-title);
+  font-weight: normal;
+  letter-spacing: 0.14em;
+}
+
+.rule {
+  margin: 12px 0 8px;
+}
+
+.empty p {
+  margin: 6px 0 0;
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+}
+
+.label {
+  font: 14px var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+  letter-spacing: 0.2em;
+  width: 76px;
+  flex: none;
+}
+
+.boxes {
+  display: flex;
+  gap: 2px;
+}
+
+.boxes button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
+
+.boxes button:hover {
+  background: var(--fl-ink-wash);
+}
+
+.value {
+  margin-left: auto;
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+}
+
+.value em {
+  font-style: normal;
+  color: var(--fl-rubric);
+}

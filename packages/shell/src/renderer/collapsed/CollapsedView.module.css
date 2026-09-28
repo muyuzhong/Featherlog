@@ -1,0 +1,95 @@
+.root {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.left {
+  flex-direction: row-reverse;
+}
+
+/* ---- hanging scroll ---- */
+.scroll {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  filter: drop-shadow(0 8px 14px rgba(20, 10, 4, 0.45)) drop-shadow(0 1px 2px rgba(20, 10, 4, 0.35));
+}
+
+.rod {
+  width: 58px;
+  height: 11px;
+  border-radius: 6px;
+  background:
+    radial-gradient(circle at 5px 50%, #7a5230 0 3px, transparent 3.5px),
+    radial-gradient(circle at calc(100% - 5px) 50%, #7a5230 0 3px, transparent 3.5px),
+    linear-gradient(180deg, #7b5332 0%, #4a2d18 55%, #2c1a0d 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 220, 170, 0.18);
+  position: relative;
+  z-index: 1;
+}
+
+.strip {
+  width: 46px;
+  margin: -3px 0;
+  padding: 18px 0 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-height: 150px;
+}
+
+.icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--fl-ink-soft);
+  cursor: pointer;
+  transition: color 0.25s, background 0.25s;
+}
+
+.icon:hover,
+.icon.on {
+  color: var(--fl-rubric);
+  background: var(--fl-rubric-wash);
+}
+
+.ring {
+  width: 30px;
+  height: 30px;
+  margin-top: auto;
+}
+
+.ringTrack {
+  fill: none;
+  stroke: var(--fl-ink-ghost);
+  stroke-width: 2;
+  stroke-dasharray: 1.5 3;
+}
+
+.ringInk {
+  fill: none;
+  stroke: var(--fl-rubric);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.8s var(--fl-ease-ink);
+}
+
+/* ---- preview note ---- */
+.previewShadow {
+  filter: drop-shadow(0 14px 22px rgba(20, 10, 4, 0.42)) drop-shadow(0 2px 3px rgba(20, 10, 4, 0.3));
+}
+
+.preview {
+  width: 340px;
+  transition: height 0.35s var(--fl-ease-ink);
+}
+
+.previewContent {
+  height: 100%;
+}

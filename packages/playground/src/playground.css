@@ -1,0 +1,137 @@
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: #1a1d24;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A calm, neutral "desktop" so the scroll and the book are judged on their own. */
+.desktop {
+  position: relative;
+  height: 100%;
+  background:
+    radial-gradient(70% 60% at 22% 18%, rgba(120, 150, 190, 0.28), transparent 60%),
+    radial-gradient(60% 55% at 80% 90%, rgba(190, 140, 110, 0.22), transparent 60%),
+    linear-gradient(165deg, #2a3446 0%, #2c2833 55%, #1c1b21 100%);
+}
+
+.hint {
+  position: absolute;
+  left: 32px;
+  bottom: 30px;
+  display: grid;
+  gap: 4px;
+  color: rgba(240, 232, 214, 0.55);
+  font: 13px var(--fl-font-hand);
+  letter-spacing: 0.05em;
+  transition: opacity 0.3s;
+}
+
+.hint b {
+  font: 22px var(--fl-font-title);
+  letter-spacing: 0.5em;
+  color: rgba(240, 232, 214, 0.8);
+}
+
+.window {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: min(1240px, calc(100vw - 150px));
+  height: min(800px, calc(100vh - 48px));
+  border-radius: 10px;
+  box-shadow: 0 40px 80px -20px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+.edge {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+}
+
+.devtools {
+  position: absolute;
+  left: 16px;
+  top: 14px;
+  z-index: 30;
+  font: 12px ui-monospace, 'JetBrains Mono', monospace;
+  color: rgba(230, 230, 240, 0.6);
+}
+
+.devbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.35;
+  transition: opacity 0.2s;
+}
+
+.devtools:hover .devbar,
+.devtools:has(.buslog) .devbar {
+  opacity: 1;
+}
+
+.devbar span {
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.devbar button {
+  font: inherit;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.devbar button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.buslog {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  width: 320px;
+  max-height: 50vh;
+  overflow: auto;
+  border-radius: 6px;
+  background: rgba(10, 12, 16, 0.86);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.buslog li {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  white-space: nowrap;
+}
+
+.buslog small {
+  margin-left: auto;
+  opacity: 0.5;
+}
+
+.buslog .event b {
+  color: #e2b16a;
+}
+
+.buslog .request b {
+  color: #7fb7ff;
+}
+
+.buslog .response b {
+  color: #6fdcbf;
+}

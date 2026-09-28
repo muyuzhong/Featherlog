@@ -1,0 +1,178 @@
+.rule {
+  display: block;
+  width: 100%;
+  height: 8px;
+}
+
+.rule path {
+  fill: var(--fl-ink-soft);
+  stroke: var(--fl-ink-soft);
+  stroke-width: 0.5;
+  opacity: 0.55;
+}
+
+.check {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+.check path,
+.strike path,
+.boxTick,
+.circle path,
+.quill path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.check path {
+  stroke: var(--fl-ink-soft);
+  stroke-width: 2.1;
+}
+
+.strike {
+  position: absolute;
+  left: -3px;
+  right: -3px;
+  top: 50%;
+  width: calc(100% + 6px);
+  height: 10px;
+  transform: translateY(-45%);
+  pointer-events: none;
+  overflow: visible;
+}
+
+.strike path {
+  stroke: var(--fl-ink);
+  stroke-width: 1.5;
+  opacity: 0.55;
+  /* No non-scaling-stroke here: it would measure the draw-on dash in screen
+     pixels and stop the strike partway across long text. */
+}
+
+.box {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  overflow: visible;
+}
+
+.boxFrame {
+  fill: none;
+  stroke: var(--fl-ink-soft);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.boxTick {
+  stroke: var(--fl-rubric);
+  stroke-width: 2.2;
+}
+
+.circle {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.circle path {
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.dashed path {
+  stroke-dasharray: 2.4 3.2;
+}
+
+.quill {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+.quill path {
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+
+/* ---- wax seal ---- */
+.wax {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 49% 51% 47% 53% / 52% 47% 53% 48%;
+  background: radial-gradient(circle at 36% 30%, #b3432f 0%, #86261a 42%, #5e140c 100%);
+  box-shadow:
+    0 2px 3px rgba(40, 12, 4, 0.45),
+    0 6px 12px -4px rgba(40, 12, 4, 0.35),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.3),
+    inset 0 2px 2px rgba(255, 190, 160, 0.22);
+}
+
+/* Blobs of wax that squeezed out under the stamp. */
+.wax::before,
+.wax::after {
+  content: '';
+  position: absolute;
+  border-radius: 46% 54% 50% 50%;
+  background: #7a1f14;
+  box-shadow: 0 1px 2px rgba(40, 12, 4, 0.35);
+  z-index: -1;
+}
+
+.wax::before {
+  width: 22%;
+  height: 16%;
+  right: -3%;
+  top: 26%;
+}
+
+.wax::after {
+  width: 17%;
+  height: 13%;
+  left: 12%;
+  bottom: -2%;
+}
+
+.waxRing {
+  position: absolute;
+  inset: 15%;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.6px rgba(50, 6, 2, 0.5), 0 1px 0 rgba(255, 170, 140, 0.2);
+}
+
+.waxEmblem {
+  width: 40%;
+  height: 40%;
+  fill: none;
+  stroke: rgba(55, 8, 3, 0.62);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 1px 0 rgba(255, 170, 140, 0.3));
+}
+
+/* ---- vermilion stamp ---- */
+.stamp {
+  flex: none;
+  display: grid;
+  place-content: center;
+  gap: 2px;
+  border: 3px solid var(--fl-rubric);
+  border-radius: 3px;
+  color: var(--fl-rubric);
+  font-family: var(--fl-font-display);
+  font-size: 25px;
+  line-height: 1;
+  mix-blend-mode: multiply;
+  -webkit-mask-image: var(--fl-mask-deckle);
+  -webkit-mask-size: 100% 100%;
+  mask-image: var(--fl-mask-deckle);
+  mask-size: 100% 100%;
+  text-shadow: 0 0 0.6px currentColor;
+}

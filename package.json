@@ -8,10 +8,12 @@
   },
   "scripts": {
     "typecheck": "pnpm -r --if-present typecheck",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dev": "pnpm --filter @featherlog/playground dev"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
-    "vitest": "^5.0.2"
+    "vitest": "^5.0.2",
+    "vite": "^8.3.1"
   }
 }

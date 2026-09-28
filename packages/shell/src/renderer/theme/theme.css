@@ -1,0 +1,67 @@
+/*
+ * Featherlog theme: a parchment quest journal.
+ * These custom properties are the theme contract for every plugin UI.
+ * Textures (--fl-tex-*, --fl-mask-*) and the paper colour are set from index.ts
+ * so asset URLs resolve reliably and the paper can be switched at runtime.
+ */
+@import '@fontsource/ma-shan-zheng/400.css';
+@import '@chinese-fonts/xiaolai/dist/Xiaolai/result.css';
+
+:root {
+  /* Ink */
+  --fl-ink: #2a1c11;
+  --fl-ink-soft: #5b4430;
+  --fl-ink-faded: rgba(42, 28, 17, 0.5);
+  --fl-ink-ghost: rgba(42, 28, 17, 0.26);
+  --fl-ink-wash: rgba(90, 58, 26, 0.08);
+  --fl-rubric: #8a2b1d;
+  --fl-rubric-wash: rgba(138, 43, 29, 0.09);
+
+  /* Paper and binding */
+  --fl-paper: #e9d19b;
+  --fl-paper-light: #f5e5c0;
+  --fl-leather: #1f150d;
+  --fl-wax: #7d1d14;
+
+  /*
+   * Type: the whole journal is handwritten.
+   *   title   – the largest headings (journal name, quest name, ceremonies)
+   *   display – brush lettering for section heads and quest names in lists
+   *   hand    – pen writing for everything else
+   */
+  --fl-font-display: 'Ma Shan Zheng', 'Xiaolai SC', 'KaiTi', serif;
+  --fl-font-title: var(--fl-font-display);
+  --fl-font-hand: 'Xiaolai SC', 'Kaiti SC', 'KaiTi', serif;
+
+  /* Motion */
+  --fl-ease-ink: cubic-bezier(0.22, 0.8, 0.32, 1);
+}
+
+/*
+ * A sheet of parchment: a tileable surface with an edge burn stretched over it,
+ * cut by a rough deckle mask. Put it inside a wrapper with a drop-shadow filter
+ * if it should cast a shadow (the mask would clip a box-shadow).
+ */
+.fl-paper {
+  background-color: var(--fl-paper);
+  background-image: var(--fl-tex-burn), var(--fl-tex-parchment);
+  background-size: 100% 100%, 1024px 1024px;
+  -webkit-mask-image: var(--fl-mask-deckle);
+  mask-image: var(--fl-mask-deckle);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  color: var(--fl-ink);
+}
+
+.fl-leather {
+  background-color: var(--fl-leather);
+  background-image:
+    radial-gradient(120% 90% at 50% 40%, rgba(255, 220, 170, 0.05), transparent 60%),
+    var(--fl-tex-leather);
+  background-size: 100% 100%, 512px 512px;
+}
+
+/* Ink that has soaked a little into the paper. */
+.fl-ink-bleed {
+  text-shadow: 0 0 0.5px currentColor, 0 0 0.5px currentColor;
+}
