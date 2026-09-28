@@ -205,7 +205,7 @@ describe('§8.3 progression and undo', () => {
     expect(f.events().at(-1)!.payload).toEqual({ questId: null, previous: quest.id });
   });
 
-  it('reopen resets the target and all later objectives across chapters', async () => {
+  it('reopen preserves counts below their targets across chapters', async () => {
     const f = await fixture();
     const initial = await f.create(main);
     await f.request('quest/complete', { id: initial.id });
@@ -217,8 +217,8 @@ describe('§8.3 progression and undo', () => {
     expect(quest.chapters[0]!.objectives[0]!.doneAt).toBeDefined();
     expect(quest.chapters.flatMap(c => c.objectives).slice(1).every(o => !o.doneAt)).toBe(true);
     expect(quest.chapters.every(c => !c.doneAt)).toBe(true);
-    expect(quest.chapters[0]!.objectives[1]!.count!.current).toBe(0);
-    expect(quest.chapters[1]!.objectives[1]!.count!.current).toBe(0);
+    expect(quest.chapters[0]!.objectives[1]!.count!.current).toBe(2);
+    expect(quest.chapters[1]!.objectives[1]!.count!.current).toBe(1);
     expect(quest.derived.objectiveIndex).toBe(1);
     await command(f, 'quest/reopen-objective', {
       id: quest.id, objectiveId: quest.chapters[0]!.objectives[0]!.id,
@@ -370,11 +370,10 @@ describe('§8.5 daily periods, quotas and streaks', () => {
   it('auto-completes quota, uncompletes at target-1, and keeps daily status active', async () => {
     const f = await fixture();
     let quest = await f.create({ ...daily, quota: { target: 3 } });
-    await f.request('quest/track', { id: quest.id });
     quest = (await command(f, 'quest/count', { id: quest.id, delta: 2 }, ['quest/counted'])).quest;
     expect(quest.derived.ratio).toBeCloseTo(2 / 3);
     quest = (await command(f, 'quest/count', { id: quest.id, delta: 3 },
-      ['quest/counted', 'quest/completed', 'quest/tracked'])).quest;
+      ['quest/counted', 'quest/completed'])).quest;
     expect(quest).toMatchObject({ status: 'active', tracked: false,
       cycle: { current: 5, done: true }, derived: { ratio: 1, streak: 1 } });
     expect(quest.completedAt).toBeUndefined();
@@ -522,13 +521,13 @@ describe('§8.6 derived fields, list and reorder', () => {
     expect((await f.get(a.id)).order).toBe(1);
   });
 
-  it('computes dueToday and overdue using calendar today and active status', async () => {
-    const f = await fixture({ now: local('2026-09-28', 2) });
+  it('computes dueToday and overdue using period today and active status', async () => {
+    const f = await fixture({ now: local('2026-09-28', 1) });
     const a = await f.create({ ...main, deadline: '2026-09-27' });
     const b = await f.create({ kind: 'side', title: 'Side', scheduledFor: '2026-09-28' });
     const future = await f.create({ kind: 'side', title: 'Later', deadline: '2026-09-29' });
-    expect(a.derived).toMatchObject({ dueToday: true, overdue: true });
-    expect(b.derived).toMatchObject({ dueToday: true, overdue: false });
+    expect(a.derived).toMatchObject({ dueToday: true, overdue: false });
+    expect(b.derived).toMatchObject({ dueToday: false, overdue: false });
     expect(future.derived).toMatchObject({ dueToday: false, overdue: false });
     await f.request('quest/complete', { id: a.id });
     await f.request('quest/archive', { id: b.id });
@@ -749,4 +748,89 @@ it('defaults dayStartHour to four when settings has no value', async () => {
   const quest = await f.create(daily);
   expect(quest.cycle!.periodKey).toBe('2026-09-28');
   expect([...f.timers.values()]).toContain(local('2026-09-29', 4));
+});
+
+describe('§8 follow-up rules', () => {
+  it.each(['main', 'side'] as const)(
+    '%s uses the previous period at 01:00 and advances at 04:00', async kind => {
+      const f = await fixture({ now: local('2026-09-28', 1), hour: 4 });
+      const base: QuestInput = kind === 'main' ? main : { kind: 'side', title: 'Task' };
+      const older = await f.create({ ...base, deadline: '2026-09-26' });
+      const previous = await f.create({ ...base, deadline: '2026-09-27' });
+      const current = await f.create({ ...base, deadline: '2026-09-28' });
+      const scheduled = await f.create({ ...base, scheduledFor: '2026-09-28' });
+      const scheduledPrevious = await f.create({ ...base, scheduledFor: '2026-09-27' });
+      expect(older.derived).toMatchObject({ dueToday: true, overdue: true });
+      expect(previous.derived).toMatchObject({ dueToday: true, overdue: false });
+      expect(current.derived).toMatchObject({ dueToday: false, overdue: false });
+      expect(scheduled.derived).toMatchObject({ dueToday: false, overdue: false });
+      expect(scheduledPrevious.derived).toMatchObject({ dueToday: true, overdue: false });
+      f.setTime(local('2026-09-28', 4) - 1, false);
+      expect((await f.get(previous.id)).derived.overdue).toBe(false);
+      f.setTime(local('2026-09-28', 4), false);
+      const listed = (await f.request('quest/list', {})).quests;
+      expect(listed.find(q => q.id === previous.id)!.derived.overdue).toBe(true);
+      expect(listed.find(q => q.id === current.id)!.derived)
+        .toMatchObject({ dueToday: true, overdue: false });
+      expect((await f.get(scheduled.id)).derived.dueToday).toBe(true);
+    },
+  );
+
+  it('applies changed dayStartHour to non-daily dueToday and overdue', async () => {
+    const f = await fixture({ now: local('2026-09-28', 1), hour: 4 });
+    const previous = await f.create({ kind: 'side', title: 'Previous', deadline: '2026-09-27' });
+    const current = await f.create({ kind: 'side', title: 'Current', scheduledFor: '2026-09-28' });
+    f.setHour(0);
+    expect((await f.get(previous.id)).derived.overdue).toBe(true);
+    expect((await f.get(current.id)).derived.dueToday).toBe(true);
+    f.setHour(4);
+    expect((await f.get(previous.id)).derived.overdue).toBe(false);
+    expect((await f.get(current.id)).derived.dueToday).toBe(false);
+  });
+
+  it.each([0, 2, 4])('reopen retains unfinished current=%i and earlier progress', async current => {
+    const f = await fixture();
+    const quest = await f.create({ kind: 'main', title: 'Counts', chapters: [
+      { title: 'One', objectives: [{ text: 'Done', count: { target: 3 } }] },
+      { title: 'Two', objectives: [{ text: 'Partial', count: { target: 5 } },
+        { text: 'Later', count: { target: 1 } }] },
+    ] });
+    const first = quest.chapters[0]!.objectives[0]!;
+    const partial = quest.chapters[1]!.objectives[0]!;
+    await f.request('quest/count', { id: quest.id, objectiveId: first.id, set: 9 });
+    await f.request('quest/count', { id: quest.id, objectiveId: partial.id, set: current });
+    const reopened = (await command(f, 'quest/reopen-objective', {
+      id: quest.id, objectiveId: partial.id,
+    }, ['quest/objective-reopened'])).quest;
+    expect(reopened.chapters[0]!.objectives[0]!.count!.current).toBe(9);
+    expect(reopened.chapters[0]!.doneAt).toBeDefined();
+    expect(reopened.chapters[1]!.objectives[0]!.count!.current).toBe(current);
+    expect(reopened.chapters[1]!.objectives[1]!.count!.current).toBe(0);
+    const all = (await f.request('quest/reopen-objective', {
+      id: quest.id, objectiveId: first.id,
+    })).quest;
+    expect(all.chapters[0]!.objectives[0]!.count!.current).toBe(2);
+    expect(all.chapters[1]!.objectives[0]!.count!.current).toBe(current);
+    expect(all.chapters.every(c => !c.doneAt && c.objectives.every(o => !o.doneAt))).toBe(true);
+  });
+
+  it.each([false, true])('rejects daily tracking (completed=%s) without changing existing tracking',
+    async completed => {
+      const f = await fixture();
+      const tracked = await f.create(main);
+      const task = await f.create(daily);
+      if (completed) await f.request('quest/complete', { id: task.id });
+      await f.request('quest/track', { id: tracked.id });
+      f.messages.length = 0;
+      const saved = structuredClone(f.data);
+      const badges = f.badges.length;
+      await expect(f.request('quest/track', { id: task.id }))
+        .rejects.toMatchObject({ code: 'quest/invalid-input' });
+      expect(f.events()).toEqual([]);
+      expect(f.data).toEqual(saved);
+      expect(f.badges).toHaveLength(badges);
+      expect((await f.get(tracked.id)).tracked).toBe(true);
+      expect((await f.get(task.id)).tracked).toBe(false);
+    },
+  );
 });

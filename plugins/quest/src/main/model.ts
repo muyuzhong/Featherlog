@@ -213,7 +213,6 @@ export function derived(
   quest: StoredQuest, state: State, time: number, hour: number,
 ): QuestDerived {
   const key = periodKey(time, hour);
-  const today = dateKey(time);
   const chapterIndex = quest.chapters.findIndex(chapter => chapter.objectives.some(o => !o.doneAt));
   const chapter = quest.chapters[chapterIndex];
   const objectiveIndex = chapter?.objectives.findIndex(objective => !objective.doneAt) ?? -1;
@@ -242,8 +241,8 @@ export function derived(
     objectiveIndex, ratio, chapterRatio, streak,
     dueToday: quest.status !== 'archived' && (quest.kind === 'daily' ? due(quest, key)
       : quest.status === 'active' && Boolean(
-        (quest.scheduledFor && quest.scheduledFor <= today) ||
-        (quest.deadline && quest.deadline <= today))),
-    overdue: quest.status === 'active' && Boolean(quest.deadline && quest.deadline < today),
+        (quest.scheduledFor && quest.scheduledFor <= key) ||
+        (quest.deadline && quest.deadline <= key))),
+    overdue: quest.status === 'active' && Boolean(quest.deadline && quest.deadline < key),
   };
 }
