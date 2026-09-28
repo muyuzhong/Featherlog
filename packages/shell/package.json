@@ -5,13 +5,15 @@
   "type": "module",
   "exports": {
     "./renderer": "./src/renderer/index.ts",
-    "./renderer/theme.css": "./src/renderer/theme/theme.css"
+    "./renderer/theme.css": "./src/renderer/theme/theme.css",
+    "./renderer/app": "./src/renderer/app/index.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@chinese-fonts/xiaolai": "^3.0.0",
+    "@featherlog/plugin-quest": "workspace:*",
     "@fontsource/ma-shan-zheng": "^5.3.1",
     "motion": "^13.4.4",
     "react": "^19.3.0",

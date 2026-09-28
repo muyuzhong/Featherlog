@@ -1,0 +1,32 @@
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* The collapsed window is transparent around the scroll and sized to it. */
+html[data-window='collapsed'],
+html[data-window='collapsed'] body {
+  background: transparent;
+  overflow: hidden;
+}
+
+html[data-window='collapsed'] #root {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+html[data-window='panel'] body {
+  background: var(--fl-leather);
+}
+
+html[data-window='panel'] #root {
+  position: relative;
+}

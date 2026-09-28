@@ -11,6 +11,8 @@ type Props = {
   icons: CollapsedIconContribution[];
   badges: Record<string, Badge | null>;
   edge?: 'left' | 'right';
+  /** Where the shell cannot dock the window, the scroll's rods become a drag handle (design §9.5). */
+  draggable?: boolean;
   onOpen(icon: CollapsedIconContribution): void;
   onPreviewChange?(iconId: string | null): void;
 };
@@ -19,7 +21,7 @@ const LEAVE_DELAY_MS = 260;
 const PREVIEW_MAX_HEIGHT = 560;
 
 /** The collapsed view: a small hanging scroll on the screen edge that unrolls a preview on hover. */
-export function CollapsedView({ registry, icons, badges, edge = 'right', onOpen, onPreviewChange }: Props) {
+export function CollapsedView({ registry, icons, badges, edge = 'right', draggable = false, onOpen, onPreviewChange }: Props) {
   const ordered = [...icons].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [height, setHeight] = useState(240);
@@ -65,7 +67,7 @@ export function CollapsedView({ registry, icons, badges, edge = 'right', onOpen,
         )}
       </AnimatePresence>
 
-      <div className={styles.scroll}>
+      <div className={`${styles.scroll} ${draggable ? styles.draggable : ''}`}>
         <div className={styles.rod} />
         <div className={`${styles.strip} fl-paper`}>
           {ordered.map((icon) => (

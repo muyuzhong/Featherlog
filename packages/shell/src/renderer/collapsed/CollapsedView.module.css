@@ -16,6 +16,11 @@
   filter: drop-shadow(0 8px 14px rgba(20, 10, 4, 0.45)) drop-shadow(0 1px 2px rgba(20, 10, 4, 0.35));
 }
 
+.draggable .rod {
+  -webkit-app-region: drag;
+  cursor: grab;
+}
+
 .rod {
   width: 58px;
   height: 11px;

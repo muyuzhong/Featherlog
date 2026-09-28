@@ -1,52 +1,75 @@
-import type { Badge, PluginManifest, UiContext } from '@featherlog/contracts';
+import type { MainContext, PluginManifest } from '@featherlog/contracts';
+import { createKernel, type MainPlugin } from '@featherlog/kernel';
 import questManifest from '@featherlog/plugin-quest/manifest.json';
-import { setup as setupQuestUi } from '@featherlog/plugin-quest/ui';
-import { applyTheme, createSlotRegistry, createUiBus } from '@featherlog/shell/renderer';
+import { setup as questMain } from '@featherlog/plugin-quest/main';
+import { setup as questUi } from '@featherlog/plugin-quest/ui';
+import { applyTheme, setPaper, type Paper } from '@featherlog/shell/renderer';
+import { createRuntime, type UiPlugin } from '@featherlog/shell/renderer/app';
 import { createRoot } from 'react-dom/client';
 import { Desktop } from './Desktop';
-import { createMockKernel } from './mock/kernel';
-import { createQuestService } from './mock/quest-service';
-import { loadPreference } from './preferences';
-import { createValue } from './value';
+import { createDevClock, periodKey } from './host/clock';
+import { clearAll } from './host/persist';
+import { createFakePreload } from './host/preload';
+import { seedJournal } from './host/seed';
+import { createSettings } from './host/settings';
+import { createHostShell } from './host/shell';
+import { createStorage } from './host/storage';
 import './playground.css';
 
-applyTheme({ paper: loadPreference('paper', 'vellum') });
+/*
+ * The playground plays the Electron main process in the browser: the real kernel
+ * and the real quest plugin, a stand-in for the shell's main half, and one fake
+ * preload per simulated window. The window UIs are the real ones (design §6).
+ */
+const manifest = questManifest as PluginManifest;
+const mainPlugins: MainPlugin[] = [{ manifest, setup: questMain as (ctx: MainContext) => Promise<void> }];
+const uiPlugins: UiPlugin[] = [{ manifest, setup: questUi }];
 
-const kernel = createMockKernel();
-const registry = createSlotRegistry();
-const badges = createValue<Record<string, Badge | null>>({});
-const panel = createValue<{ open: boolean; tab: string }>({ open: false, tab: 'quest/journal' });
-
-// The shell's side of the bus, as the Electron main process would provide it.
-kernel.handle('shell/set-badge', (payload) => {
-  const { iconId, badge } = payload as { iconId: string; badge: Badge | null };
-  badges.set({ ...badges.get(), [iconId]: badge });
-  return null;
+const settings = createSettings([manifest]);
+const { clock, nextDay } = createDevClock();
+const log = { debug: console.debug, info: console.info, warn: console.warn, error: console.error };
+const kernel = createKernel({
+  development: true,
+  clock,
+  log,
+  createServices: (pluginId) => ({ storage: createStorage(pluginId), settings: settings.forPlugin(pluginId), clock, log }),
 });
-kernel.handle('shell/open-panel', (payload) => {
-  const { tab } = payload as { tab?: string };
-  panel.set({ open: true, tab: tab ?? panel.get().tab });
-  return null;
-});
-kernel.handle('shell/notify', () => null);
-
-// Stand-in for the quest plugin's main half until the real one lands.
-const quests = createQuestService(kernel, {
-  setBadge: (badge) => badges.set({ ...badges.get(), 'quest/tracker': badge }),
+const shell = createHostShell(kernel);
+const busLog = { entries: [] as import('@featherlog/contracts').Envelope[] };
+kernel.observe((envelope) => {
+  busLog.entries.push(envelope);
+  if (busLog.entries.length > 400) busLog.entries.shift();
 });
 
-// The quest plugin's renderer half, loaded the way the shell would load it.
-const manifests = [questManifest as PluginManifest];
-const context = (pluginId: string): UiContext => ({
-  pluginId,
-  bus: createUiBus(kernel.transport(), pluginId),
-  slots: registry.providerFor(pluginId),
-  settings: { get: () => undefined, onChange: () => () => {} },
-  log: console,
-  onDispose: () => {},
-});
-setupQuestUi(context('quest'));
+applyTheme({ paper: (settings.all().shell?.paper as Paper | undefined) ?? 'vellum' });
+settings.onChange((scope, key, value) => scope === 'shell' && key === 'paper' && setPaper(value as Paper));
+
+await kernel.load(mainPlugins);
+const dayStartHour = () => Number(settings.all().quest?.dayStartHour ?? 4);
+await seedJournal(shell.bus, (plus = 0) => periodKey(clock.now(), dayStartHour(), plus));
+
+const menu = { open: () => console.info('[dock] context menu: 打开任务日志 / 设置 / 退出') };
+const [collapsed, panel] = await Promise.all([
+  createRuntime(createFakePreload('collapsed', kernel, shell, settings, menu.open), uiPlugins),
+  createRuntime(createFakePreload('panel', kernel, shell, settings, menu.open), uiPlugins),
+]);
 
 createRoot(document.getElementById('root')!).render(
-  <Desktop registry={registry} manifests={manifests} badges={badges} panel={panel} kernel={kernel} onNextDay={quests.nextDay} />,
+  <Desktop
+    shell={shell}
+    settings={settings}
+    collapsed={collapsed}
+    panel={panel}
+    busLog={busLog}
+    kernel={kernel}
+    onNextDay={() => {
+      nextDay();
+      // The quest plugin notices the new period on its next request (design §8.5).
+      void shell.bus.request('quest/list', {});
+    }}
+    onReset={() => {
+      clearAll();
+      location.reload();
+    }}
+  />,
 );
