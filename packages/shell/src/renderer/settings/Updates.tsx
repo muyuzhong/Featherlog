@@ -89,8 +89,13 @@ export function UpdateNotes({ bus, toggle }: { bus: UiBus; toggle: ReactNode }) 
     case 'unsupported':
       line = '开发版本，不检查更新';
       break;
+    case 'managed':
+      line = '由系统的包管理器更新（例如 paru -Syu），这里不检查';
+      break;
   }
-  if (!action && state.status !== 'unsupported') {
+  // Neither a development build nor a package-manager install checks for itself.
+  const checks = state.status !== 'unsupported' && state.status !== 'managed';
+  if (!action && checks) {
     action = (
       <button className={styles.inkButton} disabled={busy} onClick={() => ask('shell/check-update')}>
         检查更新
@@ -115,7 +120,7 @@ export function UpdateNotes({ bus, toggle }: { bus: UiBus; toggle: ReactNode }) 
         {action}
       </div>
       {notes && showNotes && <p className={styles.notes}>{notes}</p>}
-      {state.status !== 'unsupported' && toggle}
+      {checks && toggle}
     </section>
   );
 }

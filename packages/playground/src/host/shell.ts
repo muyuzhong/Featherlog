@@ -5,12 +5,13 @@ type Dock = { width: number; height: number; expanded: boolean };
 /** Where the user has dragged the scroll to, in the simulated desktop. */
 export type DockPlace = 'right' | 'left';
 /** What the pretend GitHub release answers when the updater checks (design §12.2). */
-export type UpdateScenario = 'self' | 'manual' | 'none' | 'error';
+export type UpdateScenario = 'self' | 'manual' | 'none' | 'error' | 'managed';
 export const UPDATE_SCENARIOS: Record<UpdateScenario, string> = {
   self: '能自更新',
   manual: '需手动下载',
   none: '没有新版',
   error: '检查失败',
+  managed: '包管理器安装',
 };
 const NEXT = { version: '0.2.0', notes: '· 任务日志可以直接新建和修订任务\n· 设置页新增"更新"一节\n· 修正卷轴在左半屏时的展开方向' };
 
@@ -77,7 +78,7 @@ export function createHostShell(kernel: Kernel) {
   };
   bus.handle('shell/update-state', () => update);
   bus.handle('shell/check-update', () => {
-    if (update.status === 'checking' || update.status === 'downloading') return null;
+    if (update.status === 'checking' || update.status === 'downloading' || update.status === 'managed') return null;
     const { current } = update;
     setUpdate({ current, status: 'checking' });
     setTimeout(() => {
@@ -131,7 +132,7 @@ export function createHostShell(kernel: Kernel) {
     cycleUpdateScenario() {
       const all = Object.keys(UPDATE_SCENARIOS) as UpdateScenario[];
       scenario = all[(all.indexOf(scenario) + 1) % all.length]!;
-      setUpdate({ current: '0.1.0', status: 'idle' });
+      setUpdate({ current: '0.1.0', status: scenario === 'managed' ? 'managed' : 'idle' });
       changed();
     },
     resizeDock(next: Dock) {
