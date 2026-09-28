@@ -1,4 +1,4 @@
-import type { Quest } from '@featherlog/contracts';
+import type { Quest, QuestKind } from '@featherlog/contracts';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { InkBox, InkRule, InkStrike, Quill } from './ink';
 import { currentChapter } from './Objectives';
@@ -13,10 +13,12 @@ type Props = {
   day: number;
   store: QuestStore;
   onSelect(id: string): void;
+  onCreate(kind: QuestKind): void;
+  onEdit(id: string): void;
 };
 
 /** The left page: the journal's index of quests. */
-export function ListPage({ quests, selectedId, today, day, store, onSelect }: Props) {
+export function ListPage({ quests, selectedId, today, day, store, onSelect, onCreate, onEdit }: Props) {
   const [showDone, setShowDone] = useState(false);
   const active = quests.filter((q) => q.status === 'active');
   const mains = active.filter((q) => q.kind === 'main');
@@ -27,9 +29,7 @@ export function ListPage({ quests, selectedId, today, day, store, onSelect }: Pr
     .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''));
   const dailiesDone = dailies.filter((d) => d.cycle?.done).length;
 
-  const entry = (q: Quest) => (
-    <Entry key={q.id} quest={q} selected={q.id === selectedId} onSelect={() => onSelect(q.id)} />
-  );
+  const entry = (q: Quest) => <Entry key={q.id} quest={q} selected={q.id === selectedId} onSelect={() => onSelect(q.id)} />;
 
   return (
     <div className={styles.listPage}>
@@ -41,18 +41,22 @@ export function ListPage({ quests, selectedId, today, day, store, onSelect }: Pr
       </header>
       <InkRule className={styles.headRule} />
 
-      <Section title="主线" aside={mains.length ? `${cnCount(mains.length)}卷` : undefined}>
+      <Section title="主线" onAdd={() => onCreate('main')} aside={mains.length ? `${cnCount(mains.length)}卷` : undefined}>
         {mains.length ? mains.map(entry) : <p className={styles.empty}>尚无主线</p>}
       </Section>
 
-      <Section title="支线" aside={sides.length ? `${cnCount(sides.length)}件` : undefined}>
+      <Section title="支线" onAdd={() => onCreate('side')} aside={sides.length ? `${cnCount(sides.length)}件` : undefined}>
         {sides.length ? sides.map(entry) : <p className={styles.empty}>眼下没有支线</p>}
       </Section>
 
-      <Section title="每日委托" aside={dailies.length ? `${cn(dailiesDone)} / ${cn(dailies.length)}` : undefined}>
+      <Section
+        title="每日委托"
+        onAdd={() => onCreate('daily')}
+        aside={dailies.length ? `${cn(dailiesDone)} / ${cn(dailies.length)}` : undefined}
+      >
         <div className={styles.dailies}>
           {dailies.map((d) => (
-            <Daily key={d.id} quest={d} store={store} />
+            <Daily key={d.id} quest={d} store={store} onEdit={() => onEdit(d.id)} />
           ))}
         </div>
       </Section>
@@ -79,12 +83,22 @@ export function ListPage({ quests, selectedId, today, day, store, onSelect }: Pr
   );
 }
 
-function Section({ title, aside, children }: { title: string; aside?: string | undefined; children: ReactNode }) {
+type SectionProps = {
+  title: string;
+  aside?: string | undefined;
+  onAdd(): void;
+  children: ReactNode;
+};
+
+function Section({ title, aside, onAdd, children }: SectionProps) {
   return (
     <section className={styles.section}>
       <h2 className={styles.sectionTitle}>
         <span>{title}</span>
         {aside && <small>{aside}</small>}
+        <button className={styles.addQuest} onClick={onAdd} title={`新的${title}`}>
+          添一笔
+        </button>
       </h2>
       {children}
     </section>
@@ -117,7 +131,7 @@ function Entry({ quest, selected, onSelect }: { quest: Quest; selected: boolean;
   );
 }
 
-function Daily({ quest, store }: { quest: Quest; store: QuestStore }) {
+function Daily({ quest, store, onEdit }: { quest: Quest; store: QuestStore; onEdit(): void }) {
   const done = quest.cycle?.done ?? false;
   const wasDone = useRef(done);
   const fresh = done && !wasDone.current;
@@ -131,21 +145,30 @@ function Daily({ quest, store }: { quest: Quest; store: QuestStore }) {
     else store.actions.complete(quest.id);
   };
   return (
-    <button className={`${styles.daily} ${done ? styles.dailyDone : ''}`} onClick={act} title={done ? '撤回' : quest.quota ? '添一笔' : '完成'}>
-      <InkBox checked={done} animate={fresh} />
-      <span className={styles.dailyBody}>
-        <span className={styles.dailyName}>
-          {quest.title}
-          {done && <InkStrike animate={fresh} />}
+    <div className={styles.dailyRow}>
+      <button
+        className={`${styles.daily} ${done ? styles.dailyDone : ''}`}
+        onClick={act}
+        title={done ? '撤回' : quest.quota ? '记一次' : '完成'}
+      >
+        <InkBox checked={done} animate={fresh} />
+        <span className={styles.dailyBody}>
+          <span className={styles.dailyName}>
+            {quest.title}
+            {done && <InkStrike animate={fresh} />}
+          </span>
+          <span className={styles.dailySub}>
+            {quest.quota && !done
+              ? `${cn(quest.cycle?.current ?? 0)} / ${cn(quest.quota.target)}`
+              : quest.derived.streak > 1
+                ? `已连续${cnCount(quest.derived.streak)}日`
+                : ''}
+          </span>
         </span>
-        <span className={styles.dailySub}>
-          {quest.quota && !done
-            ? `${cn(quest.cycle?.current ?? 0)} / ${cn(quest.quota.target)}`
-            : quest.derived.streak > 1
-              ? `已连续${cnCount(quest.derived.streak)}日`
-              : ''}
-        </span>
-      </span>
-    </button>
+      </button>
+      <button className={styles.dailyEdit} onClick={onEdit} title="修订这项委托">
+        改
+      </button>
+    </div>
   );
 }

@@ -667,3 +667,99 @@
   letter-spacing: 0.04em;
   color: var(--fl-ink-faded);
 }
+
+/* ============================================================
+   Writing: ways into the editor
+   ============================================================ */
+.addQuest {
+  order: 3;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  font: 13px var(--fl-font-hand);
+  letter-spacing: 0.08em;
+  color: var(--fl-ink-ghost);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, color 0.2s;
+}
+
+.section:hover .addQuest,
+.addQuest:focus-visible {
+  opacity: 1;
+}
+
+.addQuest:hover {
+  color: var(--fl-rubric);
+}
+
+.dailyRow {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.dailyRow .daily {
+  flex: 1;
+  min-width: 0;
+}
+
+.dailyEdit {
+  position: absolute;
+  top: 6px;
+  right: 0;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  font: 13px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, color 0.2s, background 0.2s;
+}
+
+.dailyRow:hover .dailyEdit,
+.dailyEdit:focus-visible {
+  opacity: 1;
+}
+
+.dailyEdit:hover {
+  color: var(--fl-rubric);
+  background: var(--fl-rubric-wash);
+}
+
+.pageTools {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.pageTools button {
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  font: 13.5px var(--fl-font-hand);
+  letter-spacing: 0.2em;
+  color: var(--fl-ink-ghost);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.pageTools button:hover {
+  color: var(--fl-rubric);
+}
+
+button.blank {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+button.blank:hover {
+  color: var(--fl-rubric);
+}

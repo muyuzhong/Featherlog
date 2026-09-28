@@ -1,4 +1,4 @@
-import type { Dispose, Quest, UiBus } from '@featherlog/contracts';
+import type { ChapterDraft, Dispose, Quest, QuestInput, QuestPatch, UiBus } from '@featherlog/contracts';
 import { useSyncExternalStore } from 'react';
 
 /** A moment worth a ceremony. */
@@ -81,6 +81,25 @@ export function createQuestStore(bus: UiBus) {
       uncomplete: (id: string) => run(bus.request('quest/uncomplete', { id })),
       track: (id: string | null) => run(bus.request('quest/track', { id })),
       setRevealed: (id: string, revealed: boolean) => run(bus.request('quest/update', { id, patch: { revealed } })),
+    },
+    /**
+     * Writes from the editor: these reject, so the editor can say what went wrong.
+     * Responses are applied at once so the page can turn to the result without
+     * waiting for the matching event (which then changes nothing).
+     */
+    writes: {
+      create: async (input: QuestInput) => {
+        const { quest } = await bus.request('quest/create', { input });
+        upsert(quest);
+        return quest;
+      },
+      /** Fields first, then structure: two requests, as the contract splits them. */
+      save: async (id: string, edit: { patch?: QuestPatch; chapters?: ChapterDraft[] }) => {
+        if (edit.patch) upsert((await bus.request('quest/update', { id, patch: edit.patch })).quest);
+        if (edit.chapters) upsert((await bus.request('quest/set-chapters', { id, chapters: edit.chapters })).quest);
+      },
+      archive: (id: string) => bus.request('quest/archive', { id }),
+      remove: (id: string) => bus.request('quest/delete', { id }),
     },
     dispose() {
       stops.forEach((stop) => stop());

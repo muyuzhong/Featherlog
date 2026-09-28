@@ -1,6 +1,8 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
+import type { QuestKind } from '@featherlog/contracts';
 import { DetailPage } from './DetailPage';
+import { Editor } from './Editor';
 import { InkRule, Stamp } from './ink';
 import { ListPage } from './ListPage';
 import { capital, dayNumber, localToday } from './numerals';
@@ -14,6 +16,11 @@ export function Journal({ store }: { store: QuestStore }) {
   const { loaded, quests } = useQuests(store);
   const [selectedId, setSelectedId] = useState<string>();
   const [moment, setMoment] = useState<Moment | null>(null);
+  // The right page is either a quest or a sheet being written on.
+  const [writing, setWriting] = useState<{
+    kind: QuestKind;
+    questId?: string;
+  } | null>(null);
 
   useEffect(() => store.onMoment(setMoment), [store]);
   useEffect(() => {
@@ -32,6 +39,15 @@ export function Journal({ store }: { store: QuestStore }) {
   const today = quests.find((q) => q.cycle)?.cycle?.periodKey ?? localToday();
   const start = quests.reduce<string | undefined>((min, q) => (!min || q.createdAt < min ? q.createdAt : min), undefined);
   const day = start ? dayNumber(start, today) : 1;
+  const revising = writing?.questId ? quests.find((q) => q.id === writing.questId) : undefined;
+  const select = (id: string) => {
+    setWriting(null);
+    setSelectedId(id);
+  };
+  const edit = (id: string) => {
+    const quest = quests.find((q) => q.id === id);
+    if (quest) setWriting({ kind: quest.kind, questId: id });
+  };
 
   return (
     <div className={styles.journal}>
@@ -39,27 +55,62 @@ export function Journal({ store }: { store: QuestStore }) {
         <div className={styles.pageWrap}>
           <section className={`${styles.page} ${styles.left} fl-paper`}>
             {loaded && (
-              <ListPage quests={quests} selectedId={selected?.id} today={today} day={day} store={store} onSelect={setSelectedId} />
+              <ListPage
+                quests={quests}
+                selectedId={writing ? writing.questId : selected?.id}
+                today={today}
+                day={day}
+                store={store}
+                onSelect={select}
+                onCreate={(kind) => setWriting({ kind })}
+                onEdit={edit}
+              />
             )}
           </section>
         </div>
         <div className={styles.pageWrap}>
           <section className={`${styles.page} ${styles.right} fl-paper`}>
             <AnimatePresence mode="wait" initial={false}>
-              {selected && (
+              {writing && (writing.questId === undefined || revising) ? (
                 <motion.div
-                  key={selected.id}
+                  key={`writing-${writing.questId ?? 'new'}`}
                   className={styles.detailMotion}
                   initial={{ opacity: 0, x: 10, filter: 'blur(2px)' }}
                   animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
                   exit={{ opacity: 0, x: -8, filter: 'blur(2px)' }}
                   transition={{ duration: 0.28, ease: [0.22, 0.8, 0.32, 1] }}
                 >
-                  <DetailPage quest={selected} store={store} today={today} />
+                  <Editor
+                    store={store}
+                    quest={revising}
+                    kind={writing.kind}
+                    onDone={(saved) => {
+                      // Dailies live on the left page only; there is no right page to turn to.
+                      if (saved && saved.kind !== 'daily') setSelectedId(saved.id);
+                      setWriting(null);
+                    }}
+                  />
                 </motion.div>
+              ) : (
+                selected && (
+                  <motion.div
+                    key={selected.id}
+                    className={styles.detailMotion}
+                    initial={{ opacity: 0, x: 10, filter: 'blur(2px)' }}
+                    animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                    exit={{ opacity: 0, x: -8, filter: 'blur(2px)' }}
+                    transition={{ duration: 0.28, ease: [0.22, 0.8, 0.32, 1] }}
+                  >
+                    <DetailPage quest={selected} store={store} today={today} onEdit={() => edit(selected.id)} />
+                  </motion.div>
+                )
               )}
             </AnimatePresence>
-            {loaded && !selected && <p className={styles.blank}>日志尚空，等你写下第一个任务。</p>}
+            {loaded && !selected && !writing && (
+              <button className={styles.blank} onClick={() => setWriting({ kind: 'side' })}>
+                日志尚空，等你写下第一个任务。
+              </button>
+            )}
           </section>
         </div>
         <div className={styles.gutter} />
@@ -70,8 +121,7 @@ export function Journal({ store }: { store: QuestStore }) {
 }
 
 function Ceremony({ moment, onDismiss }: { moment: Moment | null; onDismiss(): void }) {
-  const chapter =
-    moment?.kind === 'chapter' ? moment.quest.chapters.findIndex((c) => c.id === moment.chapterId) : -1;
+  const chapter = moment?.kind === 'chapter' ? moment.quest.chapters.findIndex((c) => c.id === moment.chapterId) : -1;
   return (
     <AnimatePresence>
       {moment?.kind === 'quest' && (
@@ -116,9 +166,7 @@ function Ceremony({ moment, onDismiss }: { moment: Moment | null; onDismiss(): v
             <span className="fl-ink-bleed">
               第{capital(chapter + 1)}章 · {moment.quest.chapters[chapter]!.title}
             </span>
-            {moment.quest.chapters[chapter + 1] && (
-              <small>下一章「{moment.quest.chapters[chapter + 1]!.title}」已经展开</small>
-            )}
+            {moment.quest.chapters[chapter + 1] && <small>下一章「{moment.quest.chapters[chapter + 1]!.title}」已经展开</small>}
           </div>
         </motion.div>
       )}

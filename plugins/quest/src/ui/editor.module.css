@@ -1,0 +1,533 @@
+.editor {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: 2px 4px 12px 2px;
+}
+
+/* Every field is ink on the page: no boxes, only the line you write on.
+   :where() keeps these resets from outweighing the rules below. */
+:where(.editor) input,
+:where(.editor) textarea {
+  border: 0;
+  background: none;
+  color: var(--fl-ink);
+  outline: none;
+  font-family: var(--fl-font-hand);
+}
+
+:where(.editor) input::placeholder,
+:where(.editor) textarea::placeholder {
+  color: var(--fl-ink-ghost);
+}
+
+:where(.editor) button {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+:where(.editor) button:focus-visible {
+  outline: 1.5px dashed var(--fl-rubric);
+  outline-offset: 2px;
+}
+
+/* ---- kicker ---- */
+.kicker {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  font: 14px var(--fl-font-hand);
+  color: var(--fl-rubric);
+  letter-spacing: 0.3em;
+}
+
+.kinds {
+  display: flex;
+  gap: 6px;
+  letter-spacing: 0.12em;
+}
+
+.kinds button {
+  position: relative;
+  padding: 2px 6px;
+  font: 15px var(--fl-font-display);
+  color: var(--fl-ink-faded);
+  letter-spacing: 0.15em;
+  transition: color 0.2s;
+}
+
+.kinds button:hover {
+  color: var(--fl-ink-soft);
+}
+
+.kinds .kindOn {
+  color: var(--fl-ink);
+}
+
+.kinds .kindOn::after,
+.choices .choiceOn::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 6px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--fl-rubric);
+  opacity: 0.72;
+  transform: rotate(-1.4deg);
+}
+
+/* ---- title block ---- */
+.title {
+  display: block;
+  width: 100%;
+  margin: 10px 0 2px;
+  padding: 2px 0 4px;
+  font: 36px/1.2 var(--fl-font-title);
+  letter-spacing: 0.08em;
+  border-bottom: 1.5px solid var(--fl-ink-ghost);
+  transition: border-color 0.2s;
+}
+
+.title:focus {
+  border-bottom-color: var(--fl-ink-faded);
+}
+
+.titleHint {
+  margin: 4px 0 0;
+  font: 13px var(--fl-font-hand);
+  color: var(--fl-ink-ghost);
+}
+
+.line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 14px;
+  font: 15px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.line span {
+  flex: none;
+  letter-spacing: 0.2em;
+}
+
+.line input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0 3px;
+  font-size: 16px;
+  border-bottom: 1.5px dotted var(--fl-ink-ghost);
+}
+
+.story {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  padding: 0;
+  font: 16px/2 var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+  resize: none;
+  field-sizing: content;
+  min-height: 4em;
+  /* Ruled lines under the text, one per line-height. */
+  background-image: linear-gradient(transparent calc(2em - 1.5px), rgba(42, 28, 17, 0.14) calc(2em - 1.5px), rgba(42, 28, 17, 0.14) 2em);
+  background-size: 100% 2em;
+}
+
+/* ---- section head ---- */
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 22px 0 6px;
+  font: 14px var(--fl-font-display);
+  color: var(--fl-rubric);
+  letter-spacing: 0.35em;
+}
+
+.head::after {
+  content: '';
+  order: 1;
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(138, 43, 29, 0.28), transparent);
+  transform: translateY(-4px);
+}
+
+.head small {
+  order: 2;
+  font: 12.5px var(--fl-font-hand);
+  letter-spacing: 0.04em;
+  color: var(--fl-ink-ghost);
+}
+
+/* ---- chapters and objectives ---- */
+.chapter {
+  margin: 4px 0 10px;
+  padding: 4px 6px 2px;
+  border-radius: 8px 14px 10px 12px;
+}
+
+.chapterHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.chapterNo {
+  flex: none;
+  font: 16px var(--fl-font-display);
+  color: var(--fl-ink-soft);
+  letter-spacing: 0.1em;
+}
+
+.chapterHead input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  font-size: 16.5px;
+  border-bottom: 1.5px dotted var(--fl-ink-ghost);
+}
+
+.doneTag {
+  flex: none;
+  font: 12.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.objectives {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0 0 0 4px;
+}
+
+.objective {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  border-radius: 6px;
+}
+
+.bullet {
+  flex: none;
+  width: 18px;
+  display: grid;
+  place-items: center;
+}
+
+.bullet i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--fl-ink-faded);
+  transform: rotate(20deg) scaleX(1.3);
+}
+
+.bullet .doneMark {
+  width: 16px;
+  height: 16px;
+  stroke: var(--fl-ink-faded);
+}
+
+.objectiveText {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  font-size: 16px;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s;
+}
+
+.objectiveText:focus {
+  border-bottom-color: var(--fl-ink-ghost);
+}
+
+.count {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.number {
+  width: 3.2em;
+  text-align: center;
+  font-size: 16px;
+  border-bottom: 1.5px dotted var(--fl-ink-ghost);
+}
+
+.unit {
+  width: 2.4em;
+  font-size: 15px;
+  border-bottom: 1.5px dotted var(--fl-ink-ghost);
+}
+
+/* Row tools stay out of the way until the row is in hand. */
+.countToggle,
+.rowRemove {
+  opacity: 0;
+  transition: opacity 0.2s, color 0.2s;
+}
+
+.objective:hover .countToggle,
+.objective:hover .rowRemove,
+.objective:focus-within .countToggle,
+.objective:focus-within .rowRemove,
+.countToggle:focus-visible,
+.rowRemove:focus-visible {
+  opacity: 1;
+}
+
+.countToggle {
+  flex: none;
+  padding: 2px 6px;
+  font: 13px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  letter-spacing: 0.1em;
+}
+
+.countToggle:hover {
+  color: var(--fl-rubric);
+}
+
+.remove {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font: 16px/1 var(--fl-font-hand);
+  color: var(--fl-ink-ghost);
+}
+
+.remove:hover {
+  color: var(--fl-rubric);
+  background: var(--fl-rubric-wash);
+}
+
+.add {
+  margin: 2px 0 0 22px;
+  padding: 4px 6px;
+  font: 14px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  letter-spacing: 0.08em;
+  transition: color 0.2s;
+}
+
+.add:hover {
+  color: var(--fl-rubric);
+}
+
+.chapter + .add {
+  margin-left: 6px;
+}
+
+/* ---- daily and deadline fields ---- */
+.field {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  min-height: 38px;
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+
+.fieldLabel {
+  flex: none;
+  font: 15px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  letter-spacing: 0.2em;
+}
+
+.choices {
+  display: flex;
+  gap: 8px;
+}
+
+.choices button {
+  position: relative;
+  padding: 2px 6px;
+  font: 15.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.choices .choiceOn {
+  color: var(--fl-ink);
+}
+
+.week {
+  display: flex;
+  gap: 4px;
+  border-radius: 8px;
+}
+
+.week button {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font: 15px var(--fl-font-display);
+  color: var(--fl-ink-faded);
+  transition: background 0.2s, color 0.2s;
+}
+
+.week button:hover {
+  background: var(--fl-ink-wash);
+}
+
+.week .dayOn {
+  color: var(--fl-rubric);
+  background: var(--fl-rubric-wash);
+  box-shadow: inset 0 0 0 1.2px rgba(138, 43, 29, 0.45);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  font: 15px var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+}
+
+.toggle svg {
+  width: 20px;
+  height: 20px;
+}
+
+.deadline {
+  margin-top: 16px;
+}
+
+.deadline input {
+  padding: 2px 0;
+  font-size: 15.5px;
+  color: var(--fl-ink);
+  border-bottom: 1.5px dotted var(--fl-ink-ghost);
+  color-scheme: light;
+}
+
+.deadline input:invalid,
+.deadline input[value=''] {
+  color: var(--fl-ink-ghost);
+}
+
+.deadline input::-webkit-calendar-picker-indicator {
+  opacity: 0.35;
+  cursor: pointer;
+}
+
+.quiet {
+  font: 13.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.quiet:hover {
+  color: var(--fl-rubric);
+}
+
+.quietText {
+  font: 13.5px var(--fl-font-hand);
+  color: var(--fl-ink-ghost);
+}
+
+/* A field the draft can't be saved with. */
+.wrong {
+  background: var(--fl-rubric-wash);
+}
+
+.title.wrong {
+  background: none;
+  border-bottom-color: var(--fl-rubric);
+}
+
+/* ---- footer ---- */
+.foot {
+  flex: none;
+  padding-top: 12px;
+  border-top: 1px solid rgba(42, 28, 17, 0.1);
+}
+
+.problem {
+  margin: 0 0 8px;
+  font: 14px var(--fl-font-hand);
+  color: var(--fl-rubric);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.danger {
+  display: flex;
+  gap: 14px;
+  margin-right: auto;
+}
+
+.danger button,
+.cancel {
+  padding: 4px 2px;
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  letter-spacing: 0.1em;
+  transition: color 0.2s;
+}
+
+.danger button:hover {
+  color: var(--fl-rubric);
+}
+
+.cancel {
+  margin-left: auto;
+}
+
+.danger + .cancel {
+  margin-left: 0;
+}
+
+.cancel:hover {
+  color: var(--fl-ink);
+}
+
+.confirming {
+  color: var(--fl-rubric);
+}
+
+.save {
+  position: relative;
+  padding: 6px 22px 7px;
+  font: 20px var(--fl-font-display);
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
+  color: var(--fl-rubric);
+  border-radius: 40% 46% 42% 48% / 60% 52% 58% 50%;
+  box-shadow: inset 0 0 0 1.6px rgba(138, 43, 29, 0.6);
+  transition: background 0.2s, transform 0.2s;
+}
+
+.save:hover:not(:disabled) {
+  background: var(--fl-rubric-wash);
+  transform: rotate(-1deg);
+}
+
+.save:disabled,
+.danger button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
