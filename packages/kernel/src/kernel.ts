@@ -173,30 +173,33 @@ export function createKernel(options: KernelOptions) {
           invalidResponse();
         }
       };
-      try {
-        const result = responder.call(message.payload, message);
-        const succeeded = (data: unknown) => {
-          if (settled) return;
-          try {
-            finish({ ok: true, data }, responder.scope.id);
-          } catch {
-            invalidResponse();
+      queueMicrotask(() => {
+        if (settled) return;
+        try {
+          const result = responder.call(message.payload, message);
+          const succeeded = (data: unknown) => {
+            if (settled) return;
+            try {
+              finish({ ok: true, data }, responder.scope.id);
+            } catch {
+              invalidResponse();
+            }
+          };
+          // Synchronous results enter the bus before the responder can mutate them later.
+          if (
+            result !== null &&
+            typeof result === 'object' &&
+            'then' in result &&
+            typeof result.then === 'function'
+          ) {
+            void Promise.resolve(result).then(succeeded, failed);
+          } else {
+            succeeded(result);
           }
-        };
-        // Synchronous results enter the bus before the responder can mutate them later.
-        if (
-          result !== null &&
-          typeof result === 'object' &&
-          'then' in result &&
-          typeof result.then === 'function'
-        ) {
-          void Promise.resolve(result).then(succeeded, failed);
-        } else {
-          succeeded(result);
+        } catch (cause) {
+          failed(cause);
         }
-      } catch (cause) {
-        failed(cause);
-      }
+      });
     });
   };
   const makeBus = (scope: Scope, plugin: boolean): Bus => {
