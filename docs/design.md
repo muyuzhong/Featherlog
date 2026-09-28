@@ -518,19 +518,19 @@ Wayland 下应用不能置顶、也不能定位自己，交给一个**很小的*
   | macOS arm64 / x64 | dmg 与 zip | 不能：v1 没有签名，Squirrel.Mac 拒绝未签名的更新，只提示去下载 |
 
 - v1 不做代码签名。Windows 首次运行会有 SmartScreen 提示，macOS 需要右键打开；README 里说明。
-- 运行时依赖（目前只有 `dbus-next`）必须进安装包；其余代码都打进 bundle。pnpm 工作区的依赖布局由实现方处理，要求用打出的包实际启动验证。
+- 运行时依赖（`dbus-next`、`electron-updater`）必须进安装包；其余代码都打进 bundle。pnpm 工作区的依赖布局由实现方处理，要求用打出的包实际启动验证。
 - **发布流程**：推送 `v<版本号>` 标签触发 GitHub Actions（`.github/workflows/release.yml`）。三个平台并行：`pnpm install --frozen-lockfile` → `pnpm typecheck` → `pnpm test` → 构建 → electron-builder 上传到同名 GitHub Release。标签与 `version` 不一致时失败。
 - Release 先以**草稿**创建，维护者检查后手动发布。自动更新只看已发布的正式版，不看草稿和预发布版。
 
 ### 12.2 自动更新
 
 - 主进程用 **electron-updater**，更新源是 GitHub Releases（`muyuzhong/Featherlog`）。下载的文件按 release 里 `latest*.yml` 的 sha512 校验。
-- **能自己更新的安装**：已打包，并且是 Windows NSIS，或是 Linux 且在 AppImage 里运行（有 `APPIMAGE` 环境变量）。发现新版本就在后台下载，下好后状态变为 `ready`，**下次退出时自动安装**（`autoInstallOnAppQuit`），也可以通过 `shell/apply-update` 立即重启安装。
+- **能自己更新的安装**：已打包，并且是 Windows NSIS（可执行文件旁有 `Uninstall Featherlog.exe`），或是 Linux 且在 AppImage 里运行（有 `APPIMAGE` 环境变量）。其他已打包的 Windows 程序按 `manual` 处理。发现新版本就在后台下载，下好后状态变为 `ready`，**下次退出时自动安装**（`autoInstallOnAppQuit`），也可以通过 `shell/apply-update` 立即重启安装。
 - **不能自己更新的安装**（macOS、Linux 上非 AppImage 的安装）：只检查不下载。发现新版本时状态为 `manual`，带上该 release 的页面地址；`shell/apply-update` 用系统浏览器打开它。
 - **开发模式**（未打包）：状态为 `unsupported`，从不联网。
 - **检查时机**（设置 `autoUpdate` 为 `true` 时）：启动 30 秒后检查一次，此后每 6 小时一次；系统从睡眠中恢复时，若距上次检查已超过 6 小时，立即检查。定时一律用注入的 `Clock`。`autoUpdate` 为 `false` 时从不自行检查；设置页的"检查更新"（`shell/check-update`）任何时候都可用，手动检查发现新版本同样会下载。
 - 同一时间只进行一次检查或下载，重复的 `shell/check-update` 直接返回。
-- 更新下好时，主进程发一次 `shell/notify`（同一版本只发一次）：标题"新版本已备好"，正文"v<版本> · 退出时自动安装，也可以在设置里立即重启"。后台检查失败只记日志、进入 `error` 状态，不打扰用户。
+- 更新下好时，主进程发一次 `shell/notify`（同一版本只发一次，跨启动也算，记录在 `<userData>/updates.json`）：标题"新版本已备好"，正文"v<版本> · 退出时自动安装，也可以在设置里立即重启"。后台检查失败只记日志、进入 `error` 状态，不打扰用户。
 - **隐私**：只访问 GitHub（API 与 release 下载地址），不带任何标识，不做统计。
 - 更新说明（release notes）转成纯文本（去掉 HTML 标签），最多 2000 字；渲染层只按纯文本显示。
 
