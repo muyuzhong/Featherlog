@@ -27,6 +27,12 @@ export interface FeatherlogPreload {
     resize(size: { width: number; height: number; expanded: boolean }): void;
     /** Show the native context menu (open journal, settings, quit). */
     menu(): void;
+    /**
+     * Which side the preview unfolds to, from where the scroll sits on its screen
+     * (design §9.3). Optional for shells that predate it; treat absence as "left".
+     */
+    side?(): Promise<UnfoldSide>;
+    onSide?(listener: (side: UnfoldSide) => void): Dispose;
   };
   /** Panel window only. */
   readonly panel: {
@@ -40,6 +46,9 @@ export interface FeatherlogPreload {
 }
 
 export type WindowKind = 'collapsed' | 'panel';
+
+/** The preview unfolds away from the nearer screen edge. */
+export type UnfoldSide = 'left' | 'right';
 
 export interface DockCapabilities {
   /** The shell pins the window to a position. Always false in v1: the scroll floats and the user drags it (design §9). */

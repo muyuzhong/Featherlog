@@ -446,12 +446,16 @@ interface Dock {
 - **窗口属性**：无边框、透明、`resizable: true`、不进任务栏、`showInactive()` 显示。必须 `resizable: true`：实机发现 Wayland 下不可调整大小的窗口 `setSize` 不生效，窗口停留在旧尺寸（用户仍然改不了它的大小，因为它没有边框可拖）。
 - **拖动**：由渲染层的 CSS 拖动区域（`-webkit-app-region: drag`）交给窗口系统完成，各平台都可用。
 - **首次出现的位置**：最右侧显示器的右边缘、竖直居中。
-- **悬停展开时卷轴不动**：便签在卷轴左侧展开，窗口**向左**变宽——保持窗口的右边缘不变；如果这样会超出所在显示器的左边界，就整体右移到刚好留在屏幕内。收起时反过来。这条规则在能定位窗口的平台由主进程实现，在 KDE Wayland 由 KWin 脚本实现。
+- **展开方向随位置而定**：卷轴中心在所在显示器的**右半边**时，便签在卷轴左侧展开，窗口**向左**变宽（保持右边缘不变）；在**左半边**时，便签在右侧展开，窗口**向右**变宽（保持左边缘不变）。总之便签朝屏幕中间展开，卷轴本身不动。若仍会超出显示器，就整体平移到刚好留在屏幕内。收起时反过来。
+- **方向只在收起状态下、窗口被移动后重新判断**；展开期间不变，避免展开使窗口中心越过中线而来回翻转。
+- **方向告诉渲染层**：preload 的 `dock.side()` 返回当前方向，`dock.onSide` 在方向变化时通知（`'left'` 表示向左展开）。渲染层据此把便签放在卷轴的哪一侧。
+- 以上规则在能定位窗口的平台由主进程实现，在 KDE Wayland 由 KWin 脚本实现（§9.5）。
 
 ### 9.4 ElectronFloat（Windows、macOS、X11、兼容模式）
 
 - `setAlwaysOnTop(true, 'floating')`；macOS 另加 `setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })`。
 - `resize`：按 §9.3 算出新位置，`setBounds`。
+- 方向：启动时与每次 `moved` 后按窗口所在显示器计算；变化时经 preload 通知渲染层。
 - **记住位置**：窗口 `moved` 后保存 `{ x, y }`（外壳存储，防抖）；启动时恢复。若保存的位置已不在任何显示器上（显示器被拔掉），退回默认位置。
 
 ### 9.5 KWinFloat（KDE Plasma，Wayland）
@@ -462,14 +466,15 @@ Wayland 下应用不能置顶、也不能定位自己，交给一个**很小的*
 - **脚本只做三件事**：
   1. 按标题 `featherlog-dock` 找到收起窗口（窗口出现时、标题变化时都检查），设置 `keepAbove`、`onAllDesktops`、`skipTaskbar`、`skipPager`、`skipSwitcher`；
   2. 第一次找到它时，放到最右侧 output 的右边缘、竖直居中；
-  3. 监听 `frameGeometryChanged`：若只是**尺寸**变了（不是用户拖动造成的位置变化），按 §9.3 保持右边缘并夹在 output 内（加守卫，避免回调里改几何又触发自己）。
+  3. 监听 `frameGeometryChanged`：若只是**尺寸**变了（不是用户拖动造成的位置变化），按 §9.3 的当前方向保持右边缘或左边缘，并夹在 output 内（加守卫，避免回调里改几何又触发自己）；若是用户拖动造成的位置变化，按 §9.3 重新判断方向。
+- **方向上报**：KWin 脚本在第一次找到窗口时、以及方向改变时，用 `callDBus("org.featherlog.Shell", "/Dock", "org.featherlog.Dock", "SetSide", side)` 通知主进程。主进程在会话总线上注册名字 `org.featherlog.Shell`，导出 `/Dock` 对象与 `org.featherlog.Dock.SetSide(s)` 方法（纯 JS 的 DBus 库即可，如 `dbus-next`），收到后经 preload 通知渲染层。注册失败时记日志，方向固定为 `left`。
 - 参考原型 `spike/collapsed-view` 的 `kwin-anchor.js`（已在 KDE Plasma 6.7 上验证过 DBus 加载与 `frameGeometryChanged` 重新定位），但**不要**做边缘锚定。
 - 已知限制：重启后回到默认位置（Wayland 下应用读不到自己的位置）；窗口首次出现时 KWin 可能会激活它一次。
 - 找不到任何 DBus 工具时退化为 `PlainFloat` 并记日志。
 
 ### 9.6 PlainFloat（其他 Wayland）
 
-- 不定位、不保证置顶；窗口向右变宽（左上角不动，卷轴会随展开移动一次）。
+- 不定位、不保证置顶；方向固定为 `right`：窗口向右变宽时左上角不动，卷轴正好保持原位。
 - 设置页据 `capabilities` 提示："当前桌面不支持置顶，可开启兼容模式后重启"。
 
 ### 9.7 兼容模式
