@@ -23,7 +23,7 @@ export interface FeatherlogPreload {
   };
   /** Collapsed window only. */
   readonly dock: {
-    /** Resize the window to fit its content; the shell keeps it anchored (design §9). */
+    /** Resize the window to fit its content; the shell keeps the scroll itself in place (design §9.3). */
     resize(size: { width: number; height: number; expanded: boolean }): void;
     /** Show the native context menu (open journal, settings, quit). */
     menu(): void;
@@ -42,7 +42,7 @@ export interface FeatherlogPreload {
 export type WindowKind = 'collapsed' | 'panel';
 
 export interface DockCapabilities {
-  /** The collapsed window stays glued to a screen edge. */
+  /** The shell pins the window to a position. Always false in v1: the scroll floats and the user drags it (design §9). */
   anchored: boolean;
   /** It stays above other windows. */
   keepAbove: boolean;

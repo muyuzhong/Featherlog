@@ -6,7 +6,7 @@
 
 羽记是一个游戏任务风格的个人面板桌面客户端。学习计划、要做的事、日常习惯都被组织成游戏式的"任务"：任务线分章节推进，目标逐个解锁，完成时有仪式感，帮助人坚持下去。
 
-交互形态：一个收起视图（贴边竖栏，或在不支持的平台上退化为浮窗），鼠标悬停显示预览，点击打开完整面板。
+交互形态：一个收起视图（置顶的浮动卷轴，用户可拖到任意位置，通常是屏幕边缘），鼠标悬停显示预览，点击打开完整面板。
 
 **v1 范围**：内核 + Electron 外壳 + 任务面板插件。
 **v1 明确不做**：奖励系统（XP、金币）、AI、八股弹窗、钱包、游戏接入、本地 WebSocket。这些都通过"只加字段、只加消息"的方式在以后加入，v1 的契约不为它们预留字段。
@@ -170,12 +170,12 @@ featherlog/
 ```
 ┌────────────────────────── Electron 主进程 ───────────────────────────┐
 │  内核（总线 + 生命周期）                                               │
-│   ├─ 外壳主进程：shell/* 应答者 · IPC 桥 · 存储 · 设置 · 窗口 · 贴边(§9)  │
+│   ├─ 外壳主进程：shell/* 应答者 · IPC 桥 · 存储 · 设置 · 窗口 · 浮窗(§9)  │
 │   └─ 各插件的主进程部分（quest …）                                     │
 └───────────────┬───────────────────────────────┬──────────────────────┘
           IPC   │  preload: window.featherlog    │  IPC
      ┌──────────┴──────────┐            ┌────────┴───────────┐
-     │ 收起窗口（贴边卷轴）   │            │ 面板窗口（任务日志）  │
+     │ 收起窗口（浮动卷轴）   │            │ 面板窗口（任务日志）  │
      │ 图标 · 悬停便签 · 通知 │            │ 标签页 · 设置        │
      └─────────────────────┘            └────────────────────┘
 ```
@@ -204,11 +204,11 @@ featherlog/
 
 ### 6.2 启动与退出
 
-1. 取单实例锁，读取设置（§6.6），选择贴边实现（§9）。兼容模式要在 `app.whenReady()` 之前加命令行开关。
+1. 取单实例锁，读取设置（§6.6），选择浮窗实现（§9）。兼容模式要在 `app.whenReady()` 之前加命令行开关。
 2. 创建内核：真实时钟（`Date.now` / 全局 `setTimeout`）、日志器、`createServices`（§6.6 的存储与设置）。
 3. `kernel.createBus('shell')`，注册外壳的应答者（§6.5）。
 4. 创建 IPC 桥（§6.3），再 `kernel.load(内置插件)`。
-5. 创建收起窗口并交给贴边实现；面板窗口在第一次打开时才创建，之后关闭只隐藏、不销毁。
+5. 创建收起窗口并交给浮窗实现；面板窗口在第一次打开时才创建，之后关闭只隐藏、不销毁。
 6. 退出（右键菜单"退出"、系统退出）：逆序卸载插件、`dock.detach()`、等待未完成的存储写入，然后退出。
 
 ### 6.3 IPC 桥
@@ -235,9 +235,9 @@ featherlog/
 - `window.kind`：`collapsed` 或 `panel`，主进程创建窗口时通过 `additionalArguments` 传给 preload。
 - `bus`：§6.3 的原始传输；渲染层用它构造 `UiBus`。
 - `settings`：`all()`、`set(scope, key, value)`、`onChange`。`scope` 是 `shell` 或插件 id。
-- `dock`（只在收起窗口有效）：`resize({ width, height, expanded })` 按内容调整窗口尺寸，由贴边实现保持锚定；`expanded` 变化时主进程发 `shell/view-changed`（`collapsed` ↔ `preview`）。`menu()` 弹出原生右键菜单：打开任务日志 / 设置 / 退出。
+- `dock`（只在收起窗口有效）：`resize({ width, height, expanded })` 按内容调整窗口尺寸，由 §9 的规则决定窗口往哪边变宽；`expanded` 变化时主进程发 `shell/view-changed`（`collapsed` ↔ `preview`）。`menu()` 弹出原生右键菜单：打开任务日志 / 设置 / 退出。
 - `panel`（只在面板窗口有效）：`close()` 隐藏面板并发 `shell/view-changed`。
-- `platform`：操作系统，以及当前贴边实现的能力（§9），设置页据此显示提示。
+- `platform`：操作系统，以及当前浮窗实现的能力（§9），设置页据此显示提示。
 
 打开面板不经过 preload，任何人都用总线请求 `shell/open-panel`。
 
@@ -272,9 +272,6 @@ featherlog/
 
 | 键 | 值 | 默认 | 说明 |
 |---|---|---|---|
-| `edge` | `"right"` / `"left"` | `"right"` | 卷轴贴在哪条边 |
-| `display` | `"auto"` 或显示器 id | `"auto"` | `auto`：贴右边时选最右侧的显示器，贴左边时选最左侧的 |
-| `verticalPosition` | 0–1 | 0.5 | 卷轴在该边上的竖直位置 |
 | `paper` | `"vellum"` / `"golden"` / `"aged"` | `"vellum"` | 纸张（渲染层读取） |
 | `compatMode` | 布尔 | `false` | Linux 兼容模式：强制 XWayland（§9），重启后生效 |
 
@@ -286,7 +283,7 @@ featherlog/
 
 - 无边框、透明背景、始终置顶、不进任务栏、不可调整大小、无系统阴影，用 `showInactive()` 显示。
 - 标题固定为 `featherlog-dock`（KWin 脚本据此识别，§9）；主进程拦截 `page-title-updated`，不让网页标题覆盖它。
-- 尺寸完全由渲染层通过 `dock.resize` 决定，主进程把宽限制在 40–720、高限制在 80–900。
+- 尺寸完全由渲染层通过 `dock.resize` 决定，主进程把宽限制在 40–720、高限制在 80–900。它是一个置顶的浮窗，由用户拖动，具体规则见 §9。
 - macOS：`setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })`，并隐藏 Dock 图标（`app.dock.hide()`）。
 
 **面板窗口**：
@@ -415,73 +412,76 @@ featherlog/
 |---|---|---|---|
 | `dayStartHour` | 0–23 整数 | 4 | 一天从几点开始；修改后按新值重新计算周期 |
 
-## 9. 平台适配：卷轴贴边
+## 9. 平台适配：浮动的卷轴
 
-收起窗口要贴在屏幕边缘、始终置顶、出现时不抢键盘焦点。不同平台能做到的程度不同，外壳用一个统一接口屏蔽差异，内核和插件对此无感知。
+收起窗口是一个**置顶的浮窗**：用户按住卷轴两端的木轴，把它拖到自己想放的地方（通常是屏幕边缘）。外壳不强制贴边，只负责三件事：置顶、记住位置（平台允许时）、悬停展开时卷轴本身不跳动。
+
+> 早先的方案是强制贴边（KWin 脚本按显示器边缘锚定），2026-09-28 改为浮窗：行为在各平台一致，实现也简单得多。
 
 ### 9.1 接口
 
 ```ts
 interface Dock {
   readonly capabilities: DockCapabilities; // 见 contracts/src/preload.ts
-  attach(window: BrowserWindow, placement: Placement): Promise<void>;
-  /** 设置里的 edge / display / verticalPosition 变化时调用。 */
-  place(placement: Placement): Promise<void>;
-  /** 渲染层要求改变尺寸时调用；改完仍然贴边。 */
+  attach(window: BrowserWindow): Promise<void>;
+  /** 渲染层要求改变尺寸时调用（§9.3 的规则）。 */
   resize(size: { width: number; height: number }): void;
   detach(): Promise<void>;
 }
-type Placement = { edge: 'left' | 'right'; display: Electron.Display; verticalPosition: number };
 ```
 
-### 9.2 选择哪种实现
+### 9.2 三种实现
 
-| 条件 | 实现 | anchored | keepAbove | focusSafe |
-|---|---|---|---|---|
-| Windows、macOS；Linux X11；Linux 兼容模式 | `ElectronDock` | ✓ | ✓ | ✓ |
-| Linux Wayland，且 `XDG_CURRENT_DESKTOP` 含 `KDE` | `KWinDock` | ✓ | ✓ | ✓ |
-| 其他 Linux Wayland（如 GNOME） | `FloatingDock` | ✗ | ✗ | ✗ |
+| 条件 | 实现 | anchored | keepAbove | focusSafe | 记住位置 |
+|---|---|---|---|---|---|
+| Windows、macOS；Linux X11；Linux 兼容模式 | `ElectronFloat` | ✗ | ✓ | ✓ | ✓ |
+| Linux Wayland，且 `XDG_CURRENT_DESKTOP` 含 `KDE` | `KWinFloat` | ✗ | ✓ | ✗ | ✗ |
+| 其他 Linux Wayland（如 GNOME） | `PlainFloat` | ✗ | ✗ | ✗ | ✗ |
 
-判断 Wayland：`process.platform === 'linux'`、存在 `WAYLAND_DISPLAY`、且没有开启兼容模式（`ozone-platform` 不是 `x11`）。
+- `anchored` 在 v1 一律为 `false`（不再强制贴边），渲染层据此把木轴做成拖动把手。
+- 判断 Wayland：`process.platform === 'linux'`、存在 `WAYLAND_DISPLAY`、且没有开启兼容模式。
 
-### 9.3 ElectronDock
+### 9.3 共同规则
 
-- 位置由 `display.workArea` 算出：贴右边时 `x = 右边界 − 宽`，贴左边时 `x = 左边界`；`y = workArea.y + (workArea.height − 高) × verticalPosition`。
-- `resize` 直接 `setBounds` 到新的锚定位置。
-- `setAlwaysOnTop(true, 'floating')`；显示器增减、分辨率变化（`screen` 的 `display-*` 事件）时重新 `place`。
+- **窗口属性**：无边框、透明、`resizable: true`、不进任务栏、`showInactive()` 显示。必须 `resizable: true`：实机发现 Wayland 下不可调整大小的窗口 `setSize` 不生效，窗口停留在旧尺寸（用户仍然改不了它的大小，因为它没有边框可拖）。
+- **拖动**：由渲染层的 CSS 拖动区域（`-webkit-app-region: drag`）交给窗口系统完成，各平台都可用。
+- **首次出现的位置**：最右侧显示器的右边缘、竖直居中。
+- **悬停展开时卷轴不动**：便签在卷轴左侧展开，窗口**向左**变宽——保持窗口的右边缘不变；如果这样会超出所在显示器的左边界，就整体右移到刚好留在屏幕内。收起时反过来。这条规则在能定位窗口的平台由主进程实现，在 KDE Wayland 由 KWin 脚本实现。
 
-### 9.4 KWinDock（KDE Plasma，Wayland）
+### 9.4 ElectronFloat（Windows、macOS、X11、兼容模式）
 
-Wayland 下应用不能自己定位窗口，交给 KWin 脚本完成。这一方案在原型中已在 KDE Plasma 6.7 上验证（`spike/collapsed-view`）。
+- `setAlwaysOnTop(true, 'floating')`；macOS 另加 `setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })`。
+- `resize`：按 §9.3 算出新位置，`setBounds`。
+- **记住位置**：窗口 `moved` 后保存 `{ x, y }`（外壳存储，防抖）；启动时恢复。若保存的位置已不在任何显示器上（显示器被拔掉），退回默认位置。
 
-- **加载**：按配置生成 KWin 脚本，写到 `<userData>/kwin/featherlog-dock.js`，通过 DBus 加载：
-  - `org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript(路径, "featherlog-dock")` 得到脚本 id；
-  - 调用 `/Scripting/Script<id>` 的 `org.kde.kwin.Script.run`；
-  - 卸载用 `unloadScript("featherlog-dock")`。
-- **DBus 调用**：用 `execFile` 调 `qdbus6`，找不到时依次尝试 `qdbus`、`gdbus`。封装成可注入的执行器，方便测试。
-- **启动时先卸载同名脚本**：上次崩溃留下的脚本无害，但要先清掉。
-- **脚本的职责**：
-  1. 按窗口标题 `featherlog-dock` 找到收起窗口（窗口出现时，以及标题变化时都要检查）；
-  2. 设置 `keepAbove`、`onAllDesktops`、`skipTaskbar`、`skipPager`、`skipSwitcher`；
-  3. 按 edge、目标显示器和 verticalPosition 锚定位置；
-  4. 监听 `frameGeometryChanged`：客户端改变尺寸后重新锚定（加守卫，避免在回调里改几何又触发自己）；
-  5. **窗口出现时把焦点还给之前的活动窗口**（原型观察到：Wayland 下即使 `showInactive`，KWin 仍会激活新窗口）。
-- **显示器匹配**：配置里传 Electron display 的逻辑坐标范围，脚本选中心点落在其中的 output；找不到就用第一个。
-- `resize`：只调整窗口尺寸，由脚本重新锚定。`place`：重新生成并重新加载脚本。`detach`：卸载脚本。
+### 9.5 KWinFloat（KDE Plasma，Wayland）
 
-### 9.5 FloatingDock（其他 Wayland）
+Wayland 下应用不能置顶、也不能定位自己，交给一个**很小的** KWin 脚本：
 
-- 不定位、不保证置顶，由合成器决定窗口位置；渲染层在卷轴上提供拖动区域，用户可以自己拖。
-- 设置页据 `capabilities` 提示："当前桌面不支持贴边，可开启兼容模式后重启"。
+- **加载**：生成脚本写到 `<userData>/kwin/featherlog-float.js`，通过 DBus 加载与运行（`org.kde.KWin /Scripting` 的 `loadScript` 与 `/Scripting/Script<id>` 的 `run`），卸载用 `unloadScript("featherlog-float")`；启动时先卸载同名残留。DBus 调用用 `execFile`，依次尝试 `qdbus6`、`qdbus`、`gdbus`，封装为可注入的执行器。
+- **脚本只做三件事**：
+  1. 按标题 `featherlog-dock` 找到收起窗口（窗口出现时、标题变化时都检查），设置 `keepAbove`、`onAllDesktops`、`skipTaskbar`、`skipPager`、`skipSwitcher`；
+  2. 第一次找到它时，放到最右侧 output 的右边缘、竖直居中；
+  3. 监听 `frameGeometryChanged`：若只是**尺寸**变了（不是用户拖动造成的位置变化），按 §9.3 保持右边缘并夹在 output 内（加守卫，避免回调里改几何又触发自己）。
+- 参考原型 `spike/collapsed-view` 的 `kwin-anchor.js`（已在 KDE Plasma 6.7 上验证过 DBus 加载与 `frameGeometryChanged` 重新定位），但**不要**做边缘锚定。
+- 已知限制：重启后回到默认位置（Wayland 下应用读不到自己的位置）；窗口首次出现时 KWin 可能会激活它一次。
+- 找不到任何 DBus 工具时退化为 `PlainFloat` 并记日志。
 
-### 9.6 兼容模式
+### 9.6 PlainFloat（其他 Wayland）
 
-设置 `compatMode = true` 时，主进程在 `app.whenReady()` 之前执行 `app.commandLine.appendSwitch('ozone-platform', 'x11')`，改走 XWayland，从而使用 `ElectronDock`。代价：XWayland 只有一个全局缩放比例，在缩放比例不同的多块屏上，其中一块可能发糊（原型在 1 倍和 1.25 倍混合的双屏上观察到这个问题）。
+- 不定位、不保证置顶；窗口向右变宽（左上角不动，卷轴会随展开移动一次）。
+- 设置页据 `capabilities` 提示："当前桌面不支持置顶，可开启兼容模式后重启"。
+
+### 9.7 兼容模式
+
+设置 `compatMode = true`（或环境变量 `FEATHERLOG_COMPAT_MODE=1`）时，在 `app.whenReady()` 之前 `app.commandLine.appendSwitch('ozone-platform', 'x11')`，改走 XWayland，从而使用 `ElectronFloat`。代价：XWayland 只有一个全局缩放比例，混合缩放的多块屏上可能发糊。
+
+> 实机注意（2026-09-28，Arch + KDE Plasma 6.7）：兼容模式下 Chromium 的 GPU 进程反复段错误（Mesa 的 `/usr/lib/gbm/dri_gbm.so` 被 GPU 沙箱拒绝），窗口画不出来；原生 Wayland 正常。这是系统更新与 Chromium 的兼容问题，不在本项目内处理。
 
 ## 10. 前端
 
 - React + TypeScript，动效用 Motion；组件样式用 CSS Modules；不使用 Tailwind 和成品组件库。
-- **视觉方向：羊皮纸任务日志**。完整面板是一本摊开的冒险者日志（左页任务列表、右页任务详情），收起视图是贴边的小卷轴。质感来自纸纤维、污渍、毛边、墨迹和火漆，但克制使用，保证每天看很多次也不累。
+- **视觉方向：羊皮纸任务日志**。完整面板是一本摊开的冒险者日志（左页任务列表、右页任务详情），收起视图是一个置顶的浮动小卷轴。质感来自纸纤维、污渍、毛边、墨迹和火漆，但克制使用，保证每天看很多次也不累。
 - 整本日志是"手写"的。字体都是 SIL OFL 开源授权，随应用打包，不依赖网络：
   - **马善政毛笔楷书**：标题、分区名、列表里的任务名，毛笔笔锋。
   - **小赖字体**：其余一切文字，像钢笔写的，松弛但好读。
