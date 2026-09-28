@@ -29,9 +29,7 @@ function useShellSetting<T extends Json>(settings: SettingsHost, key: string): T
  * app asked for, like a real Electron window would.
  */
 export function Desktop({ shell, settings, collapsed, panel, busLog, kernel, onNextDay, onReset }: Props) {
-  const { panelOpen, dock } = useSyncExternalStore(shell.subscribe, shell.getSnapshot);
-  const edge = useShellSetting<'left' | 'right'>(settings, 'edge');
-  const vertical = useShellSetting<number>(settings, 'verticalPosition');
+  const { panelOpen, dock, place } = useSyncExternalStore(shell.subscribe, shell.getSnapshot);
   const [bounds, setBounds] = useState(false);
 
   return (
@@ -56,15 +54,17 @@ export function Desktop({ shell, settings, collapsed, panel, busLog, kernel, onN
         style={{
           width: dock.width,
           height: dock.height,
-          [edge === 'left' ? 'left' : 'right']: 0,
-          top: `calc((100vh - ${dock.height}px) * ${vertical})`,
-          justifyContent: edge === 'left' ? 'flex-start' : 'flex-end',
+          [place]: 24,
+          top: `calc((100vh - ${dock.height}px) / 2)`,
+          justifyContent: place === 'left' ? 'flex-start' : 'flex-end',
         }}
       >
         <CollapsedApp runtime={collapsed} />
       </div>
 
       <DevTools
+        shell={shell}
+        place={place}
         settings={settings}
         busLog={busLog}
         kernel={kernel}
@@ -78,6 +78,8 @@ export function Desktop({ shell, settings, collapsed, panel, busLog, kernel, onN
 }
 
 type DevProps = {
+  shell: HostShell;
+  place: 'left' | 'right';
   settings: SettingsHost;
   busLog: { entries: Envelope[] };
   kernel: Kernel;
@@ -87,9 +89,8 @@ type DevProps = {
   onReset(): void;
 };
 
-function DevTools({ settings, busLog, kernel, bounds, onBounds, onNextDay, onReset }: DevProps) {
+function DevTools({ shell, place, settings, busLog, kernel, bounds, onBounds, onNextDay, onReset }: DevProps) {
   const paper = useShellSetting<Paper>(settings, 'paper');
-  const edge = useShellSetting<'left' | 'right'>(settings, 'edge');
   const [showLog, setShowLog] = useState(false);
   const [log, setLog] = useState<Envelope[]>([]);
   useEffect(() => {
@@ -106,8 +107,8 @@ function DevTools({ settings, busLog, kernel, bounds, onBounds, onNextDay, onRes
         <button onClick={() => settings.set('shell', 'paper', papers[(papers.indexOf(paper) + 1) % papers.length]!)}>
           纸张：{PAPERS[paper].label}
         </button>
-        <button onClick={() => settings.set('shell', 'edge', edge === 'right' ? 'left' : 'right')}>
-          贴边：{edge === 'right' ? '右' : '左'}
+        <button onClick={() => shell.moveDock(place === 'right' ? 'left' : 'right')} title="模拟把卷轴拖到屏幕另一侧">
+          卷轴在：{place === 'right' ? '右侧' : '左侧'}
         </button>
         <button onClick={onBounds}>{bounds ? '隐藏窗口边界' : '窗口边界'}</button>
         <button onClick={onNextDay}>翌日 →</button>

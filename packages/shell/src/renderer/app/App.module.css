@@ -1,17 +1,17 @@
 /* Sized to its content: the collapsed Electron window is resized to match. The
-   padding leaves room for drop shadows on every side except the screen edge. */
+   padding leaves room for drop shadows, more on the side the preview unfolds to. */
 .collapsed {
   display: inline-flex;
   align-items: center;
   gap: 12px;
   width: max-content;
   height: max-content;
-  padding: 22px 0 26px 26px;
+  padding: 22px 14px 26px 26px;
 }
 
-.left {
+.unfoldRight {
   flex-direction: row-reverse;
-  padding: 22px 26px 26px 0;
+  padding: 22px 26px 26px 14px;
 }
 
 .panel {
