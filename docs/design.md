@@ -535,6 +535,7 @@ Wayland 下应用不能置顶、也不能定位自己，交给一个**很小的*
 - **能自己更新的安装**：已打包，并且是 Windows NSIS（可执行文件旁有 `Uninstall Featherlog.exe`），或是 Linux 且在 AppImage 里运行（有 `APPIMAGE` 环境变量）。其他已打包的 Windows 程序按 `manual` 处理。发现新版本就在后台下载，下好后状态变为 `ready`，**下次退出时自动安装**（`autoInstallOnAppQuit`），也可以通过 `shell/apply-update` 立即重启安装。
 - **不能自己更新的安装**（macOS、Linux 上非 AppImage 的安装）：只检查不下载。发现新版本时状态为 `manual`，带上该 release 的页面地址；`shell/apply-update` 用系统浏览器打开它。
 - **开发模式**（未打包）：状态为 `unsupported`，从不联网。
+- **由系统包管理器安装**（如 AUR 的 `featherlog-bin`）：安装包的 `resources/package-type` 文件存在时（electron-updater 的约定，内容如 `pacman`），状态为 `managed`，从不联网；更新交给包管理器。优先于上面所有判断。
 - **检查时机**（设置 `autoUpdate` 为 `true` 时）：启动 30 秒后检查一次，此后每 6 小时一次；系统从睡眠中恢复时，若距上次检查已超过 6 小时，立即检查。定时一律用注入的 `Clock`。`autoUpdate` 为 `false` 时从不自行检查；设置页的"检查更新"（`shell/check-update`）任何时候都可用，手动检查发现新版本同样会下载。
 - 同一时间只进行一次检查或下载，重复的 `shell/check-update` 直接返回。
 - 更新下好时，主进程发一次 `shell/notify`（同一版本只发一次，跨启动也算，记录在 `<userData>/updates.json`）：标题"新版本已备好"，正文"v<版本> · 退出时自动安装，也可以在设置里立即重启"。后台检查失败只记日志、进入 `error` 状态，不打扰用户。
@@ -551,6 +552,14 @@ Wayland 下应用不能置顶、也不能定位自己，交给一个**很小的*
 | `shell/check-update` | 立即开始一次检查并返回 `null`，不等结果（检查和下载都可能超过总线的 5 秒超时）。结果通过事件送达。`unsupported` 时什么也不做 |
 | `shell/apply-update` | `ready`：退出并安装新版本（走正常的退出流程，先写完存储和设置）。`manual`：用系统浏览器打开 release 页面。其他状态以 `shell/no-update` 拒绝 |
 | `shell/update-changed` | 状态每次变化时发出，载荷是完整的 `UpdateState`。下载进度最多每 500 毫秒发一次 |
+
+### 12.4 AUR
+
+- 包名 `featherlog-bin`，源文件放在仓库的 `packaging/aur/featherlog-bin/`（`PKGBUILD` 与 `.SRCINFO`）。
+- 来源是同版本 GitHub Release 里的 AppImage，按 sha256 校验；`--appimage-extract` 解包后安装到 `/opt/featherlog`，不依赖 FUSE。
+- 安装内容：`/usr/bin/featherlog` 启动脚本、`/usr/share/applications/featherlog.desktop`（显示名"羽记"）、`hicolor` 各尺寸图标、`/usr/share/licenses/featherlog-bin/LICENSE`，以及写有 `pacman` 的 `/opt/featherlog/resources/package-type`（§12.2 的 `managed`）。`chrome-sandbox` 设为 `4755`，不使用 `--no-sandbox`。
+- `depends` 为 Electron 运行时需要的系统库；`optdepends` 列出 `qt6-tools`（KDE 上用 `qdbus6` 加载 KWin 脚本）。
+- 每次发版：`packaging/aur/update.sh <版本>` 更新 `pkgver`、`pkgrel=1` 和校验和并重新生成 `.SRCINFO`，再由维护者推送到 AUR（`ssh://aur@aur.archlinux.org/featherlog-bin.git`）。
 
 ## 13. 以后再说
 

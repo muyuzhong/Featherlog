@@ -41,6 +41,8 @@ export type UpdateState = { current: string } & (
   | { status: 'error'; message: string; checkedAt: IsoDateTime }
   /** A development build: never checks. */
   | { status: 'unsupported' }
+  /** Installed by a system package manager (e.g. pacman from the AUR), which updates it: never checks. */
+  | { status: 'managed' }
 );
 
 /** "shell/*" belongs to the Electron shell. */
