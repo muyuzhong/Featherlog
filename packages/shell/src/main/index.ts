@@ -1,4 +1,4 @@
-import { app, ipcMain } from 'electron';
+import { app, ipcMain, screen } from 'electron';
 import { join } from 'node:path';
 import type { BrowserWindow, IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron';
 import type { Clock, WindowKind } from '@featherlog/contracts';
@@ -8,7 +8,8 @@ import { JsonFiles, pluginStorage, readJsonSync } from './storage';
 import { Settings } from './settings';
 import { createLogs } from './log';
 import { createBusBridge } from './bridge';
-import { ElectronDock, FloatingDock, selectDock } from './dock';
+import { ElectronFloat, PlainFloat, selectDock } from './dock';
+import { createKWinFloat } from './kwin-float';
 import { registerShell } from './shell-state';
 import { Windows } from './windows';
 import { invalid, isJson } from './validation';
@@ -59,8 +60,9 @@ if (!app.requestSingleInstanceLock()) {
     const selected = selectDock(process.platform, process.env.WAYLAND_DISPLAY,
       process.env.XDG_CURRENT_DESKTOP ?? '', compatMode,
       app.commandLine.getSwitchValue('ozone-platform'));
-    if (selected === 'kwin') log.warn('KWinDock is not implemented yet; using FloatingDock');
-    const dock = selected === 'electron' ? new ElectronDock() : new FloatingDock();
+    const dock = selected === 'electron'
+      ? new ElectronFloat(screen, files, join(userData, 'float.json'), clock, log)
+      : selected === 'kwin' ? await createKWinFloat(userData, log) : new PlainFloat();
     const kernel = createKernel({
       development: !app.isPackaged, clock, log,
       createServices: id => ({ clock, log: logs.logger(id),
@@ -122,7 +124,7 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.on('panel:close', event => {
       if (trusted(event) && peers.get(event.sender) === 'panel') windows.closePanel();
     });
-    windows = new Windows(dock, settings, files, userData, clock, log, register, shell.view,
+    windows = new Windows(dock, files, userData, clock, log, register, shell.view,
       showSettings => {
         void bus.request('shell/open-panel', showSettings ? { tab: 'shell/settings' } : {})
           .catch(cause => log.error('Could not open panel', cause));

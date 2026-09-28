@@ -1,0 +1,49 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`generates the small float script with a safely encoded title 1`] = `
+"const title = "featherlog-dock";
+const managed = [];
+function copy(g) {
+  return { x: g.x, y: g.y, width: g.width, height: g.height };
+}
+function adopt(w) {
+  if (w.caption !== title || managed.indexOf(w) >= 0) return;
+  managed.push(w);
+  w.keepAbove = true;
+  w.onAllDesktops = true;
+  w.skipTaskbar = true;
+  w.skipPager = true;
+  w.skipSwitcher = true;
+  const output = workspace.screens.reduce((a, b) =>
+    a.geometry.x + a.geometry.width > b.geometry.x + b.geometry.width ? a : b);
+  const area = output.geometry;
+  const g = w.frameGeometry;
+  w.frameGeometry = { x: area.x + area.width - g.width,
+    y: Math.round(area.y + (area.height - g.height) / 2), width: g.width, height: g.height };
+  let previous = copy(w.frameGeometry);
+  let previousOutput = w.output;
+  let guard = false;
+  w.frameGeometryChanged.connect(() => {
+    if (guard) return;
+    const next = copy(w.frameGeometry);
+    if (next.width !== previous.width || next.height !== previous.height) {
+      const area = previousOutput.geometry;
+      next.x = Math.max(area.x, Math.min(previous.x + previous.width - next.width,
+        area.x + area.width - next.width));
+      next.y = Math.max(area.y, Math.min(previous.y, area.y + area.height - next.height));
+      guard = true;
+      try { w.frameGeometry = next; }
+      finally { guard = false; }
+    }
+    previous = copy(w.frameGeometry);
+    previousOutput = w.output;
+  });
+}
+function watch(w) {
+  adopt(w);
+  w.captionChanged.connect(() => adopt(w));
+}
+workspace.windowList().forEach(watch);
+workspace.windowAdded.connect(watch);
+"
+`;

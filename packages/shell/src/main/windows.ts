@@ -1,9 +1,8 @@
 import { app, BrowserWindow, Menu, screen } from 'electron';
 import { join } from 'node:path';
 import type { Clock, Logger, WindowKind } from '@featherlog/contracts';
-import type { Dock, Placement } from './dock';
-import { selectDisplay } from './dock';
-import type { Settings } from './settings';
+import type { Dock } from './dock';
+import { rightmostDisplay } from './dock';
 import type { JsonFiles } from './storage';
 import { record } from './validation';
 
@@ -14,11 +13,9 @@ export class Windows {
   private expanded = false;
   private quitting = false;
   private saveTimer = () => {};
-  private disposers: Array<() => void> = [];
 
   constructor(
     private dock: Dock,
-    private settings: Settings,
     private files: JsonFiles,
     private userData: string,
     private clock: Clock,
@@ -28,32 +25,23 @@ export class Windows {
     private openRequest: (settings: boolean) => void,
   ) {}
 
-  placement(): Placement {
-    const values = this.settings.all().shell!;
-    const edge = values.edge as 'left' | 'right';
-    return {
-      edge,
-      display: selectDisplay(screen.getAllDisplays(), edge, String(values.display)),
-      verticalPosition: Number(values.verticalPosition),
-    };
-  }
-
   private create(kind: WindowKind, bounds: Electron.Rectangle): BrowserWindow {
     const collapsed = kind === 'collapsed';
     const window = new BrowserWindow({
-      ...(collapsed && !this.dock.capabilities.anchored
+      ...(collapsed
         ? { width: bounds.width, height: bounds.height } : bounds),
       show: false, frame: false, transparent: collapsed,
       backgroundColor: collapsed ? '#00000000' : '#1f150d',
       title: collapsed ? 'featherlog-dock' : '羽记',
-      resizable: !collapsed, skipTaskbar: collapsed, hasShadow: !collapsed,
+      resizable: true, skipTaskbar: collapsed, hasShadow: !collapsed,
       ...(collapsed ? {} : { minWidth: 960, minHeight: 640 }),
       webPreferences: {
         preload: join(import.meta.dirname, '../preload/index.cjs'),
         contextIsolation: true, sandbox: true, nodeIntegration: false,
         additionalArguments: [
           `--featherlog-window=${kind}`,
-          `--featherlog-dock=${this.dock.capabilities.anchored ? 'electron' : 'floating'}`,
+          `--featherlog-dock=${this.dock.capabilities.focusSafe ? 'electron' :
+            this.dock.capabilities.keepAbove ? 'kwin' : 'plain'}`,
         ],
       },
     });
@@ -88,32 +76,16 @@ export class Windows {
   }
 
   async start(): Promise<void> {
-    const placement = this.placement();
     this.collapsed = this.create('collapsed', {
-      x: placement.display.workArea.x, y: placement.display.workArea.y, width: 80, height: 320,
+      x: 0, y: 0, width: 80, height: 320,
     });
-    await this.dock.attach(this.collapsed, placement);
+    await this.dock.attach(this.collapsed);
     await this.load(this.collapsed, 'collapsed');
     if (this.quitting) return;
     this.collapsed.showInactive();
     this.log.info('Collapsed window ready', {
-      bounds: this.collapsed.getBounds(), display: placement.display.id,
-      workArea: placement.display.workArea, capabilities: this.dock.capabilities,
+      bounds: this.collapsed.getBounds(), capabilities: this.dock.capabilities,
     });
-    const place = () => {
-      void this.dock.place(this.placement()).catch(cause => this.log.error('Dock placement failed', cause));
-    };
-    screen.on('display-added', place);
-    screen.on('display-removed', place);
-    screen.on('display-metrics-changed', place);
-    this.disposers.push(() => {
-      screen.removeListener('display-added', place);
-      screen.removeListener('display-removed', place);
-      screen.removeListener('display-metrics-changed', place);
-    });
-    this.disposers.push(this.settings.onChange((scope, key) => {
-      if (scope === 'shell' && ['edge', 'display', 'verticalPosition'].includes(key)) place();
-    }));
   }
 
   async openPanel(): Promise<void> {
@@ -121,7 +93,10 @@ export class Windows {
     if (!this.panelLoading) {
       this.panelLoading = (async () => {
         const saved = await this.files.read(join(this.userData, 'panel.json'));
-        const area = this.placement().display.workArea;
+        // Wayland cannot report a freely moved window's compositor position.
+        const area = (this.collapsed && this.dock.capabilities.focusSafe
+          ? screen.getDisplayMatching(this.collapsed.getBounds())
+          : rightmostDisplay(screen.getAllDisplays())).workArea;
         let bounds = {
           x: Math.round(area.x + (area.width - 1240) / 2),
           y: Math.round(area.y + (area.height - 800) / 2), width: 1240, height: 800,
@@ -207,7 +182,6 @@ export class Windows {
   async stop(): Promise<void> {
     this.quitting = true;
     this.saveTimer();
-    for (const dispose of this.disposers) dispose();
     try { await this.savePanel(); }
     finally { await this.dock.detach(); }
   }
