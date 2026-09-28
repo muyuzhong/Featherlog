@@ -17,6 +17,12 @@ importers:
 
   packages/contracts: {}
 
+  packages/kernel:
+    devDependencies:
+      '@featherlog/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+
 packages:
 
   '@jridgewell/resolve-uri@3.1.2':
