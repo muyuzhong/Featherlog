@@ -274,6 +274,7 @@ featherlog/
 |---|---|---|---|
 | `paper` | `"vellum"` / `"golden"` / `"aged"` | `"vellum"` | 纸张（渲染层读取） |
 | `compatMode` | 布尔 | `false` | Linux 兼容模式：强制 XWayland（§9），重启后生效 |
+| `autoUpdate` | 布尔 | `true` | 自动检查并下载更新（§12.2）。关闭后只在设置页手动检查 |
 
 **日志**：主进程与插件日志写到控制台和 `<userData>/logs/main.log`，单个文件超过 1 MB 轮转，保留 3 个。插件日志带 `[插件 id]` 前缀。
 
@@ -322,7 +323,7 @@ featherlog/
 
 ### 7.3 外壳的消息
 
-见 `contracts/src/shell.ts` 与 §6.5：请求 `shell/state`、`shell/open-panel`、`shell/set-badge`、`shell/notify`；事件 `shell/view-changed`、`shell/badge-changed`、`shell/notified`。弹窗相关的 `shell/show-popup`、`shell/dismiss-popup`、`shell/popup-closed` 已在契约中，但 v1 不实现：`shell/show-popup` 立即返回 `popupId`，关闭时通过 `shell/popup-closed` 带回结果。
+见 `contracts/src/shell.ts` 与 §6.5：请求 `shell/state`、`shell/open-panel`、`shell/set-badge`、`shell/notify`；事件 `shell/view-changed`、`shell/badge-changed`、`shell/notified`。更新相关的 `shell/update-state`、`shell/check-update`、`shell/apply-update` 与事件 `shell/update-changed` 见 §12.3。弹窗相关的 `shell/show-popup`、`shell/dismiss-popup`、`shell/popup-closed` 已在契约中，但 v1 不实现：`shell/show-popup` 立即返回 `popupId`，关闭时通过 `shell/popup-closed` 带回结果。
 
 ## 8. 任务面板插件（quest）
 
@@ -501,7 +502,50 @@ Wayland 下应用不能置顶、也不能定位自己，交给一个**很小的*
 - `packages/contracts` 和 `manifest.json` 是双方的接口。需要修改时，在 PR 描述里单独列出"契约变更"一节，说明原因，经审查后合并。
 - 每个 PR 必须通过 `pnpm typecheck` 和 `pnpm test`。
 
-## 12. 以后再说
+## 12. 发布与更新
+
+### 12.1 打包与发布
+
+- 用 **electron-builder** 打包，配置放在 `packages/shell`。版本号只有一个来源：`packages/shell/package.json` 的 `version`。
+- 应用标识：`appId` 为 `io.github.muyuzhong.featherlog`，`productName` 为 `Featherlog`，可执行文件名为 `featherlog`。Linux 桌面项的显示名为"羽记"。
+- 图标：`packages/shell/resources/icon.png`（1024×1024，Claude 提供），Windows 和 macOS 的图标格式由 electron-builder 从它生成。
+- 目标格式：
+
+  | 平台 | 格式 | 能否自己更新 |
+  |---|---|---|
+  | Linux x64 | AppImage | 能 |
+  | Windows x64 | NSIS（按用户安装，不需要管理员权限） | 能 |
+  | macOS arm64 / x64 | dmg 与 zip | 不能：v1 没有签名，Squirrel.Mac 拒绝未签名的更新，只提示去下载 |
+
+- v1 不做代码签名。Windows 首次运行会有 SmartScreen 提示，macOS 需要右键打开；README 里说明。
+- 运行时依赖（目前只有 `dbus-next`）必须进安装包；其余代码都打进 bundle。pnpm 工作区的依赖布局由实现方处理，要求用打出的包实际启动验证。
+- **发布流程**：推送 `v<版本号>` 标签触发 GitHub Actions（`.github/workflows/release.yml`）。三个平台并行：`pnpm install --frozen-lockfile` → `pnpm typecheck` → `pnpm test` → 构建 → electron-builder 上传到同名 GitHub Release。标签与 `version` 不一致时失败。
+- Release 先以**草稿**创建，维护者检查后手动发布。自动更新只看已发布的正式版，不看草稿和预发布版。
+
+### 12.2 自动更新
+
+- 主进程用 **electron-updater**，更新源是 GitHub Releases（`muyuzhong/Featherlog`）。下载的文件按 release 里 `latest*.yml` 的 sha512 校验。
+- **能自己更新的安装**：已打包，并且是 Windows NSIS，或是 Linux 且在 AppImage 里运行（有 `APPIMAGE` 环境变量）。发现新版本就在后台下载，下好后状态变为 `ready`，**下次退出时自动安装**（`autoInstallOnAppQuit`），也可以通过 `shell/apply-update` 立即重启安装。
+- **不能自己更新的安装**（macOS、Linux 上非 AppImage 的安装）：只检查不下载。发现新版本时状态为 `manual`，带上该 release 的页面地址；`shell/apply-update` 用系统浏览器打开它。
+- **开发模式**（未打包）：状态为 `unsupported`，从不联网。
+- **检查时机**（设置 `autoUpdate` 为 `true` 时）：启动 30 秒后检查一次，此后每 6 小时一次；系统从睡眠中恢复时，若距上次检查已超过 6 小时，立即检查。定时一律用注入的 `Clock`。`autoUpdate` 为 `false` 时从不自行检查；设置页的"检查更新"（`shell/check-update`）任何时候都可用，手动检查发现新版本同样会下载。
+- 同一时间只进行一次检查或下载，重复的 `shell/check-update` 直接返回。
+- 更新下好时，主进程发一次 `shell/notify`（同一版本只发一次）：标题"新版本已备好"，正文"v<版本> · 退出时自动安装，也可以在设置里立即重启"。后台检查失败只记日志、进入 `error` 状态，不打扰用户。
+- **隐私**：只访问 GitHub（API 与 release 下载地址），不带任何标识，不做统计。
+- 更新说明（release notes）转成纯文本（去掉 HTML 标签），最多 2000 字；渲染层只按纯文本显示。
+
+### 12.3 消息
+
+类型见 `contracts/src/shell.ts` 的 `UpdateState`。
+
+| 请求 / 事件 | 行为 |
+|---|---|
+| `shell/update-state` | 返回当前的 `UpdateState` |
+| `shell/check-update` | 立即开始一次检查并返回 `null`，不等结果（检查和下载都可能超过总线的 5 秒超时）。结果通过事件送达。`unsupported` 时什么也不做 |
+| `shell/apply-update` | `ready`：退出并安装新版本（走正常的退出流程，先写完存储和设置）。`manual`：用系统浏览器打开 release 页面。其他状态以 `shell/no-update` 拒绝 |
+| `shell/update-changed` | 状态每次变化时发出，载荷是完整的 `UpdateState`。下载进度最多每 500 毫秒发一次 |
+
+## 13. 以后再说
 
 - AI：拆解目标、排今日计划、估算耗时、自然语言录入。AI 将作为普通插件，通过 `quest/*` 请求操作任务，`source` 与 `causedBy` 用于展示和撤销。
 - 奖励、钱包、游戏接入。
@@ -509,3 +553,4 @@ Wayland 下应用不能置顶、也不能定位自己，交给一个**很小的*
 - 本地 WebSocket 桥（需要校验 Origin 或 token）。
 - 第三方插件的运行时动态加载（v1 只支持仓库内置插件）。
 - 界面国际化（v1 界面文案为中文）。
+- 开机自启；代码签名与 macOS 自动更新；AUR 包。
