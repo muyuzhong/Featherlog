@@ -1,13 +1,36 @@
 import type { BrowserWindow, Display, Rectangle } from 'electron';
-import type { Clock, DockCapabilities, Logger } from '@featherlog/contracts';
+import type { Clock, DockCapabilities, Logger, UnfoldSide } from '@featherlog/contracts';
 import type { JsonFiles } from './storage';
 import { record } from './validation';
 
 export interface Dock {
   readonly capabilities: DockCapabilities;
+  readonly side: UnfoldSide;
+  onSide(listener: (side: UnfoldSide) => void): () => void;
   attach(window: BrowserWindow): Promise<void>;
-  resize(size: { width: number; height: number }): void;
+  resize(size: { width: number; height: number; expanded?: boolean }): void;
   detach(): Promise<void>;
+}
+
+export function unfoldSide(bounds: Rectangle, area: Rectangle): UnfoldSide {
+  return bounds.x + bounds.width / 2 >= area.x + area.width / 2 ? 'left' : 'right';
+}
+
+export function sideState(initial: UnfoldSide) {
+  let value = initial;
+  const listeners = new Set<(side: UnfoldSide) => void>();
+  return {
+    get: () => value,
+    set(side: UnfoldSide) {
+      if (side === value) return;
+      value = side;
+      for (const listener of listeners) listener(side);
+    },
+    onChange(listener: (side: UnfoldSide) => void) {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+  };
 }
 
 export function selectDock(platform: string, waylandDisplay: string | undefined,
@@ -29,12 +52,13 @@ export function defaultBounds(area: Rectangle, size: { width: number; height: nu
 }
 
 export function resizedBounds(previous: Rectangle, size: { width: number; height: number },
-  area: Rectangle): Rectangle {
+  area: Rectangle, side: UnfoldSide = 'left'): Rectangle {
+  const x = side === 'left' ? previous.x + previous.width - size.width : previous.x;
   return {
-    x: Math.round(Math.max(area.x, Math.min(previous.x + previous.width - size.width,
+    x: Math.round(Math.max(area.x, Math.min(x,
       area.x + area.width - size.width))),
     y: Math.round(Math.max(area.y, Math.min(previous.y, area.y + area.height - size.height))),
-    ...size,
+    width: size.width, height: size.height,
   };
 }
 
@@ -43,6 +67,16 @@ export class ElectronFloat implements Dock {
   private window?: BrowserWindow;
   private cancelSave = () => {};
   private dirty = false;
+  private expanded = false;
+  private resizePosition?: Rectangle;
+  private readonly direction = sideState('left');
+  get side(): UnfoldSide { return this.direction.get(); }
+  onSide = (listener: (side: UnfoldSide) => void) => this.direction.onChange(listener);
+  private updateSide() {
+    if (this.expanded || !this.window) return;
+    const bounds = this.window.getBounds();
+    this.direction.set(unfoldSide(bounds, this.screen.getDisplayMatching(bounds).bounds));
+  }
   constructor(
     private screen: Pick<Electron.Screen, 'getAllDisplays' | 'getDisplayMatching'>,
     private files: JsonFiles,
@@ -58,6 +92,11 @@ export class ElectronFloat implements Dock {
     await this.files.write(this.file, { x, y });
   };
   private moved = () => {
+    const bounds = this.window?.getBounds();
+    if (bounds && (bounds.x !== this.resizePosition?.x || bounds.y !== this.resizePosition?.y)) {
+      this.resizePosition = undefined;
+      this.updateSide();
+    }
     this.dirty = true;
     this.cancelSave();
     this.cancelSave = this.clock.setTimeout(() => {
@@ -79,13 +118,18 @@ export class ElectronFloat implements Dock {
     }
     window.setAlwaysOnTop(true, 'floating');
     window.setBounds(bounds);
+    this.updateSide();
     window.on('moved', this.moved);
   }
-  resize(size: { width: number; height: number }): void {
+  resize(size: { width: number; height: number; expanded?: boolean }): void {
     if (!this.window || this.window.isDestroyed()) return;
     const previous = this.window.getBounds();
-    this.window.setBounds(resizedBounds(previous, size,
-      this.screen.getDisplayMatching(previous).bounds));
+    // Keep the direction locked through resize-generated moved events, including collapse.
+    this.expanded = true;
+    this.resizePosition = resizedBounds(previous, size,
+      this.screen.getDisplayMatching(previous).bounds, this.side);
+    this.window.setBounds(this.resizePosition);
+    this.expanded = size.expanded ?? false;
   }
   async detach(): Promise<void> {
     this.cancelSave();
@@ -96,10 +140,12 @@ export class ElectronFloat implements Dock {
 }
 
 export class PlainFloat implements Dock {
+  get side(): UnfoldSide { return 'right'; }
+  onSide(_listener: (side: UnfoldSide) => void): () => void { return () => {}; }
   readonly capabilities: DockCapabilities = { anchored: false, keepAbove: false, focusSafe: false };
   private window?: BrowserWindow;
   async attach(window: BrowserWindow): Promise<void> { this.window = window; }
-  resize(size: { width: number; height: number }): void {
+  resize(size: { width: number; height: number; expanded?: boolean }): void {
     if (this.window && !this.window.isDestroyed()) this.window.setSize(size.width, size.height);
   }
   async detach(): Promise<void> { this.window = undefined; }

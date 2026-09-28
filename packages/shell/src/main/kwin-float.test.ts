@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { afterEach, expect, it, vi } from 'vitest';
-import { createKWinFloat, floatScript } from './kwin-float';
+import { createKWinFloat, floatScript, KWinFloat } from './kwin-float';
 import { PlainFloat } from './dock';
 
 const directories: string[] = [];
@@ -25,7 +25,7 @@ it.each(['qdbus6', 'qdbus', 'gdbus'])('loads and unloads with %s in fallback ord
     if (args.includes('org.kde.kwin.Scripting.loadScript')) return tool === 'gdbus' ? '(7,)' : '7';
     return '';
   });
-  const dock = await createKWinFloat(root, log(), run);
+  const dock = await createKWinFloat(root, log(), run, async () => () => {});
   expect(dock.capabilities).toEqual({ anchored: false, keepAbove: true, focusSafe: false });
   expect(await readFile(join(root, 'kwin/featherlog-float.js'), 'utf8')).toBe(floatScript());
   await dock.detach();
@@ -63,7 +63,7 @@ it('cleans up a loaded script if run fails instead of promising keepAbove', asyn
     if (args.includes('org.kde.kwin.Script.run')) throw new Error('DBus failed');
     return args.includes('org.kde.kwin.Scripting.loadScript') ? '2' : '';
   });
-  const dock = await createKWinFloat(root, log(), run);
+  const dock = await createKWinFloat(root, log(), run, async () => () => {});
   expect(dock.capabilities.keepAbove).toBe(false);
   expect(run.mock.calls.at(-1)![1]).toContain('org.kde.kwin.Scripting.unloadScript');
 });
@@ -88,7 +88,17 @@ it('adopts late titles, preserves user movement, compensates only resize and gua
       changed();
     },
   };
-  runInNewContext(floatScript(), { workspace: {
+  let expanded = false;
+  let defer = false;
+  let pending: ((expanded: boolean) => void) | undefined;
+  const callDBus = vi.fn((...args: unknown[]) => {
+    const callback = args.at(-1);
+    if (typeof callback !== 'function') return;
+    if (args[3] === 'GetExpanded' && defer) {
+      pending = callback as (expanded: boolean) => void;
+    } else callback(args[3] === 'GetExpanded' ? expanded : args[4]);
+  });
+  runInNewContext(floatScript(), { callDBus, workspace: {
     screens: [{ geometry: area }, { geometry: { x: 0, y: 0, width: 1920, height: 1080 } }],
     windowList: () => [window], windowAdded: { connect: (callback: typeof added) => { added = callback; } },
   } });
@@ -96,12 +106,16 @@ it('adopts late titles, preserves user movement, compensates only resize and gua
   window.caption = 'featherlog-dock';
   captionChanged();
   expect(geometry).toEqual({ x: 3760, y: 480, width: 80, height: 320 });
+  expect(callDBus).toHaveBeenCalledWith('org.featherlog.Shell', '/Dock',
+    'org.featherlog.Dock', 'SetSide', 'left');
   expect(window).toMatchObject({ keepAbove: true, onAllDesktops: true,
     skipTaskbar: true, skipPager: true, skipSwitcher: true });
   window.frameGeometry = { ...geometry, x: 2500, y: 300 };
   expect(geometry.x).toBe(2500);
+  expect(callDBus).toHaveBeenCalledWith('org.featherlog.Shell', '/Dock',
+    'org.featherlog.Dock', 'SetSide', 'right', expect.any(Function));
   window.frameGeometry = { ...geometry, width: 400, height: 500 };
-  expect(geometry).toEqual({ x: 2180, y: 300, width: 400, height: 500 });
+  expect(geometry).toEqual({ x: 2500, y: 300, width: 400, height: 500 });
   window.frameGeometry = { ...geometry, width: 80, height: 320 };
   expect(geometry.x).toBe(2500);
   window.frameGeometry = { ...geometry, x: 3700 };
@@ -111,8 +125,48 @@ it('adopts late titles, preserves user movement, compensates only resize and gua
   window.frameGeometry = { ...geometry, x: 1920 };
   window.frameGeometry = { ...geometry, width: 400 };
   expect(geometry.x).toBe(1920);
+  expanded = true;
+  const reports = callDBus.mock.calls.filter(args => args[3] === 'SetSide').length;
+  window.frameGeometry = { ...geometry, x: 3000 };
+  expect(callDBus.mock.calls.filter(args => args[3] === 'SetSide')).toHaveLength(reports);
+  window.frameGeometry = { ...geometry, width: 80 };
+  expect(geometry.x).toBe(3000);
+  expanded = false;
+  defer = true;
+  window.frameGeometry = { ...geometry, x: 3100 };
+  window.frameGeometry = { ...geometry, width: 81 };
+  pending!(false);
+  expect(callDBus.mock.calls.filter(args => args[3] === 'SetSide')).toHaveLength(reports);
   const before = assignments;
   added(window);
   captionChanged();
   expect(assignments).toBe(before);
+});
+
+it('keeps KWin positioning but fixes its side left if the DBus service cannot register', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'featherlog-kwin-'));
+  directories.push(root);
+  const run = vi.fn(async (_file: string, args: string[]) =>
+    args.includes('org.kde.kwin.Scripting.loadScript') ? '3' : '');
+  const dock = await createKWinFloat(root, log(), run, async () => undefined);
+  expect(dock).toBeInstanceOf(KWinFloat);
+  expect(dock.side).toBe('left');
+  expect(await readFile(join(root, 'kwin/featherlog-float.js'), 'utf8'))
+    .toBe(floatScript('featherlog-dock', false));
+  await dock.detach();
+});
+
+it('rejects a late direction report while expanded and cleans up the service', async () => {
+  const stop = vi.fn();
+  const dock = new KWinFloat(async () => '', stop);
+  const listener = vi.fn();
+  dock.onSide(listener);
+  dock.resize({ width: 434, height: 248, expanded: true });
+  expect(dock.acceptSide('right')).toBe('left');
+  expect(listener).not.toHaveBeenCalled();
+  dock.resize({ width: 84, height: 248, expanded: false });
+  expect(dock.acceptSide('right')).toBe('right');
+  expect(listener).toHaveBeenCalledWith('right');
+  await dock.detach();
+  expect(stop).toHaveBeenCalledOnce();
 });

@@ -13,6 +13,7 @@ export class Windows {
   private expanded = false;
   private quitting = false;
   private saveTimer = () => {};
+  private offSide = () => {};
 
   constructor(
     private dock: Dock,
@@ -78,6 +79,11 @@ export class Windows {
   async start(): Promise<void> {
     this.collapsed = this.create('collapsed', {
       x: 0, y: 0, width: 80, height: 320,
+    });
+    this.offSide = this.dock.onSide(side => {
+      if (this.collapsed && !this.collapsed.isDestroyed()) {
+        this.collapsed.webContents.send('dock:side-changed', side);
+      }
     });
     await this.dock.attach(this.collapsed);
     await this.load(this.collapsed, 'collapsed');
@@ -163,7 +169,7 @@ export class Windows {
       return;
     }
     this.dock.resize({ width: Math.round(Math.max(40, Math.min(720, payload.width))),
-      height: Math.round(Math.max(80, Math.min(900, payload.height))) });
+      height: Math.round(Math.max(80, Math.min(900, payload.height))), expanded: payload.expanded });
     if (this.expanded !== payload.expanded) {
       this.expanded = payload.expanded;
       this.view(this.expanded ? 'preview' : 'collapsed');
@@ -182,6 +188,7 @@ export class Windows {
   async stop(): Promise<void> {
     this.quitting = true;
     this.saveTimer();
+    this.offSide();
     try { await this.savePanel(); }
     finally { await this.dock.detach(); }
   }

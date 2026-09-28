@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { BrowserWindow, Display, Rectangle } from 'electron';
 import { defaultBounds, resizedBounds, ElectronFloat, PlainFloat, rightmostDisplay,
-  selectDock } from './dock';
+  selectDock, unfoldSide } from './dock';
 import { JsonFiles } from './storage';
 
 const display = (x: number, y = 0, width = 1920, height = 1080): Display => ({
@@ -56,8 +56,8 @@ it('clamps expanded content within both horizontal and vertical display boundari
 class Window extends EventEmitter {
   bounds = { x: 0, y: 0, width: 80, height: 320 };
   isDestroyed = () => false;
-  getBounds = () => this.bounds;
-  setBounds = vi.fn((bounds: Rectangle) => { this.bounds = bounds; });
+  getBounds = () => ({ ...this.bounds });
+  setBounds = vi.fn((bounds: Rectangle) => { this.bounds = { ...bounds }; });
   setAlwaysOnTop = vi.fn();
   setSize = vi.fn();
 }
@@ -101,7 +101,7 @@ it('debounces moved positions, persists on detach and restores on attach', async
   await dock.attach(window as unknown as BrowserWindow);
   expect(window.bounds).toEqual({ x: 2200, y: 400, width: 80, height: 320 });
   dock.resize({ width: 240, height: 500 });
-  expect(window.bounds).toEqual({ x: 2040, y: 400, width: 240, height: 500 });
+  expect(window.bounds).toEqual({ x: 2200, y: 400, width: 240, height: 500 });
   await dock.detach();
 });
 
@@ -118,6 +118,7 @@ it.each([{ x: 5000, y: 10 }, { x: 3840, y: 0 }, { x: 20, y: -1 }, { x: 'bad', y:
 it('plain float resizes without positioning or unsupported capability promises', async () => {
   const window = new Window();
   const dock = new PlainFloat();
+  expect(dock.side).toBe('right');
   await dock.attach(window as unknown as BrowserWindow);
   dock.resize({ width: 80, height: 320 });
   expect(window.setSize).toHaveBeenCalledWith(80, 320);
@@ -126,4 +127,51 @@ it('plain float resizes without positioning or unsupported capability promises',
   await dock.detach();
   dock.resize({ width: 400, height: 500 });
   expect(window.setSize).toHaveBeenCalledOnce();
+});
+
+it.each([
+  [-1920, -1800, 'right'], [-1920, -1000, 'left'],
+  [0, 100, 'right'], [0, 920, 'left'], [2560, 2700, 'right'], [2560, 4200, 'left'],
+] as const)('chooses a side on display x=%s for scroll x=%s', (x, scroll, side) => {
+  expect(unfoldSide({ x: scroll, y: 0, width: 80, height: 248 }, display(x).bounds)).toBe(side);
+});
+
+it.each(['left', 'right'] as const)('keeps the %s unfold anchor and clamps both edges', side => {
+  const previous = { x: -1000, y: 100, width: 80, height: 248 };
+  const area = display(-1920).bounds;
+  const expanded = resizedBounds(previous, { width: 434, height: 248 }, area, side);
+  expect(expanded.x).toBe(side === 'left' ? -1354 : -1000);
+  expect(resizedBounds(expanded, { width: 80, height: 248 }, area, side)).toEqual(previous);
+  expect(resizedBounds({ ...previous, x: -1920 }, { width: 434, height: 248 }, area, side).x)
+    .toBe(-1920);
+  expect(resizedBounds({ ...previous, x: -80 }, { width: 434, height: 248 }, area, side).x)
+    .toBe(-434);
+});
+
+it('notifies only collapsed user moves and freezes direction through expansion and collapse', async () => {
+  const { dock, window } = await fixture();
+  await dock.attach(window as unknown as BrowserWindow);
+  expect(dock.side).toBe('left');
+  const listener = vi.fn();
+  const stop = dock.onSide(listener);
+  window.bounds.x = 2200;
+  window.emit('moved');
+  expect(dock.side).toBe('right');
+  dock.resize({ width: 720, height: 248, expanded: true });
+  window.emit('moved');
+  window.bounds.x = 3000;
+  window.emit('moved');
+  expect(dock.side).toBe('right');
+  dock.resize({ width: 80, height: 248, expanded: false });
+  window.emit('moved');
+  expect(dock.side).toBe('right');
+  window.bounds.x = 3001;
+  window.emit('moved');
+  expect(dock.side).toBe('left');
+  expect(listener.mock.calls).toEqual([['right'], ['left']]);
+  stop();
+  window.bounds.x = 2200;
+  window.emit('moved');
+  expect(listener).toHaveBeenCalledTimes(2);
+  await dock.detach();
 });

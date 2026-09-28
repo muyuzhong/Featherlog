@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { DockCapabilities, FeatherlogPreload, Json } from '@featherlog/contracts';
+import type { DockCapabilities, FeatherlogPreload, Json, UnfoldSide } from '@featherlog/contracts';
 
 const kind = process.argv.includes('--featherlog-window=panel') ? 'panel' : 'collapsed';
 const electron = process.argv.includes('--featherlog-dock=electron');
@@ -32,6 +32,11 @@ const api: FeatherlogPreload = {
     onChange: listener => subscribe<[string, string, Json]>('settings:changed', listener),
   },
   dock: {
+    ...(kind === 'collapsed' ? {
+      side: () => ipcRenderer.invoke('dock:side'),
+      onSide: (listener: (side: UnfoldSide) => void) =>
+        subscribe('dock:side-changed', listener),
+    } : {}),
     resize: size => { if (kind === 'collapsed') ipcRenderer.send('dock:resize', size); },
     menu: () => { if (kind === 'collapsed') ipcRenderer.send('dock:menu'); },
   },
