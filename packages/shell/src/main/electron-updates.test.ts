@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -23,6 +23,7 @@ vi.mock('electron-updater', () => ({ default: {
 const directories: string[] = [];
 afterEach(async () => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
   await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true })));
 });
@@ -30,6 +31,7 @@ afterEach(async () => {
 async function fixture(packaged = true) {
   const directory = await mkdtemp(join(tmpdir(), 'featherlog-updates-'));
   directories.push(directory);
+  vi.stubGlobal('process', { ...process, resourcesPath: directory });
   electron.app.isPackaged = packaged;
   electron.app.getPath.mockReturnValue(directory);
   const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -139,4 +141,24 @@ it.skipIf(process.platform !== 'linux')(
   install();
   expect(f.updater.quitAndInstall).toHaveBeenCalledExactlyOnceWith(false, true);
   restarted();
+});
+
+it.each([true, false])('a package-type file disables updater creation, packaged=%s', async packaged => {
+  vi.stubEnv('APPIMAGE', '/test/Featherlog.AppImage');
+  const f = await fixture(packaged);
+  await writeFile(join(f.directory, 'package-type'), 'pacman\n');
+  const stop = f.start();
+  expect(electron.constructor).not.toHaveBeenCalled();
+  expect(await f.bus.request('shell/update-state', {})).toEqual({
+    current: '0.1.0', status: 'managed',
+  });
+  expect(await f.bus.request('shell/check-update', {})).toBeNull();
+  f.resume();
+  await f.settings.set('shell', 'autoUpdate', false);
+  await f.settings.set('shell', 'autoUpdate', true);
+  expect(f.timers.size).toBe(0);
+  expect(f.updater.checkForUpdates).not.toHaveBeenCalled();
+  await expect(f.bus.request('shell/apply-update', {}))
+    .rejects.toMatchObject({ code: 'shell/no-update' });
+  stop();
 });
