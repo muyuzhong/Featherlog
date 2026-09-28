@@ -1,103 +1,118 @@
-import type { Badge, Envelope, PluginManifest } from '@featherlog/contracts';
-import { CollapsedView, PAPERS, PanelView, setPaper, type Paper, type SlotRegistry } from '@featherlog/shell/renderer';
-import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useState } from 'react';
-import type { MockKernel } from './mock/kernel';
-import { loadPreference, savePreference } from './preferences';
-import { useValue, type Value } from './value';
+import type { Envelope, Json } from '@featherlog/contracts';
+import type { Kernel } from '@featherlog/kernel';
+import { PAPERS, type Paper } from '@featherlog/shell/renderer';
+import { CollapsedApp, PanelApp, type WindowRuntime } from '@featherlog/shell/renderer/app';
+import { motion } from 'motion/react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import type { SettingsHost } from './host/settings';
+import type { HostShell } from './host/shell';
 
 type Props = {
-  registry: SlotRegistry;
-  manifests: PluginManifest[];
-  badges: Value<Record<string, Badge | null>>;
-  panel: Value<{ open: boolean; tab: string }>;
-  kernel: MockKernel;
+  shell: HostShell;
+  settings: SettingsHost;
+  collapsed: WindowRuntime;
+  panel: WindowRuntime;
+  busLog: { entries: Envelope[] };
+  kernel: Kernel;
   onNextDay(): void;
+  onReset(): void;
 };
 
-/** A pretend desktop: the collapsed scroll on the right edge, the panel as a floating window. */
-export function Desktop({ registry, manifests, badges, panel, kernel, onNextDay }: Props) {
-  const badgeValues = useValue(badges);
-  const { open, tab } = useValue(panel);
-  const icons = manifests.flatMap((m) => m.contributes?.collapsedIcons ?? []);
-  const tabs = manifests.flatMap((m) => m.contributes?.panelTabs ?? []);
+function useShellSetting<T extends Json>(settings: SettingsHost, key: string): T {
+  const [value, setValue] = useState(() => settings.all().shell?.[key] as T);
+  useEffect(() => settings.onChange((scope, k, v) => scope === 'shell' && k === key && setValue(v as T)), [settings, key]);
+  return value;
+}
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') panel.set({ ...panel.get(), open: false });
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [panel]);
+/**
+ * A pretend desktop. Each simulated window clips its content to the size the
+ * app asked for, like a real Electron window would.
+ */
+export function Desktop({ shell, settings, collapsed, panel, busLog, kernel, onNextDay, onReset }: Props) {
+  const { panelOpen, dock } = useSyncExternalStore(shell.subscribe, shell.getSnapshot);
+  const edge = useShellSetting<'left' | 'right'>(settings, 'edge');
+  const vertical = useShellSetting<number>(settings, 'verticalPosition');
+  const [bounds, setBounds] = useState(false);
 
   return (
     <div className="desktop">
-      <div className="hint" style={{ opacity: open ? 0 : 1 }}>
+      <div className="hint" style={{ opacity: panelOpen ? 0 : 1 }}>
         <b>羽记</b>
-        <span>把鼠标移到屏幕右缘的卷轴上 · 点击卷轴翻开任务日志</span>
+        <span>把鼠标移到屏幕边缘的卷轴上 · 点击卷轴翻开任务日志</span>
       </div>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            className="window"
-            initial={{ opacity: 0, scale: 0.97, y: 12 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.98, y: 8 }}
-            transition={{ duration: 0.32, ease: [0.22, 0.8, 0.32, 1] }}
-          >
-            <PanelView
-              registry={registry}
-              tabs={tabs}
-              activeTab={tab}
-              visible={open}
-              onSelectTab={(id) => panel.set({ open, tab: id })}
-              onClose={() => panel.set({ open: false, tab })}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <motion.div
+        className="window"
+        initial={false}
+        animate={panelOpen ? { opacity: 1, scale: 1, y: 0 } : { opacity: 0, scale: 0.97, y: 12 }}
+        transition={{ duration: 0.32, ease: [0.22, 0.8, 0.32, 1] }}
+        style={{ pointerEvents: panelOpen ? 'auto' : 'none', visibility: panelOpen ? 'visible' : 'hidden' }}
+      >
+        <PanelApp runtime={panel} />
+      </motion.div>
 
-      <div className="edge">
-        <CollapsedView
-          registry={registry}
-          icons={icons}
-          badges={badgeValues}
-          onOpen={(icon) => panel.set({ open: true, tab: icon.opens ?? tab })}
-        />
+      <div
+        className={`dock ${bounds ? 'bounds' : ''}`}
+        style={{
+          width: dock.width,
+          height: dock.height,
+          [edge === 'left' ? 'left' : 'right']: 0,
+          top: `calc((100vh - ${dock.height}px) * ${vertical})`,
+          justifyContent: edge === 'left' ? 'flex-start' : 'flex-end',
+        }}
+      >
+        <CollapsedApp runtime={collapsed} />
       </div>
 
-      <DevTools kernel={kernel} onNextDay={onNextDay} />
+      <DevTools
+        settings={settings}
+        busLog={busLog}
+        kernel={kernel}
+        bounds={bounds}
+        onBounds={() => setBounds(!bounds)}
+        onNextDay={onNextDay}
+        onReset={onReset}
+      />
     </div>
   );
 }
 
-function DevTools({ kernel, onNextDay }: { kernel: MockKernel; onNextDay(): void }) {
-  const [showLog, setShowLog] = useState(false);
-  const [paper, setPaperState] = useState<Paper>(() => loadPreference('paper', 'vellum'));
-  const cyclePaper = () => {
-    const names = Object.keys(PAPERS) as Paper[];
-    const next = names[(names.indexOf(paper) + 1) % names.length]!;
-    setPaper(next);
-    setPaperState(next);
-    savePreference('paper', next);
-  };
+type DevProps = {
+  settings: SettingsHost;
+  busLog: { entries: Envelope[] };
+  kernel: Kernel;
+  bounds: boolean;
+  onBounds(): void;
+  onNextDay(): void;
+  onReset(): void;
+};
 
+function DevTools({ settings, busLog, kernel, bounds, onBounds, onNextDay, onReset }: DevProps) {
+  const paper = useShellSetting<Paper>(settings, 'paper');
+  const edge = useShellSetting<'left' | 'right'>(settings, 'edge');
+  const [showLog, setShowLog] = useState(false);
   const [log, setLog] = useState<Envelope[]>([]);
   useEffect(() => {
     if (!showLog) return;
-    setLog([...kernel.log]);
-    return kernel.observe(() => setLog([...kernel.log]));
-  }, [kernel, showLog]);
+    setLog([...busLog.entries]);
+    return kernel.observe(() => queueMicrotask(() => setLog([...busLog.entries])));
+  }, [kernel, busLog, showLog]);
 
+  const papers = Object.keys(PAPERS) as Paper[];
   return (
     <div className="devtools">
       <div className="devbar">
         <span>dev</span>
-        <button onClick={cyclePaper}>纸张：{PAPERS[paper].label}</button>
+        <button onClick={() => settings.set('shell', 'paper', papers[(papers.indexOf(paper) + 1) % papers.length]!)}>
+          纸张：{PAPERS[paper].label}
+        </button>
+        <button onClick={() => settings.set('shell', 'edge', edge === 'right' ? 'left' : 'right')}>
+          贴边：{edge === 'right' ? '右' : '左'}
+        </button>
+        <button onClick={onBounds}>{bounds ? '隐藏窗口边界' : '窗口边界'}</button>
         <button onClick={onNextDay}>翌日 →</button>
         <button onClick={() => setShowLog(!showLog)}>{showLog ? '收起总线' : '总线记录'}</button>
-        <button onClick={() => location.reload()}>重置</button>
+        <button onClick={onReset}>重置</button>
       </div>
       {showLog && (
         <ol className="buslog">

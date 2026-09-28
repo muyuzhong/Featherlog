@@ -1,0 +1,20 @@
+/* Sized to its content: the collapsed Electron window is resized to match. The
+   padding leaves room for drop shadows on every side except the screen edge. */
+.collapsed {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  height: max-content;
+  padding: 22px 0 26px 26px;
+}
+
+.left {
+  flex-direction: row-reverse;
+  padding: 22px 26px 26px 0;
+}
+
+.panel {
+  position: absolute;
+  inset: 0;
+}
