@@ -38,7 +38,7 @@ pkgbase = featherlog-bin
 	options = !debug
 	source = Featherlog-0.1.1-x86_64.AppImage::https://github.com/muyuzhong/Featherlog/releases/download/v0.1.1/Featherlog-0.1.1-x86_64.AppImage
 	source = LICENSE-0.1.1::https://raw.githubusercontent.com/muyuzhong/Featherlog/v0.1.1/LICENSE
-	sha256sums = 0000000000000000000000000000000000000000000000000000000000000000
+	sha256sums = 2f650403da7aa4e189098cf8fa97ea87abe873f88d017cf8b746d11e3034de7c
 	sha256sums = 869313596787f2dfd98d34c7c9d3c000f263bfe3b09162654de7aa1d054e3cda
 
 pkgname = featherlog-bin
