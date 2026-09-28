@@ -58,6 +58,15 @@
 | **Linux** x64 | `Featherlog-<版本>-x86_64.AppImage`，加上执行权限后直接运行 | ✅ 后台下载，退出时安装 |
 | **Windows** x64 | `Featherlog-<版本>-x64.exe`，按用户安装，不需要管理员权限 | ✅ 后台下载，退出时安装 |
 | **macOS** | Apple 芯片选 `arm64`，Intel 选 `x64`（`.dmg`） | 有新版本时提示前往下载 |
+| **Arch Linux** | 仓库里的 PKGBUILD，见下方 | 跟着包管理器更新 |
+
+**Arch Linux**：AUR 目前暂停了新账号注册，上架之前可以直接用仓库里的 PKGBUILD 构建安装。它从 Release 下载同一个 AppImage 并校验，装到 `/opt/featherlog`，不需要 FUSE：
+
+```sh
+git clone https://github.com/muyuzhong/Featherlog
+cd Featherlog/packaging/aur/featherlog-bin
+makepkg -si          # 以后更新：git pull，再 makepkg -si
+```
 
 > [!NOTE]
 > 目前的安装包**没有代码签名**。Windows 首次运行可能出现 SmartScreen 提示，点"更多信息 → 仍要运行"；macOS 需要在"应用程序"里右键选择"打开"。
