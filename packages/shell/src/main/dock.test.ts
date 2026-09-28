@@ -65,12 +65,12 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'featherlog-float-'));
   directories.push(root);
   const file = join(root, 'float.json');
-  const files = new JsonFiles();
   const timers = new Set<() => void>();
   const clock = { now: () => 1, setTimeout: (callback: () => void) => {
     timers.add(callback);
     return () => { timers.delete(callback); };
   } };
+  const files = new JsonFiles(clock);
   const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const screen = { getAllDisplays: () => [display(0), display(1920)],
     getDisplayMatching: () => display(1920) };

@@ -21,7 +21,10 @@ async function fixture() {
       enabled: { type: 'boolean', default: true },
     } } },
   } }];
-  const files = new JsonFiles();
+  const files = new JsonFiles({ now: () => 0, setTimeout(callback) {
+    queueMicrotask(callback);
+    return () => {};
+  } });
   const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   return { root, files, log, manifests, settings: new Settings(root, manifests, undefined, files, log) };
 }

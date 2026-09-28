@@ -1,18 +1,33 @@
-import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile, mkdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { JsonFiles, pluginStorage, readJsonSync } from './storage';
 
+vi.mock('node:fs/promises', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, rename: vi.fn(actual.rename) };
+});
+
 const directories: string[] = [];
-afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, {
-  recursive: true, force: true,
-}))); });
+afterEach(async () => {
+  vi.mocked(rename).mockReset();
+  await Promise.all(directories.splice(0).map(path => rm(path, {
+    recursive: true, force: true,
+  })));
+});
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'featherlog-storage-'));
   directories.push(root);
-  const files = new JsonFiles();
-  return { root, files, storage: pluginStorage(root, 'quest', files) };
+  let time = 0;
+  const delays: number[] = [];
+  const files = new JsonFiles({ now: () => time, setTimeout(callback, ms) {
+    delays.push(ms);
+    time += ms;
+    queueMicrotask(callback);
+    return () => {};
+  } });
+  return { root, files, delays, storage: pluginStorage(root, 'quest', files) };
 }
 
 it('isolates scopes, encodes keys, enumerates only JSON and supports deletion', async () => {
@@ -74,3 +89,65 @@ it('cleans temporary files on failed rename and leaves the previous target intac
   expect((await readdir(root)).filter(name => name.endsWith('.tmp'))).toEqual([]);
   await files.flush();
 });
+
+
+it.each(['EPERM', 'EACCES', 'EBUSY'])(
+  'retries transient %s with the same complete temporary file before queued writes', async code => {
+    const { root, storage, files, delays } = await fixture();
+    await storage.set('state', { old: true });
+    const path = join(root, 'plugins/quest/state.json');
+    const error = Object.assign(new Error('Target is busy'), { code });
+    const locked = async (temporary: Parameters<typeof rename>[0]) => {
+      expect(JSON.parse(await readFile(path, 'utf8'))).toEqual({ old: true });
+      expect(JSON.parse(await readFile(temporary, 'utf8'))).toEqual({ value: 1 });
+      throw error;
+    };
+    vi.mocked(rename).mockClear().mockImplementationOnce(locked).mockImplementationOnce(locked);
+    const input = { value: 1 };
+    const first = storage.set('state', input);
+    input.value = -1;
+    const second = storage.set('state', { value: 2 });
+    await Promise.all([first, second, files.flush()]);
+    expect(delays).toEqual([20, 40]);
+    const calls = vi.mocked(rename).mock.calls;
+    expect(calls).toHaveLength(4);
+    expect(calls[0]).toEqual(calls[1]);
+    expect(calls[1]).toEqual(calls[2]);
+    expect(calls[3]![0]).not.toEqual(calls[0]![0]);
+    expect(await storage.get('state')).toEqual({ value: 2 });
+    expect(await readdir(join(root, 'plugins/quest'))).toEqual(['state.json']);
+  },
+);
+
+it.each(['EPERM', 'EACCES', 'EBUSY'])(
+  'exhausts %s retries, preserves the old file and removes the temporary file', async code => {
+    const { root, storage, files, delays } = await fixture();
+    await storage.set('state', { old: true });
+    const error = Object.assign(new Error('Target remains busy'), { code });
+    vi.mocked(rename).mockClear().mockRejectedValue(error);
+    await expect(storage.set('state', { value: 1 })).rejects.toBe(error);
+    expect(delays).toEqual([20, 40, 80, 160, 320, 380]);
+    expect(delays.reduce((sum, ms) => sum + ms, 0)).toBe(1000);
+    expect(rename).toHaveBeenCalledTimes(7);
+    expect(await storage.get('state')).toEqual({ old: true });
+    expect(await readdir(join(root, 'plugins/quest'))).toEqual(['state.json']);
+    await files.flush();
+    vi.mocked(rename).mockReset();
+    await storage.set('state', { recovered: true });
+    expect(await storage.get('state')).toEqual({ recovered: true });
+  },
+);
+
+it.each(['ENOSPC', 'ENOENT', 'EXDEV'])(
+  'does not retry %s and still cleans up the temporary file', async code => {
+    const { root, storage, delays } = await fixture();
+    await storage.set('state', { old: true });
+    const error = Object.assign(new Error('Rename failed'), { code });
+    vi.mocked(rename).mockClear().mockRejectedValue(error);
+    await expect(storage.set('state', { value: 1 })).rejects.toBe(error);
+    expect(rename).toHaveBeenCalledOnce();
+    expect(delays).toEqual([]);
+    expect(await storage.get('state')).toEqual({ old: true });
+    expect(await readdir(join(root, 'plugins/quest'))).toEqual(['state.json']);
+  },
+);
