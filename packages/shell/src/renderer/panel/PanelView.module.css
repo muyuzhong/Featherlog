@@ -32,7 +32,8 @@
   -webkit-app-region: no-drag;
 }
 
-.tabs button {
+.tabs button,
+.settings {
   font: 13px var(--fl-font-hand);
   color: rgba(236, 220, 184, 0.5);
   background: none;
@@ -41,12 +42,22 @@
   cursor: pointer;
 }
 
-.tabs .active {
+.tabs .active,
+.settings.active {
   color: var(--fl-paper-light);
 }
 
-.close {
+.settings {
   margin-left: auto;
+  -webkit-app-region: no-drag;
+}
+
+.tabs button:hover,
+.settings:hover {
+  color: rgba(236, 220, 184, 0.78);
+}
+
+.close {
   width: 26px;
   height: 26px;
   display: grid;
@@ -58,6 +69,11 @@
   cursor: pointer;
   -webkit-app-region: no-drag;
   transition: color 0.2s, background 0.2s;
+}
+
+.tabs + .close,
+.mark + .close {
+  margin-left: auto;
 }
 
 .close:hover {

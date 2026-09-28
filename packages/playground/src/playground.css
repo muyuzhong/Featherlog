@@ -142,3 +142,45 @@ body {
 .buslog .response b {
   color: #6fdcbf;
 }
+
+/* Stand-in for the dock's native context menu (design §6.4). */
+.ctxmenu {
+  position: fixed;
+  z-index: 50;
+  min-width: 150px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: #2b2d31;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font: 13px system-ui, sans-serif;
+}
+
+.ctxmenu button {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: #e6e6e6;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ctxmenu button:hover:not(:disabled) {
+  background: #3d6fb4;
+}
+
+.ctxmenu button:disabled {
+  color: #7a7a7a;
+  cursor: default;
+}
+
+.ctxmenu .sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgba(255, 255, 255, 0.1);
+}

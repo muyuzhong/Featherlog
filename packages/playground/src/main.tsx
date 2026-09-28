@@ -48,7 +48,15 @@ await kernel.load(mainPlugins);
 const dayStartHour = () => Number(settings.all().quest?.dayStartHour ?? 4);
 await seedJournal(shell.bus, (plus = 0) => periodKey(clock.now(), dayStartHour(), plus));
 
-const menu = { open: () => console.info('[dock] context menu: 打开任务日志 / 设置 / 退出') };
+// The dock's native context menu (design §6.4), drawn by the Desktop.
+const menuListeners = new Set<() => void>();
+const menu = {
+  open: () => menuListeners.forEach((listener) => listener()),
+  onOpen(listener: () => void) {
+    menuListeners.add(listener);
+    return () => void menuListeners.delete(listener);
+  },
+};
 const [collapsed, panel] = await Promise.all([
   createRuntime(createFakePreload('collapsed', kernel, shell, settings, menu.open), uiPlugins),
   createRuntime(createFakePreload('panel', kernel, shell, settings, menu.open), uiPlugins),
@@ -62,6 +70,7 @@ createRoot(document.getElementById('root')!).render(
     panel={panel}
     busLog={busLog}
     kernel={kernel}
+    menu={menu}
     onNextDay={() => {
       nextDay();
       // The quest plugin notices the new period on its next request (design §8.5).

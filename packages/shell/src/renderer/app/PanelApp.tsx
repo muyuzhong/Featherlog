@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { PanelView } from '../panel/PanelView';
+import { PanelView, SETTINGS_TAB } from '../panel/PanelView';
+import { SettingsPage } from '../settings/SettingsPage';
 import type { WindowRuntime } from './runtime';
 import { useShellState } from './shell-state';
 import styles from './App.module.css';
@@ -12,10 +13,11 @@ export function PanelApp({ runtime }: { runtime: WindowRuntime }) {
   const [tab, setTab] = useState<string | undefined>();
   const [visible, setVisible] = useState(() => document.visibilityState === 'visible');
 
-  // "shell/open-panel" decides which tab is in front; the user can switch afterwards.
+  // Every "shell/open-panel" brings its tab to the front, even the one it brought last time;
+  // the user can switch afterwards. shell.panel is a new object per open.
   useEffect(() => {
     if (shell.panel.tab) setTab(shell.panel.tab);
-  }, [shell.panel.tab, shell.panel.params]);
+  }, [shell.panel]);
 
   // The shell hides the window instead of closing it, so visibility tells us when it is shown.
   useEffect(() => {
@@ -29,7 +31,9 @@ export function PanelApp({ runtime }: { runtime: WindowRuntime }) {
     };
   }, [preload]);
 
-  const active = tab ?? [...tabs].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0]?.id ?? '';
+  // A tab nobody provides (a removed plugin, a typo in "opens") falls back to the first one.
+  const first = [...tabs].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0]?.id ?? SETTINGS_TAB;
+  const active = tab !== undefined && (tab === SETTINGS_TAB || tabs.some((t) => t.id === tab)) ? tab : first;
   return (
     <div className={styles.panel}>
       <PanelView
@@ -37,6 +41,7 @@ export function PanelApp({ runtime }: { runtime: WindowRuntime }) {
         tabs={tabs}
         activeTab={active}
         {...(active === shell.panel.tab && shell.panel.params !== undefined ? { params: shell.panel.params } : {})}
+        settings={<SettingsPage runtime={runtime} />}
         visible={visible}
         onSelectTab={setTab}
         onClose={() => preload.panel.close()}

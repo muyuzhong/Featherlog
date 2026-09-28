@@ -14,6 +14,7 @@ type Props = {
   panel: WindowRuntime;
   busLog: { entries: Envelope[] };
   kernel: Kernel;
+  menu: { onOpen(listener: () => void): () => void };
   onNextDay(): void;
   onReset(): void;
 };
@@ -28,9 +29,26 @@ function useShellSetting<T extends Json>(settings: SettingsHost, key: string): T
  * A pretend desktop. Each simulated window clips its content to the size the
  * app asked for, like a real Electron window would.
  */
-export function Desktop({ shell, settings, collapsed, panel, busLog, kernel, onNextDay, onReset }: Props) {
+export function Desktop({ shell, settings, collapsed, panel, busLog, kernel, menu, onNextDay, onReset }: Props) {
   const { panelOpen, dock, place } = useSyncExternalStore(shell.subscribe, shell.getSnapshot);
   const [bounds, setBounds] = useState(false);
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+
+  // A native menu opens where the pointer is; the app doesn't pass a position, so remember it.
+  useEffect(() => {
+    let last = { x: 0, y: 0 };
+    const remember = (event: MouseEvent) => (last = { x: event.clientX, y: event.clientY });
+    const dismiss = () => setMenuAt(null);
+    window.addEventListener('contextmenu', remember, true);
+    window.addEventListener('pointerdown', dismiss);
+    const stop = menu.onOpen(() => setMenuAt(last));
+    return () => {
+      window.removeEventListener('contextmenu', remember, true);
+      window.removeEventListener('pointerdown', dismiss);
+      stop();
+    };
+  }, [menu]);
+  const openPanel = (tab?: string) => void shell.bus.request('shell/open-panel', tab ? { tab } : {}).catch(console.error);
 
   return (
     <div className="desktop">
@@ -61,6 +79,32 @@ export function Desktop({ shell, settings, collapsed, panel, busLog, kernel, onN
       >
         <CollapsedApp runtime={collapsed} />
       </div>
+
+      {menuAt && (
+        <ul className="ctxmenu" style={{ left: menuAt.x, top: menuAt.y }} onPointerDown={(event) => event.stopPropagation()}>
+          {[
+            { label: '打开任务日志', run: () => openPanel() },
+            { label: '设置', run: () => openPanel('shell/settings') },
+          ].map((item) => (
+            <li key={item.label}>
+              <button
+                onClick={() => {
+                  setMenuAt(null);
+                  item.run();
+                }}
+              >
+                {item.label}
+              </button>
+            </li>
+          ))}
+          <li className="sep" />
+          <li>
+            <button disabled title="演示台里没有进程可以退出">
+              退出
+            </button>
+          </li>
+        </ul>
+      )}
 
       <DevTools
         shell={shell}

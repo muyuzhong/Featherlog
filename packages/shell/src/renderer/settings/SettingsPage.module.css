@@ -1,0 +1,472 @@
+.desk,
+.desk * {
+  box-sizing: border-box;
+}
+
+/* One loose sheet on the leather, where the journal lies open on the other tab. */
+.desk {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  place-items: center;
+  padding: 2px 26px 22px;
+}
+
+.sheetWrap {
+  width: min(100%, 680px);
+  height: 100%;
+  max-height: 780px;
+  filter: drop-shadow(0 14px 20px rgba(8, 4, 1, 0.5)) drop-shadow(0 2px 3px rgba(8, 4, 1, 0.45));
+}
+
+.sheet {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background-position: 0 0, 211px 97px;
+}
+
+.scroll {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: 44px 68px 30px;
+}
+
+/* ------------------------------------------------------------ head */
+
+.head {
+  text-align: center;
+}
+
+.head h1 {
+  margin: 0;
+  font: 32px/1.2 var(--fl-font-title);
+  font-weight: normal;
+  letter-spacing: 0.55em;
+  padding-left: 0.55em;
+}
+
+.head p {
+  margin: 8px 0 0;
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  letter-spacing: 0.06em;
+}
+
+.rule {
+  display: block;
+  width: 62%;
+  height: 12px;
+  margin: 16px auto 4px;
+  fill: none;
+  stroke: var(--fl-ink-soft);
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  opacity: 0.55;
+}
+
+.ruleDot {
+  fill: var(--fl-rubric);
+  stroke: none;
+}
+
+/* ------------------------------------------------------------ sections */
+
+.section {
+  margin-top: 22px;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 0 10px;
+  font: 15px var(--fl-font-display);
+  font-weight: normal;
+  color: var(--fl-rubric);
+  letter-spacing: 0.4em;
+}
+
+.sectionTitle::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(138, 43, 29, 0.28), transparent);
+  transform: translateY(-4px);
+}
+
+.prose {
+  margin: 0 0 6px;
+  padding: 0 8px;
+  font: 15px/1.7 var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+}
+
+.warn {
+  color: var(--fl-rubric);
+}
+
+.note {
+  margin: 4px 0 0;
+  padding: 0 8px;
+  font: 13.5px var(--fl-font-hand);
+  color: var(--fl-rubric);
+}
+
+button:focus-visible,
+.track:focus-visible,
+.stepper:focus-visible {
+  outline: 1.5px dashed var(--fl-rubric);
+  outline-offset: 3px;
+}
+
+/* ------------------------------------------------------------ paper */
+
+.papers {
+  display: flex;
+  justify-content: space-around;
+  gap: 16px;
+  padding: 6px 8px 0;
+}
+
+.swatch {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 10px 14px 6px;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.swatchWrap {
+  display: block;
+  filter: drop-shadow(0 4px 5px rgba(40, 20, 6, 0.32)) drop-shadow(0 1px 1px rgba(40, 20, 6, 0.3));
+  transition: transform 0.35s var(--fl-ease-ink);
+}
+
+.swatch:nth-child(1) .swatchWrap {
+  transform: rotate(-2.2deg);
+}
+
+.swatch:nth-child(2) .swatchWrap {
+  transform: rotate(1.4deg);
+}
+
+.swatch:nth-child(3) .swatchWrap {
+  transform: rotate(-0.8deg);
+}
+
+.swatch:hover .swatchWrap {
+  transform: rotate(0deg) translateY(-3px);
+}
+
+.swatchSheet {
+  display: block;
+  width: 104px;
+  height: 72px;
+}
+
+.swatchLabel {
+  font: 16px var(--fl-font-display);
+  letter-spacing: 0.2em;
+  padding-left: 0.2em;
+  color: var(--fl-ink-soft);
+}
+
+.swatch[aria-checked='true'] .swatchLabel {
+  color: var(--fl-ink);
+}
+
+.circle {
+  position: absolute;
+  inset: -2px -10px -12px;
+  width: calc(100% + 20px);
+  height: calc(100% + 14px);
+  overflow: visible;
+  pointer-events: none;
+  fill: none;
+  stroke: var(--fl-rubric);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  opacity: 0.8;
+}
+
+/* ------------------------------------------------------------ rows */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+  padding: 10px 8px;
+  margin: 2px 0;
+  border: 0;
+  border-radius: 8px 14px 10px 12px;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.fieldTitle {
+  font: 17px var(--fl-font-hand);
+  color: var(--fl-ink);
+}
+
+.desc {
+  font: 13.5px/1.6 var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.hint {
+  font: 13px var(--fl-font-hand);
+  color: var(--fl-ink-ghost);
+}
+
+.hint.warn {
+  color: var(--fl-rubric);
+}
+
+.control {
+  flex: none;
+}
+
+.check {
+  gap: 12px;
+  align-items: flex-start;
+  cursor: pointer;
+  transition: background 0.25s;
+}
+
+.check:hover {
+  background: var(--fl-ink-wash);
+}
+
+.box {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-top: -1px;
+  overflow: visible;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.boxFrame {
+  stroke: var(--fl-ink-soft);
+  stroke-width: 1.4;
+}
+
+.boxTick {
+  stroke: var(--fl-rubric);
+  stroke-width: 2.2;
+}
+
+/* ------------------------------------------------------------ ruler */
+
+.ruler {
+  width: 230px;
+  padding: 26px 8px 0;
+}
+
+.track {
+  position: relative;
+  height: 20px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.scale {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  fill: none;
+  stroke: var(--fl-ink-soft);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.scale path,
+.scale line {
+  vector-effect: non-scaling-stroke;
+}
+
+.scale line {
+  opacity: 0.45;
+}
+
+.scale .major {
+  opacity: 0.85;
+}
+
+.marker {
+  position: absolute;
+  bottom: 7px;
+  display: grid;
+  justify-items: center;
+  width: 30px;
+  margin-left: -15px;
+  pointer-events: none;
+}
+
+.marker svg {
+  width: 12px;
+  height: 10px;
+  fill: var(--fl-rubric);
+}
+
+.markerValue {
+  font: 21px/1 var(--fl-font-display);
+  color: var(--fl-rubric);
+  margin-bottom: 2px;
+}
+
+.rulerLabels {
+  position: relative;
+  height: 16px;
+  margin-top: 3px;
+}
+
+.rulerLabels span {
+  position: absolute;
+  transform: translateX(-50%);
+  font: 12px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+/* ------------------------------------------------------------ stepper, choices, text */
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stepper button {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  font: 18px/1 var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+  cursor: pointer;
+}
+
+.stepper button:hover:not(:disabled) {
+  background: var(--fl-ink-wash);
+}
+
+.stepper button:disabled {
+  color: var(--fl-ink-ghost);
+  cursor: default;
+}
+
+.numeral {
+  min-width: 2.4em;
+  text-align: center;
+  font: 22px var(--fl-font-display);
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.choices button {
+  position: relative;
+  padding: 3px 4px;
+  border: 0;
+  background: none;
+  font: 15px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  cursor: pointer;
+}
+
+.choices .chosen {
+  color: var(--fl-ink);
+}
+
+.choices .chosen::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--fl-rubric);
+  opacity: 0.7;
+  transform: rotate(-1.5deg);
+}
+
+.text {
+  width: 200px;
+  padding: 3px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--fl-ink-ghost);
+  background: none;
+  font: 15px var(--fl-font-hand);
+  color: var(--fl-ink);
+  outline: none;
+}
+
+.text:focus {
+  border-bottom-color: var(--fl-rubric);
+}
+
+/* ------------------------------------------------------------ plugins */
+
+.plugins {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px;
+  display: grid;
+  gap: 10px;
+}
+
+.plugins li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+}
+
+.pluginName {
+  font: 17px var(--fl-font-display);
+  letter-spacing: 0.08em;
+}
+
+.plugins small {
+  font: 12.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.plugins p {
+  flex-basis: 100%;
+  margin: 0;
+  font: 13.5px/1.6 var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.colophon {
+  margin: 30px 0 4px;
+  text-align: center;
+  font: 13px var(--fl-font-hand);
+  letter-spacing: 0.3em;
+  color: var(--fl-ink-ghost);
+}
