@@ -123,6 +123,7 @@ describe('§4.3 requests', () => {
     bus.handle('alpha/get', () => work.promise);
     const result = bus.request('alpha/get', null, { timeoutMs });
     const rejected = expect(result).rejects.toMatchObject({ code: 'timeout' });
+    await flush();
     advance((timeoutMs ?? 5000) - 1);
     expect(messages.filter(m => m.kind === 'response')).toHaveLength(0);
     advance(1);
@@ -138,6 +139,7 @@ describe('§4.3 requests', () => {
     const work = deferred();
     bus.handle('alpha/get', () => work.promise);
     const result = expect(bus.request('alpha/get', null)).rejects.toMatchObject({ code: 'timeout' });
+    await flush();
     advance(5000);
     await result;
     work.reject(new Error('late'));
@@ -246,6 +248,7 @@ describe('§4.5 host API', () => {
     });
     const request = incoming('request');
     kernel.inject(request);
+    await flush();
     if (mode === 'timeout') advance(5000);
     await flush();
     expect(messages[0]).toEqual(request);
@@ -518,9 +521,11 @@ describe.each([true, false])('§4.3 immutable snapshots (development=%s)', devel
   it('protects responder state from the requester and snapshots before later changes', async () => {
     const { bus, messages } = fixture(development);
     const state = data();
-    bus.handle('alpha/get', () => state);
+    bus.handle('alpha/get', () => {
+      queueMicrotask(() => { state.nested.value = 2; });
+      return state;
+    });
     const pending = bus.request('alpha/get', null);
-    state.nested.value = 2;
     const received = await pending as Data;
     expect(received).toEqual(data());
     expect(() => { received.nested.value = 3; }).toThrow(TypeError);
@@ -553,6 +558,7 @@ describe.each([true, false])('§4.3 immutable snapshots (development=%s)', devel
     });
     const result = bus.request('alpha/get', original);
     original.nested.value = 2;
+    await Promise.resolve();
     expect(received).toEqual(data());
     expect(messages[0]?.payload).toBe(received);
     expect(() => { received.nested.value = 3; }).toThrow(TypeError);
@@ -618,6 +624,7 @@ describe('§4.3 handler error boundary', () => {
       code: 'handler-error',
       message: code === 'timeout' ? 'Request beta/get timed out' : 'No handler for beta/get',
     });
+    await flush();
     if (code === 'timeout') advance(1);
     await check;
     expect(messages.filter(message => message.kind === 'response').map(message => {
@@ -742,4 +749,62 @@ describe('§5.3 batch validation and setup deadlines', () => {
     await flush();
     expect(messages).toHaveLength(count);
   });
+});
+
+describe('§4.3 asynchronous responders', () => {
+  it('returns before invoking the responder in the next microtask', async () => {
+    const { bus } = fixture();
+    const handler = vi.fn(() => 1);
+    bus.handle('alpha/get', handler);
+    const result = bus.request('alpha/get', null);
+    expect(handler).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(handler).toHaveBeenCalledOnce();
+    await expect(result).resolves.toBe(1);
+  });
+
+  it('invokes injected request responders in a microtask too', async () => {
+    const { kernel, bus, messages } = fixture();
+    const handler = vi.fn(() => 1);
+    bus.handle('alpha/get', handler);
+    const request = incoming('request');
+    kernel.inject(request);
+    expect(handler).not.toHaveBeenCalled();
+    expect(messages.map(message => message.kind)).toEqual(['request']);
+    await Promise.resolve();
+    expect(handler).toHaveBeenCalledOnce();
+    expect(messages.at(-1)).toMatchObject({
+      kind: 'response', replyTo: request.id, payload: { ok: true, data: 1 },
+    });
+  });
+
+  it('retains the responder selected when the request was sent', async () => {
+    const { bus } = fixture();
+    const first = vi.fn(() => 1);
+    const replacement = vi.fn(() => 2);
+    const remove = bus.handle('alpha/get', first);
+    const result = bus.request('alpha/get', null);
+    remove();
+    bus.handle('alpha/get', replacement);
+    await expect(result).resolves.toBe(1);
+    expect(first).toHaveBeenCalledOnce();
+    expect(replacement).not.toHaveBeenCalled();
+  });
+
+  it.each(['timeout', 'disposed'] as const)(
+    'skips queued responders after %s',
+    async code => {
+      const { kernel, bus, advance } = fixture();
+      const handler = vi.fn(() => 1);
+      await kernel.load([plugin('alpha', ctx => {
+        ctx.bus.handle('alpha/get', handler);
+      })]);
+      const result = bus.request('alpha/get', null, { timeoutMs: 1 });
+      const rejected = expect(result).rejects.toMatchObject({ code });
+      if (code === 'timeout') advance(1);
+      else kernel.unload('alpha');
+      await rejected;
+      expect(handler).not.toHaveBeenCalled();
+    },
+  );
 });

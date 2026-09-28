@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1300">
+  <!-- Alpha mask with a rough, slightly torn edge. Stretched to the page size. -->
+  <filter id="d" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency=".022" numOctaves="4" seed="8" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="16"/>
+    <feGaussianBlur stdDeviation=".6"/>
+  </filter>
+  <rect x="14" y="14" width="972" height="1272" fill="#fff" filter="url(#d)"/>
+</svg>

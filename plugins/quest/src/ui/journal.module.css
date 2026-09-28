@@ -1,0 +1,669 @@
+/* ============================================================
+   The book
+   ============================================================ */
+.journal,
+.journal * {
+  box-sizing: border-box;
+}
+
+.journal {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  place-items: center;
+  padding: 2px 26px 22px;
+}
+
+.book {
+  position: relative;
+  width: min(100%, 1240px);
+  height: 100%;
+  max-height: 780px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.pageWrap {
+  min-width: 0;
+  min-height: 0;
+  filter: drop-shadow(0 14px 20px rgba(8, 4, 1, 0.5)) drop-shadow(0 2px 3px rgba(8, 4, 1, 0.45));
+}
+
+.pageWrap:first-child {
+  margin-right: -8px;
+}
+
+.pageWrap:nth-child(2) {
+  margin-left: -8px;
+}
+
+.page {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+
+.left {
+  padding: 44px 54px 30px 50px;
+}
+
+/* Offset the tile so the two pages don't mirror each other. */
+.right {
+  padding: 34px 50px 30px 60px;
+  background-position: 0 0, 377px 211px;
+}
+
+/* The fold of the spine, laid over both pages. */
+.gutter {
+  position: absolute;
+  top: 1%;
+  bottom: 1%;
+  left: 50%;
+  width: 90px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(70, 40, 14, 0.1) 30%,
+    rgba(50, 26, 8, 0.34) 47%,
+    rgba(30, 14, 4, 0.5) 50%,
+    rgba(50, 26, 8, 0.34) 53%,
+    rgba(70, 40, 14, 0.1) 70%,
+    transparent 100%
+  );
+  mix-blend-mode: multiply;
+}
+
+.blank {
+  font: 16px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  text-align: center;
+  margin-top: 40%;
+}
+
+/* ============================================================
+   Left page: the index
+   ============================================================ */
+.listPage {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.listHead {
+  text-align: center;
+}
+
+.listHead h1 {
+  margin: 0;
+  font: 32px/1.2 var(--fl-font-title);
+  letter-spacing: 0.55em;
+  padding-left: 0.55em;
+  color: var(--fl-ink);
+}
+
+.listHead p {
+  margin: 8px 0 0;
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  letter-spacing: 0.06em;
+}
+
+.listHead p span {
+  margin: 0 4px;
+}
+
+.headRule {
+  width: 72%;
+  margin: 16px auto 8px;
+}
+
+.section {
+  margin-top: 18px;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 0 6px;
+  font: 15px var(--fl-font-display);
+  font-weight: normal;
+  color: var(--fl-rubric);
+  letter-spacing: 0.4em;
+}
+
+.sectionTitle::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(138, 43, 29, 0.28), transparent);
+  transform: translateY(-4px);
+}
+
+.sectionTitle small {
+  order: 2;
+  font: 13px var(--fl-font-hand);
+  letter-spacing: 0.04em;
+  color: var(--fl-ink-faded);
+}
+
+.empty {
+  margin: 6px 0 0 30px;
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink-ghost);
+}
+
+.entry {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 8px 2px;
+  border: 0;
+  border-radius: 8px 14px 10px 12px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.25s;
+}
+
+.entry:hover {
+  background: var(--fl-ink-wash);
+}
+
+.entryOn,
+.entryOn:hover {
+  background: linear-gradient(90deg, rgba(90, 58, 26, 0.13), rgba(90, 58, 26, 0.04));
+}
+
+.entry:focus-visible,
+.daily:focus-visible,
+.doneToggle:focus-visible {
+  outline: 1.5px dashed var(--fl-rubric);
+  outline-offset: 1px;
+}
+
+.entryMark {
+  display: grid;
+  place-items: center;
+  color: var(--fl-rubric);
+}
+
+.entryMark svg {
+  width: 16px;
+  height: 16px;
+}
+
+.entryBody {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.entryName {
+  font: 19px/1.3 var(--fl-font-display);
+  color: var(--fl-ink);
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 0.4px currentColor;
+}
+
+.entrySub {
+  font: 13.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.entryMeta {
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  white-space: nowrap;
+}
+
+.entryMeta em {
+  font-style: normal;
+  color: var(--fl-rubric);
+}
+
+.dailies {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 18px;
+  padding-left: 4px;
+}
+
+.daily {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 7px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--fl-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.25s;
+}
+
+.daily:hover {
+  background: var(--fl-ink-wash);
+}
+
+.dailyBody {
+  display: grid;
+  gap: 1px;
+}
+
+.dailyName {
+  position: relative;
+  font: 16.5px/1.3 var(--fl-font-hand);
+}
+
+.dailySub {
+  font: 12.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  min-height: 1em;
+}
+
+.dailyDone .dailyName {
+  color: var(--fl-ink-faded);
+}
+
+.listFoot {
+  margin-top: auto;
+  padding-top: 16px;
+}
+
+.doneToggle {
+  display: block;
+  margin: 0 auto 8px;
+  font: 13.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.doneToggle:hover {
+  color: var(--fl-rubric);
+}
+
+.finished {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.finished button {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 30px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: 15px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  cursor: pointer;
+}
+
+.finished button:hover,
+.finished .finishedOn {
+  background: var(--fl-ink-wash);
+  color: var(--fl-ink-soft);
+}
+
+.finished small {
+  font: 13px var(--fl-font-hand);
+}
+
+.folio {
+  text-align: center;
+  font: 14px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  letter-spacing: 0.3em;
+}
+
+/* ============================================================
+   Right page: one quest
+   ============================================================ */
+.detailMotion {
+  height: 100%;
+}
+
+.detail {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+/* ---- chapter route ---- */
+.route {
+  display: flex;
+  align-items: flex-start;
+  margin: 2px 0 20px;
+}
+
+.node {
+  flex: none;
+  width: 76px;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.nodeMark {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  color: var(--fl-ink-soft);
+}
+
+.nodeMark b {
+  font: 16px var(--fl-font-display);
+  font-weight: normal;
+}
+
+.nodeTitle {
+  font: 13.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+.done .nodeMark {
+  color: var(--fl-ink-soft);
+}
+
+.done .nodeMark::before {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  background: rgba(90, 58, 26, 0.12);
+}
+
+.current .nodeMark {
+  color: var(--fl-rubric);
+}
+
+.current .nodeMark b {
+  text-shadow: 0 0 0.6px currentColor;
+}
+
+.current .nodeTitle {
+  color: var(--fl-rubric);
+}
+
+.locked .nodeMark {
+  color: var(--fl-ink-ghost);
+}
+
+.link {
+  flex: 1;
+  height: 10px;
+  margin-top: 13px;
+  min-width: 20px;
+  overflow: visible;
+}
+
+.link path {
+  fill: none;
+  stroke: var(--fl-ink-ghost);
+  stroke-width: 1.3;
+  stroke-dasharray: 3 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.linkWalked path {
+  stroke: var(--fl-ink-soft);
+  stroke-dasharray: none;
+  opacity: 0.7;
+}
+
+/* ---- title ---- */
+.titleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.titleBlock {
+  min-width: 0;
+}
+
+.kicker {
+  font: 14px var(--fl-font-hand);
+  color: var(--fl-rubric);
+  letter-spacing: 0.3em;
+}
+
+.title {
+  margin: 6px 0 4px;
+  font: 44px/1.15 var(--fl-font-title);
+  letter-spacing: 0.14em;
+  color: var(--fl-ink);
+  text-wrap: balance;
+}
+
+.titleLong {
+  font-size: 36px;
+  letter-spacing: 0.1em;
+}
+
+.realGoal {
+  font: 15px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.realGoal span {
+  margin: 0 3px;
+}
+
+.sealSlot {
+  width: 90px;
+  height: 90px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  margin-top: 4px;
+}
+
+.sealButton {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.trackButton {
+  position: relative;
+  width: 62px;
+  height: 62px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: none;
+  color: var(--fl-ink-ghost);
+  font: 15px var(--fl-font-hand);
+  letter-spacing: 0.2em;
+  padding-left: 0.2em;
+  cursor: pointer;
+  transition: color 0.25s;
+}
+
+.trackButton:hover {
+  color: var(--fl-rubric);
+}
+
+.story {
+  margin: 16px 0 0;
+  font: 16px/2 var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+  text-indent: 2em;
+  text-align: justify;
+}
+
+.objectivesHead {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 20px 0 6px;
+  font: 14px var(--fl-font-display);
+  color: var(--fl-rubric);
+  letter-spacing: 0.35em;
+}
+
+.objectivesHead::after {
+  content: '';
+  order: 1;
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(138, 43, 29, 0.28), transparent);
+  transform: translateY(-4px);
+}
+
+.objectivesHead button {
+  order: 2;
+  font: 13.5px var(--fl-font-hand);
+  letter-spacing: 0.04em;
+  color: var(--fl-ink-faded);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.objectivesHead button:hover {
+  color: var(--fl-rubric);
+}
+
+/* ---- ledger ---- */
+.ledger {
+  margin: auto 0 0;
+  padding-top: 18px;
+  display: grid;
+  gap: 5px;
+}
+
+.ledger div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ledger dt {
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+  letter-spacing: 0.2em;
+}
+
+.ledger dd {
+  margin: 0;
+  font: 15.5px var(--fl-font-hand);
+  color: var(--fl-ink);
+}
+
+.leader {
+  flex: 1;
+  border-bottom: 1.5px dotted var(--fl-ink-ghost);
+  transform: translateY(-5px);
+}
+
+/* ============================================================
+   Ceremonies
+   ============================================================ */
+.ceremony {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(60% 60% at 50% 50%, rgba(20, 10, 3, 0.42), rgba(20, 10, 3, 0.62));
+  cursor: pointer;
+  z-index: 10;
+}
+
+.ceremonyShadow {
+  filter: drop-shadow(0 22px 36px rgba(5, 2, 0, 0.6));
+}
+
+.ceremonyCard {
+  width: 420px;
+  padding: 40px 48px 34px;
+  text-align: center;
+}
+
+.ceremonyKicker {
+  font: 15px var(--fl-font-display);
+  color: var(--fl-rubric);
+  letter-spacing: 0.8em;
+  padding-left: 0.8em;
+}
+
+.ceremonyCard h3 {
+  margin: 14px 0 4px;
+  font: 42px/1.2 var(--fl-font-title);
+  font-weight: normal;
+  letter-spacing: 0.16em;
+  padding-left: 0.16em;
+  text-wrap: balance;
+}
+
+.ceremonyCard p {
+  margin: 0 0 18px;
+  font: 15.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.ceremonyStamp {
+  display: grid;
+  place-items: center;
+  margin-top: 18px;
+  height: 96px;
+}
+
+.chapterBanner {
+  position: absolute;
+  top: 30px;
+  left: 50%;
+  right: 0;
+  width: max-content;
+  margin: 0 auto;
+  z-index: 10;
+  filter: drop-shadow(0 10px 18px rgba(5, 2, 0, 0.5));
+  pointer-events: none;
+}
+
+.chapterBannerPaper {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 18px 44px 16px;
+  font: 24px var(--fl-font-title);
+  letter-spacing: 0.14em;
+}
+
+.chapterBannerKicker {
+  font-size: 13px;
+  letter-spacing: 0.6em;
+  padding-left: 0.6em;
+  color: var(--fl-rubric);
+}
+
+.chapterBannerPaper small {
+  font: 13.5px var(--fl-font-hand);
+  letter-spacing: 0.04em;
+  color: var(--fl-ink-faded);
+}
