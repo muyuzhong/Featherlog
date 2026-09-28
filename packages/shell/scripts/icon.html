@@ -1,0 +1,123 @@
+<!doctype html>
+<!--
+  The app icon: the floating scroll from the dock, with 羽 brushed on it and a
+  wax seal. Rendered to resources/icon.png by gen-icon.sh. Paths are relative
+  to this file so it renders straight from the checkout.
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../node_modules/@fontsource/ma-shan-zheng/400.css" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+      }
+      svg {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <svg width="1024" height="1024" viewBox="0 0 1024 1024">
+      <defs>
+        <pattern id="paper" patternUnits="userSpaceOnUse" width="1024" height="1024">
+          <image href="../src/renderer/theme/textures/parchment-vellum.webp" width="1024" height="1024" />
+        </pattern>
+        <!-- The paper curls under each rod, and browns toward its edges. -->
+        <linearGradient id="roll" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#3c1e08" stop-opacity="0.42" />
+          <stop offset="0.09" stop-color="#3c1e08" stop-opacity="0" />
+          <stop offset="0.91" stop-color="#3c1e08" stop-opacity="0" />
+          <stop offset="1" stop-color="#3c1e08" stop-opacity="0.42" />
+        </linearGradient>
+        <linearGradient id="edges" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#6b3c12" stop-opacity="0.34" />
+          <stop offset="0.13" stop-color="#6b3c12" stop-opacity="0" />
+          <stop offset="0.87" stop-color="#6b3c12" stop-opacity="0" />
+          <stop offset="1" stop-color="#6b3c12" stop-opacity="0.34" />
+        </linearGradient>
+        <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#9a6634" />
+          <stop offset="0.35" stop-color="#6e4420" />
+          <stop offset="1" stop-color="#34200e" />
+        </linearGradient>
+        <radialGradient id="knob" cx="0.38" cy="0.32" r="0.75">
+          <stop offset="0" stop-color="#a06a36" />
+          <stop offset="0.55" stop-color="#5a3717" />
+          <stop offset="1" stop-color="#26160a" />
+        </radialGradient>
+        <radialGradient id="wax" cx="0.4" cy="0.36" r="0.72">
+          <stop offset="0" stop-color="#b3392a" />
+          <stop offset="0.6" stop-color="#7d1d14" />
+          <stop offset="1" stop-color="#4c0d07" />
+        </radialGradient>
+        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#140a03" flood-opacity="0.5" />
+        </filter>
+        <filter id="bleed">
+          <feMorphology operator="dilate" radius="1.2" />
+          <feGaussianBlur stdDeviation="0.9" />
+        </filter>
+      </defs>
+
+      <g filter="url(#shadow)">
+        <!-- Paper: the long edges wobble a little, like a hand-cut sheet. -->
+        <path
+          id="sheet"
+          d="M300 176 L724 176 C 727 330, 719 520, 726 846 L298 846 C 304 640, 294 420, 300 176 Z"
+          fill="#efdfb9"
+        />
+        <path d="M300 176 L724 176 C 727 330, 719 520, 726 846 L298 846 C 304 640, 294 420, 300 176 Z" fill="url(#paper)" />
+        <path d="M300 176 L724 176 C 727 330, 719 520, 726 846 L298 846 C 304 640, 294 420, 300 176 Z" fill="url(#edges)" />
+        <path d="M300 176 L724 176 C 727 330, 719 520, 726 846 L298 846 C 304 640, 294 420, 300 176 Z" fill="url(#roll)" />
+
+        <!-- Rods -->
+        <g>
+          <rect x="262" y="138" width="500" height="62" rx="31" fill="url(#wood)" />
+          <rect x="280" y="148" width="464" height="9" rx="4.5" fill="#d8a56c" opacity="0.35" />
+          <circle cx="252" cy="169" r="40" fill="url(#knob)" />
+          <circle cx="772" cy="169" r="40" fill="url(#knob)" />
+        </g>
+        <g>
+          <rect x="262" y="822" width="500" height="62" rx="31" fill="url(#wood)" />
+          <rect x="280" y="832" width="464" height="9" rx="4.5" fill="#d8a56c" opacity="0.35" />
+          <circle cx="252" cy="853" r="40" fill="url(#knob)" />
+          <circle cx="772" cy="853" r="40" fill="url(#knob)" />
+        </g>
+      </g>
+
+      <!-- 羽, brushed: a faint bleed under the stroke so it sits in the paper. -->
+      <g font-family="Ma Shan Zheng" font-size="340" text-anchor="middle">
+        <text x="500" y="578" fill="#2a1c11" opacity="0.28" filter="url(#bleed)">羽</text>
+        <text x="500" y="578" fill="#2a1c11">羽</text>
+      </g>
+
+      <!-- Wax seal with a feather pressed into it. -->
+      <g transform="translate(654 742) rotate(-10)">
+        <path
+          d="M0 -86 C 30 -88, 60 -72, 76 -46 C 92 -20, 90 14, 80 38 C 68 66, 40 88, 6 88 C -30 90, -64 72, -80 42 C -94 14, -90 -22, -74 -48 C -58 -74, -30 -86, 0 -86 Z"
+          fill="url(#wax)"
+        />
+        <circle r="60" fill="none" stroke="#4c0d07" stroke-opacity="0.45" stroke-width="5" />
+        <circle r="60" fill="none" stroke="#e08a72" stroke-opacity="0.22" stroke-width="2" transform="translate(-2 -2)" />
+        <g transform="translate(-41 -41) scale(3.4)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path
+            d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z M16 8 2 22 M17.5 15H9"
+            stroke="#3a0a05"
+            stroke-opacity="0.55"
+            stroke-width="2.2"
+            transform="translate(0.6 0.6)"
+          />
+          <path
+            d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z M16 8 2 22 M17.5 15H9"
+            stroke="#e7a08a"
+            stroke-opacity="0.75"
+            stroke-width="1.6"
+          />
+        </g>
+      </g>
+    </svg>
+  </body>
+</html>
