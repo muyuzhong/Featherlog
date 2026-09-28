@@ -281,7 +281,7 @@ featherlog/
 
 **收起窗口**：
 
-- 无边框、透明背景、始终置顶、不进任务栏、不可调整大小、无系统阴影，用 `showInactive()` 显示。
+- 无边框、透明背景、始终置顶、不进任务栏、无系统阴影，用 `showInactive()` 显示；`resizable: true`（理由见 §9.3）。
 - 标题固定为 `featherlog-dock`（KWin 脚本据此识别，§9）；主进程拦截 `page-title-updated`，不让网页标题覆盖它。
 - 尺寸完全由渲染层通过 `dock.resize` 决定，主进程把宽限制在 40–720、高限制在 80–900。它是一个置顶的浮窗，由用户拖动，具体规则见 §9。
 - macOS：`setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })`，并隐藏 Dock 图标（`app.dock.hide()`）。
