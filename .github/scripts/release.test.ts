@@ -24,18 +24,34 @@ it('rejects a mismatched tag before any API call', () => {
   expect(gh).not.toHaveBeenCalled();
 });
 
-it('creates one draft, verifies the existing tag, and reuses it on rerun', () => {
+it('creates one draft and reuses it on rerun', () => {
   let created = false;
   const gh = vi.fn((...args: string[]) => {
-    if (args[0] === 'api') return JSON.stringify([created ? [draft] : []]);
-    expect(args).toEqual(['release', 'create', 'v0.1.1', '--repo', 'owner/repo',
-      '--verify-tag', '--draft', '--title', 'v0.1.1', '--notes', '']);
+    if (args[1] === '--paginate') return JSON.stringify([created ? [draft] : []]);
+    expect(args).toEqual(['api', '-X', 'POST', 'repos/owner/repo/releases',
+      '-f', 'tag_name=v0.1.1', '-f', 'name=v0.1.1', '-F', 'draft=true']);
     created = true;
-    return '';
+    return JSON.stringify(draft);
   });
   expect(releaseTask('prepare', options, gh)).toBe('42');
   expect(releaseTask('prepare', options, gh)).toBe('42');
-  expect(gh.mock.calls.filter(args => args[0] === 'release')).toHaveLength(1);
+  expect(gh.mock.calls.filter(args => args.includes('POST'))).toHaveLength(1);
+});
+
+it('returns the creation response ID even while the release list remains stale', () => {
+  const gh = vi.fn((...args: string[]) => args.includes('POST')
+    ? JSON.stringify({ ...draft, id: 398129844 }) : '[[]]');
+  expect(releaseTask('prepare', options, gh)).toBe('398129844');
+  expect(gh.mock.calls.filter(args => args.includes('--paginate'))).toHaveLength(1);
+  expect(gh).toHaveBeenCalledTimes(2);
+});
+
+it('propagates creation errors without another list query or creation attempt', () => {
+  const gh = vi.fn().mockReturnValueOnce('[[]]').mockImplementationOnce(() => {
+    throw new Error('HTTP 422');
+  });
+  expect(() => releaseTask('prepare', options, gh)).toThrow('HTTP 422');
+  expect(gh).toHaveBeenCalledTimes(2);
 });
 
 it.each([
