@@ -93,22 +93,7 @@ pnpm test
 
 内核很小，只负责送信；包括任务日志在内的所有功能，都是通过总线收发纯 JSON 消息的插件。插件之间、插件与外壳之间从不互相 import，唯一的接口是 [`packages/contracts`](packages/contracts) 里的类型契约。
 
-```mermaid
-flowchart LR
-  subgraph main["主进程"]
-    K(("内核 · 总线"))
-    S["外壳<br/>窗口 · 存储 · 设置 · 更新"]
-    Q["任务插件"]
-  end
-  subgraph renderer["渲染进程"]
-    C["收起窗口<br/>卷轴 · 便签"]
-    P["面板窗口<br/>任务日志 · 设置"]
-  end
-  S <--> K
-  Q <--> K
-  C <-.->|IPC| K
-  P <-.->|IPC| K
-```
+<img src="docs/images/architecture.webp" alt="架构：主进程里的外壳和任务插件、渲染进程里的两个窗口，都只通过中间的内核（总线）互相通信" />
 
 | 目录 | 内容 |
 |---|---|

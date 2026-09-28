@@ -1,0 +1,111 @@
+<!doctype html>
+<!--
+  Source of architecture.webp in the README. Render from the repository root:
+    google-chrome-stable --headless=new --hide-scrollbars --allow-file-access-from-files \
+      --virtual-time-budget=3000 --force-device-scale-factor=2 --window-size=1200,560 \
+      --screenshot=/tmp/architecture.png docs/images/architecture.html
+    magick /tmp/architecture.png -quality 92 -define webp:use-sharp-yuv=true docs/images/architecture.webp
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../packages/shell/node_modules/@fontsource/ma-shan-zheng/400.css" />
+    <link rel="stylesheet" href="../../packages/shell/node_modules/@chinese-fonts/xiaolai/dist/Xiaolai/result.css" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #1f150d;
+      }
+      .sheet {
+        position: relative;
+        width: 1200px;
+        height: 560px;
+        background-color: #efdfb9;
+        background-image:
+          radial-gradient(120% 110% at 50% 45%, transparent 55%, rgba(110, 62, 20, 0.34) 100%),
+          url('../../packages/shell/src/renderer/theme/textures/parchment-vellum.webp');
+        background-size: 100% 100%, 1024px 1024px;
+      }
+      svg {
+        position: absolute;
+        inset: 0;
+      }
+      .brush {
+        font-family: 'Ma Shan Zheng', serif;
+      }
+      .hand {
+        font-family: 'Xiaolai SC', serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sheet">
+      <svg width="1200" height="560" viewBox="0 0 1200 560">
+        <defs>
+          <marker id="tip" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M1 1.5 L 9 5 L 1 8.5" fill="none" stroke="#5b4430" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          </marker>
+        </defs>
+
+        <!-- Column heads -->
+        <g class="brush" fill="#8a2b1d" font-size="22" letter-spacing="8">
+          <text x="210" y="70" text-anchor="middle">主 进 程</text>
+          <text x="990" y="70" text-anchor="middle">渲 染 进 程</text>
+        </g>
+        <g stroke="#8a2b1d" stroke-opacity="0.3" stroke-width="1.2" fill="none">
+          <path d="M120 86 C 170 84, 250 87, 300 85" />
+          <path d="M900 86 C 950 84, 1030 87, 1080 85" />
+        </g>
+
+        <!-- Links: in-process on the left, IPC (dashed) on the right -->
+        <g fill="none" stroke="#5b4430" stroke-width="1.8" stroke-linecap="round">
+          <path d="M338 176 C 400 190, 440 220, 502 248" marker-start="url(#tip)" marker-end="url(#tip)" />
+          <path d="M338 382 C 400 368, 440 340, 502 312" marker-start="url(#tip)" marker-end="url(#tip)" />
+          <path d="M698 248 C 760 220, 800 190, 862 176" stroke-dasharray="7 7" marker-start="url(#tip)" marker-end="url(#tip)" />
+          <path d="M698 312 C 760 340, 800 368, 862 382" stroke-dasharray="7 7" marker-start="url(#tip)" marker-end="url(#tip)" />
+        </g>
+        <g class="hand" fill="#5b4430" font-size="15" letter-spacing="2">
+          <text x="760" y="180" text-anchor="middle">IPC</text>
+          <text x="760" y="396" text-anchor="middle">IPC</text>
+        </g>
+
+        <!-- Boxes: wobbly ink frames -->
+        <g fill="rgba(255,248,230,0.35)" stroke="#2a1c11" stroke-width="1.7" stroke-linejoin="round">
+          <path d="M84 126 C 170 122, 260 124, 338 127 C 341 150, 340 200, 337 226 C 250 229, 160 228, 85 225 C 82 200, 81 150, 84 126 Z" />
+          <path d="M84 332 C 170 329, 260 331, 338 334 C 340 358, 341 405, 337 432 C 250 435, 160 434, 85 431 C 82 405, 83 358, 84 332 Z" />
+          <path d="M862 126 C 950 122, 1040 124, 1116 127 C 1119 150, 1118 200, 1115 226 C 1030 229, 940 228, 863 225 C 860 200, 859 150, 862 126 Z" />
+          <path d="M862 332 C 950 329, 1040 331, 1116 334 C 1118 358, 1119 405, 1115 432 C 1030 435, 940 434, 863 431 C 860 405, 861 358, 862 332 Z" />
+        </g>
+        <g text-anchor="middle">
+          <text class="brush" x="211" y="168" font-size="30" fill="#2a1c11" letter-spacing="4">外壳</text>
+          <text class="hand" x="211" y="202" font-size="16" fill="#5b4430">窗口 · 存储 · 设置 · 更新</text>
+          <text class="brush" x="211" y="374" font-size="30" fill="#2a1c11" letter-spacing="4">任务插件</text>
+          <text class="hand" x="211" y="408" font-size="16" fill="#5b4430">任务模型 · 周期 · 追踪</text>
+          <text class="brush" x="989" y="168" font-size="30" fill="#2a1c11" letter-spacing="4">收起窗口</text>
+          <text class="hand" x="989" y="202" font-size="16" fill="#5b4430">浮动的卷轴 · 悬停便签</text>
+          <text class="brush" x="989" y="374" font-size="30" fill="#2a1c11" letter-spacing="4">面板窗口</text>
+          <text class="hand" x="989" y="408" font-size="16" fill="#5b4430">任务日志 · 设置</text>
+        </g>
+
+        <!-- The kernel: a wax seal at the centre -->
+        <g transform="translate(600 280)">
+          <circle r="104" fill="none" stroke="#8a2b1d" stroke-opacity="0.25" stroke-width="1.2" stroke-dasharray="3 6" />
+          <path
+            d="M0 -84 C 32 -86, 62 -68, 76 -42 C 90 -14, 88 20, 76 44 C 62 70, 32 86, 0 86 C -34 88, -64 70, -78 42 C -90 14, -88 -22, -74 -48 C -60 -72, -30 -84, 0 -84 Z"
+            fill="#7d1d14"
+          />
+          <circle r="62" fill="none" stroke="#4c0d07" stroke-opacity="0.5" stroke-width="4" />
+          <circle r="62" fill="none" stroke="#e08a72" stroke-opacity="0.25" stroke-width="1.5" transform="translate(-1.5 -1.5)" />
+          <text class="brush" y="0" font-size="34" fill="#f3d9c6" text-anchor="middle" letter-spacing="4">内核</text>
+          <text class="hand" y="28" font-size="15" fill="#f3d9c6" fill-opacity="0.85" text-anchor="middle" letter-spacing="2">总线 · 只管送信</text>
+        </g>
+
+        <!-- Footnote -->
+        <g class="hand" fill="#5b4430" font-size="17" text-anchor="middle" letter-spacing="1">
+          <text x="600" y="506">消息都是纯 JSON · 模块之间从不互相 import · 唯一的接口是 packages/contracts 里的契约</text>
+        </g>
+      </svg>
+    </div>
+  </body>
+</html>
