@@ -8,6 +8,7 @@ type Listener = (scope: string, key: string, value: Json) => void;
 export const SHELL_DEFAULTS: Record<string, Json> = {
   paper: 'vellum',
   compatMode: false,
+  autoUpdate: true,
 };
 
 /** Settings for the shell and every plugin: schema defaults, overridden by saved values. */

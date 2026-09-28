@@ -6,6 +6,7 @@ import { useSetting } from '../app/use-setting';
 import { PAPERS, type Paper } from '../theme';
 import { readFields, type Field } from './schema';
 import styles from './SettingsPage.module.css';
+import { UpdateNotes } from './Updates';
 
 /**
  * The shell's settings page (design §7.2): the shell's own settings drawn by
@@ -44,6 +45,22 @@ export function SettingsPage({ runtime }: { runtime: WindowRuntime }) {
                 ))}
               </Section>
             ))}
+
+            <UpdateNotes
+              bus={runtime.shellBus}
+              toggle={
+                <FieldRow
+                  runtime={runtime}
+                  scope="shell"
+                  field={{
+                    key: 'autoUpdate',
+                    kind: 'boolean',
+                    title: '自动检查并下载更新',
+                    description: '只访问 GitHub，不收集任何信息。关闭后只在这里手动检查。',
+                  }}
+                />
+              }
+            />
 
             <Section title="插件">
               <ul className={styles.plugins}>

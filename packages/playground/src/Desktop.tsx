@@ -5,7 +5,7 @@ import { CollapsedApp, PanelApp, type WindowRuntime } from '@featherlog/shell/re
 import { motion } from 'motion/react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { SettingsHost } from './host/settings';
-import type { HostShell } from './host/shell';
+import { UPDATE_SCENARIOS, type HostShell, type UpdateScenario } from './host/shell';
 
 type Props = {
   shell: HostShell;
@@ -30,7 +30,7 @@ function useShellSetting<T extends Json>(settings: SettingsHost, key: string): T
  * app asked for, like a real Electron window would.
  */
 export function Desktop({ shell, settings, collapsed, panel, busLog, kernel, menu, onNextDay, onReset }: Props) {
-  const { panelOpen, dock, place } = useSyncExternalStore(shell.subscribe, shell.getSnapshot);
+  const { panelOpen, dock, place, scenario } = useSyncExternalStore(shell.subscribe, shell.getSnapshot);
   const [bounds, setBounds] = useState(false);
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
 
@@ -109,6 +109,7 @@ export function Desktop({ shell, settings, collapsed, panel, busLog, kernel, men
       <DevTools
         shell={shell}
         place={place}
+        scenario={scenario}
         settings={settings}
         busLog={busLog}
         kernel={kernel}
@@ -124,6 +125,7 @@ export function Desktop({ shell, settings, collapsed, panel, busLog, kernel, men
 type DevProps = {
   shell: HostShell;
   place: 'left' | 'right';
+  scenario: UpdateScenario;
   settings: SettingsHost;
   busLog: { entries: Envelope[] };
   kernel: Kernel;
@@ -133,7 +135,7 @@ type DevProps = {
   onReset(): void;
 };
 
-function DevTools({ shell, place, settings, busLog, kernel, bounds, onBounds, onNextDay, onReset }: DevProps) {
+function DevTools({ shell, place, scenario, settings, busLog, kernel, bounds, onBounds, onNextDay, onReset }: DevProps) {
   const paper = useShellSetting<Paper>(settings, 'paper');
   const [showLog, setShowLog] = useState(false);
   const [log, setLog] = useState<Envelope[]>([]);
@@ -153,6 +155,9 @@ function DevTools({ shell, place, settings, busLog, kernel, bounds, onBounds, on
         </button>
         <button onClick={() => shell.moveDock(place === 'right' ? 'left' : 'right')} title="模拟把卷轴拖到屏幕另一侧">
           卷轴在：{place === 'right' ? '右侧' : '左侧'}
+        </button>
+        <button onClick={() => shell.cycleUpdateScenario()} title="下一次检查更新时，假装的 GitHub 会怎么回答">
+          更新：{UPDATE_SCENARIOS[scenario]}
         </button>
         <button onClick={onBounds}>{bounds ? '隐藏窗口边界' : '窗口边界'}</button>
         <button onClick={onNextDay}>翌日 →</button>

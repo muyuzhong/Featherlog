@@ -470,3 +470,84 @@ button:focus-visible,
   letter-spacing: 0.3em;
   color: var(--fl-ink-ghost);
 }
+
+/* ------------------------------------------------------------ updates */
+
+.update {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 6px 8px;
+}
+
+.fresh {
+  font-style: normal;
+  color: var(--fl-rubric);
+}
+
+.progress {
+  display: block;
+  width: 200px;
+  height: 3px;
+  margin-top: 6px;
+  border-radius: 2px;
+  background: var(--fl-ink-wash);
+  overflow: hidden;
+}
+
+.progress span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--fl-rubric);
+  opacity: 0.7;
+}
+
+.inkButton {
+  flex: none;
+  padding: 5px 16px 6px;
+  border: 0;
+  border-radius: 40% 46% 42% 48% / 60% 52% 58% 50%;
+  background: none;
+  box-shadow: inset 0 0 0 1.4px rgba(138, 43, 29, 0.55);
+  font: 15px var(--fl-font-hand);
+  letter-spacing: 0.12em;
+  color: var(--fl-rubric);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.inkButton:hover:not(:disabled) {
+  background: var(--fl-rubric-wash);
+}
+
+.inkButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.notesToggle {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 13px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  cursor: pointer;
+}
+
+.notesToggle:hover {
+  color: var(--fl-rubric);
+}
+
+.notes {
+  margin: 0 8px 6px;
+  padding: 8px 12px;
+  border-left: 2px solid rgba(138, 43, 29, 0.3);
+  font: 13.5px/1.7 var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+  white-space: pre-wrap;
+  max-height: 180px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
