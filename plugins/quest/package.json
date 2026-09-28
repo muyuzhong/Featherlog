@@ -1,0 +1,12 @@
+{
+  "name": "@featherlog/plugin-quest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { "./main": "./src/main/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "devDependencies": {
+    "@featherlog/contracts": "workspace:*",
+    "@featherlog/kernel": "workspace:*"
+  }
+}

@@ -23,6 +23,15 @@ importers:
         specifier: workspace:*
         version: link:../contracts
 
+  plugins/quest:
+    devDependencies:
+      '@featherlog/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@featherlog/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+
 packages:
 
   '@jridgewell/resolve-uri@3.1.2':
