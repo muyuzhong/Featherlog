@@ -2,7 +2,7 @@ import type { AppUpdater, ProgressInfo, UpdateInfo } from 'electron-updater';
 import type { Bus, Clock, Dispose, Logger, UpdateState } from '@featherlog/contracts';
 import { invalid } from './validation';
 
-export type UpdateMode = 'automatic' | 'manual' | 'unsupported';
+export type UpdateMode = 'automatic' | 'manual' | 'unsupported' | 'managed';
 export type Updater = Pick<AppUpdater, 'checkForUpdates' | 'downloadUpdate' |
   'autoDownload' | 'autoInstallOnAppQuit'> & {
   on(event: 'error', listener: (error: Error) => void): unknown;
@@ -14,7 +14,8 @@ const interval = 6 * 60 * 60 * 1000;
 const releaseBase = 'https://github.com/muyuzhong/Featherlog/releases/tag/';
 
 export function updateMode(packaged: boolean, platform: string, appImage: string | undefined,
-  nsis: boolean): UpdateMode {
+  nsis: boolean, managed = false): UpdateMode {
+  if (managed) return 'managed';
   if (!packaged) return 'unsupported';
   return (platform === 'win32' && nsis) || (platform === 'linux' && !!appImage)
     ? 'automatic' : 'manual';
@@ -51,7 +52,8 @@ export function registerUpdates(options: {
   quitToInstall: () => void;
 }) {
   const { bus, clock, log, current, mode, updater } = options;
-  let state: UpdateState = { current, status: mode === 'unsupported' ? 'unsupported' : 'idle' };
+  const offline = mode === 'unsupported' || mode === 'managed';
+  let state: UpdateState = { current, status: offline ? mode : 'idle' };
   let automatic = options.automatic;
   let busy = false;
   let disposed = false;
@@ -81,7 +83,7 @@ export function registerUpdates(options: {
   };
   const schedule = () => {
     timer();
-    if (disposed || !automatic || mode === 'unsupported') return;
+    if (disposed || !automatic || offline) return;
     const due = lastCheck === undefined ? startedAt + 30_000 : lastCheck + interval;
     timer = clock.setTimeout(() => {
       check();
@@ -121,7 +123,7 @@ export function registerUpdates(options: {
     }).catch(cause => log.error('Could not notify about update', cause));
   };
   const check = () => {
-    if (disposed || busy || mode === 'unsupported') return;
+    if (disposed || busy || offline) return;
     busy = true;
     lastCheck = clock.now();
     changed({ current, status: 'checking' });
@@ -130,7 +132,7 @@ export function registerUpdates(options: {
       schedule();
     });
   };
-  if (mode !== 'unsupported') {
+  if (!offline) {
     if (!updater) throw new Error('Packaged updates require an updater');
     updater.autoDownload = false;
     updater.autoInstallOnAppQuit = mode === 'automatic';

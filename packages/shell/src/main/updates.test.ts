@@ -87,17 +87,22 @@ describe('installation detection', () => {
   });
 });
 
-it('never accesses the updater in development, including manual checks and resume', async () => {
-  const f = fixture('unsupported');
-  expect(await f.state()).toEqual({ current: '0.1.0', status: 'unsupported' });
-  expect(await f.check()).toBeNull();
-  await f.advance(24 * hour);
-  f.updates.resume();
-  expect(f.updater.checkForUpdates).not.toHaveBeenCalled();
-  expect(f.timers.size).toBe(0);
-  expect(f.changes).toEqual([]);
-  await expect(f.apply()).rejects.toMatchObject({ code: 'shell/no-update' });
-});
+it.each(['unsupported', 'managed'] as const)(
+  '%s never accesses the updater, including manual checks and resume', async mode => {
+    const f = fixture(mode);
+    expect(await f.state()).toEqual({ current: '0.1.0', status: mode });
+    expect(await f.check()).toBeNull();
+    await f.advance(24 * hour);
+    f.updates.resume();
+    f.updates.setAutomatic(false);
+    f.updates.setAutomatic(true);
+    expect(await f.check()).toBeNull();
+    expect(f.updater.checkForUpdates).not.toHaveBeenCalled();
+    expect(f.timers.size).toBe(0);
+    expect(f.changes).toEqual([]);
+    await expect(f.apply()).rejects.toMatchObject({ code: 'shell/no-update' });
+  },
+);
 
 it('checks at 30 seconds and every 6 hours, sending complete states', async () => {
   const f = fixture();
@@ -377,4 +382,13 @@ it('deduplicates error events and rejected checks', async () => {
   await f.check();
   expect(f.changes.filter(state => state.status === 'error')).toHaveLength(1);
   expect(f.log.error).toHaveBeenCalledOnce();
+});
+
+it.each([
+  [false, 'linux', undefined, false],
+  [true, 'linux', '/app.AppImage', false],
+  [true, 'win32', undefined, true],
+  [true, 'darwin', undefined, false],
+] as const)('managed takes precedence over %s %s %s %s', (packaged, platform, image, nsis) => {
+  expect(updateMode(packaged, platform, image, nsis, true)).toBe('managed');
 });

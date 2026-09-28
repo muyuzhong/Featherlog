@@ -1,0 +1,60 @@
+# Maintainer: muyuzhong (https://github.com/muyuzhong)
+pkgname=featherlog-bin
+pkgver=0.1.1
+pkgrel=1
+pkgdesc='A personal quest journal with a floating scroll (羽记)'
+arch=('x86_64')
+url='https://github.com/muyuzhong/Featherlog'
+license=('MIT')
+depends=('alsa-lib' 'at-spi2-core' 'bash' 'cairo' 'dbus' 'expat' 'libgcc' 'glib2' 'glibc'
+         'gtk3' 'hicolor-icon-theme' 'libcups' 'libx11' 'libxcb' 'libxcomposite' 'libxdamage'
+         'libxext' 'libxfixes' 'libxkbcommon' 'libxrandr' 'mesa' 'nspr' 'nss'
+         'pango' 'systemd-libs')
+makedepends=('imagemagick')
+optdepends=('qt6-tools: KWin floating window support via qdbus6')
+provides=('featherlog')
+conflicts=('featherlog')
+options=('!strip' '!debug')
+source=("Featherlog-${pkgver}-${CARCH}.AppImage::${url}/releases/download/v${pkgver}/Featherlog-${pkgver}-${CARCH}.AppImage"
+        "LICENSE-${pkgver}::https://raw.githubusercontent.com/muyuzhong/Featherlog/v${pkgver}/LICENSE")
+# v0.1.1 is not published yet. Run ../update.sh 0.1.1 after publication; this fails closed.
+sha256sums=('0000000000000000000000000000000000000000000000000000000000000000'
+            '869313596787f2dfd98d34c7c9d3c000f263bfe3b09162654de7aa1d054e3cda')
+
+prepare() {
+  chmod +x "Featherlog-${pkgver}-${CARCH}.AppImage"
+  "./Featherlog-${pkgver}-${CARCH}.AppImage" --appimage-extract >/dev/null
+}
+
+package() {
+  install -d "${pkgdir}/opt/featherlog"
+  cp -a squashfs-root/. "${pkgdir}/opt/featherlog/"
+  # AppRun integration libraries are unused when launching Electron directly.
+  rm -rf "${pkgdir}/opt/featherlog/"{AppRun,.DirIcon,featherlog.desktop,featherlog.png,usr}
+  find "${pkgdir}/opt/featherlog" -type d -exec chmod 755 {} +
+  chmod 4755 "${pkgdir}/opt/featherlog/chrome-sandbox"
+  printf 'pacman\n' > "${pkgdir}/opt/featherlog/resources/package-type"
+
+  install -Dm644 "LICENSE-${pkgver}" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  for size in 16 24 32 48 64 128 256 512 1024; do
+    install -d "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps"
+    magick squashfs-root/usr/share/icons/hicolor/1024x1024/apps/featherlog.png \
+      -resize "${size}x${size}" \
+      "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps/featherlog.png"
+  done
+  install -Dm755 /dev/stdin "${pkgdir}/usr/bin/featherlog" <<'LAUNCHER'
+#!/bin/sh
+exec /opt/featherlog/featherlog "$@"
+LAUNCHER
+  install -Dm644 /dev/stdin "${pkgdir}/usr/share/applications/featherlog.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=羽记
+Comment=Personal quest journal
+Exec=featherlog %U
+Icon=featherlog
+Terminal=false
+Categories=Office;
+StartupWMClass=featherlog
+DESKTOP
+}

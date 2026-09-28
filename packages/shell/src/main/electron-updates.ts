@@ -11,8 +11,9 @@ import { configureUpdateNetwork } from './update-network';
 export function startUpdates(bus: Bus, clock: Clock, log: Logger, settings: Settings,
   files: JsonFiles, quitToInstall: (install: () => void) => void) {
   const mode = updateMode(app.isPackaged, process.platform, process.env.APPIMAGE,
-    existsSync(join(dirname(process.execPath), 'Uninstall Featherlog.exe')));
-  const updater = mode === 'unsupported' ? undefined : process.platform === 'linux'
+    existsSync(join(dirname(process.execPath), 'Uninstall Featherlog.exe')),
+    existsSync(join(process.resourcesPath, 'package-type')));
+  const updater = mode === 'unsupported' || mode === 'managed' ? undefined : process.platform === 'linux'
     ? new electronUpdater.AppImageUpdater() : process.platform === 'darwin'
       ? new electronUpdater.MacUpdater() : new electronUpdater.NsisUpdater();
   if (updater) {
