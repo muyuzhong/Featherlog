@@ -3,3 +3,4 @@ packages:
   - plugins/*
 allowBuilds:
   esbuild: true
+  usocket: false
