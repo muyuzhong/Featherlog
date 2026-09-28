@@ -12,6 +12,7 @@ import { ElectronFloat, PlainFloat, selectDock } from './dock';
 import { createKWinFloat } from './kwin-float';
 import { registerShell } from './shell-state';
 import { Windows } from './windows';
+import { startUpdates } from './electron-updates';
 import { invalid, isJson } from './validation';
 
 const clock: Clock = {
@@ -30,6 +31,8 @@ if (!app.requestSingleInstanceLock()) {
   const logs = createLogs(userData, clock);
   const log = logs.logger('shell');
   let shutdown = async () => {};
+  let installUpdate: (() => void) | undefined;
+  let stopUpdates = () => {};
   let stopped = false;
   let quitting = false;
   let openPanel = () => { pendingOpen = true; };
@@ -46,7 +49,8 @@ if (!app.requestSingleInstanceLock()) {
       await files.flush();
       await logs.flush();
       stopped = true;
-      app.quit();
+      if (installUpdate) installUpdate();
+      else app.quit();
     });
   });
 
@@ -136,6 +140,7 @@ if (!app.requestSingleInstanceLock()) {
           .catch(cause => log.error('Could not open panel', cause));
       });
     shutdown = async () => {
+      stopUpdates();
       for (const plugin of [...plugins].reverse()) kernel.unload(plugin.manifest.id);
       bridge.dispose();
       offSettings();
@@ -145,6 +150,10 @@ if (!app.requestSingleInstanceLock()) {
     };
     await app.whenReady();
     if (quitting) return;
+    stopUpdates = startUpdates(bus, clock, log, settings, files, install => {
+      installUpdate = install;
+      app.quit();
+    });
     if (process.platform === 'darwin') app.dock?.hide();
     log.info('Starting Featherlog', { platform: process.platform, compatMode, selected });
     await kernel.load(plugins);

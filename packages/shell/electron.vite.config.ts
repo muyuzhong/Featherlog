@@ -5,7 +5,7 @@ export default defineConfig({
   main: {
     build: {
       externalizeDeps: false,
-      rollupOptions: { input: resolve('src/main/index.ts'), external: ['dbus-next'] },
+      rollupOptions: { input: resolve('src/main/index.ts'), external: ['dbus-next', 'electron-updater'] },
     },
   },
   preload: {

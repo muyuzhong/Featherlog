@@ -28,7 +28,10 @@ async function fixture() {
 
 it('applies shell and plugin defaults without sharing mutable snapshots', async () => {
   const { settings } = await fixture();
-  expect(settings.all()).toEqual({ shell: { paper: 'vellum', compatMode: false }, example: { hour: 4, scale: .5, label: 'label', enabled: true } });
+  expect(settings.all()).toEqual({
+    shell: { paper: 'vellum', compatMode: false, autoUpdate: true },
+    example: { hour: 4, scale: .5, label: 'label', enabled: true },
+  });
   const snapshot = settings.all();
   snapshot.example!.hour = 12;
   expect(settings.forPlugin('example').get('hour')).toBe(4);
@@ -37,6 +40,7 @@ it('applies shell and plugin defaults without sharing mutable snapshots', async 
 it.each([
   ['shell', 'edge', 'bottom'], ['shell', 'display', 'not-a-display'],
   ['shell', 'verticalPosition', -1], ['shell', 'verticalPosition', 1.1],
+  ['shell', 'autoUpdate', 'true'], ['shell', 'autoUpdate', 1],
   ['shell', 'paper', 'white'], ['shell', 'compatMode', 1],
   ['example', 'hour', 3.5], ['example', 'hour', 24], ['example', 'scale', null],
   ['example', 'label', 1], ['example', 'enabled', 'yes'], ['unknown', 'key', true],
@@ -90,5 +94,5 @@ it('ignores removed placement settings from existing files', async () => {
   const { root, manifests, files, log } = await fixture();
   const settings = new Settings(root, manifests, { shell: { edge: 'left', display: '42',
     verticalPosition: .2 }, plugins: {} }, files, log);
-  expect(settings.all().shell).toEqual({ paper: 'vellum', compatMode: false });
+  expect(settings.all().shell).toEqual({ paper: 'vellum', compatMode: false, autoUpdate: true });
 });

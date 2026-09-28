@@ -1,0 +1,47 @@
+appId: io.github.muyuzhong.featherlog
+productName: Featherlog
+executableName: featherlog
+copyright: Copyright © Featherlog contributors
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - out/**/*
+  - package.json
+npmRebuild: false
+asar: true
+artifactName: Featherlog-${version}-${arch}.${ext}
+publish:
+  provider: github
+  owner: muyuzhong
+  repo: Featherlog
+  releaseType: draft
+linux:
+  syncDesktopName: true
+  target:
+    - target: AppImage
+      arch: [x64]
+  icon: resources/icon.png
+  category: Office
+  desktop:
+    entry:
+      Name: 羽记
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: resources/icon.png
+  verifyUpdateCodeSignature: false
+nsis:
+  oneClick: true
+  perMachine: false
+  allowElevation: false
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  icon: resources/icon.png
+  identity: null
+  category: public.app-category.productivity

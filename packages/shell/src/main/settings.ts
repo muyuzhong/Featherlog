@@ -6,6 +6,7 @@ import { invalid, isJson, record } from './validation';
 const shellSchema = {
   paper: { type: 'string', enum: ['vellum', 'golden', 'aged'], default: 'vellum' },
   compatMode: { type: 'boolean', default: false },
+  autoUpdate: { type: 'boolean', default: true },
 };
 
 type Listener = (scope: string, key: string, value: Json) => void;
