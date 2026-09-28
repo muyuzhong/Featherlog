@@ -256,13 +256,13 @@ preload 通过 `contextBridge` 暴露最底层的传输接口（`send`、`onDeli
 - 计数目标：`quest/count` 累加到 `target` 时自动完成该目标。
 - 一章的最后一个目标完成时，该章 `doneAt` 被设置，发 `quest/chapter-completed`。
 - 最后一章完成时，任务**自动完成**（`status: completed`），发 `quest/completed`。这是游戏里的"任务完成"时刻，界面据此播放完成仪式。
-- `quest/reopen-objective` 用于撤销：该目标及其后所有目标恢复为未完成；受影响的章节和任务一并恢复。
+- `quest/reopen-objective` 用于撤销：该目标及其后所有目标恢复为未完成；受影响的章节和任务一并恢复。撤销**不丢进度**：其中的计数目标，`current` 降为 `min(current, target - 1)`，而不是清零。
 - `quest/complete` 对主线和支线表示"直接完成"：剩余目标全部完成，再完成任务。
 - `revealed` 为 `false` 时，界面只显示已完成的目标和当前目标，后面的目标显示为"尚未揭晓"；未到达的章节只显示章序号。这只影响显示，不影响数据。
 
 ### 8.4 追踪
 
-- 同一时间最多追踪一个任务。`quest/track` 追踪一个任务时，自动取消之前的追踪，发一次 `quest/tracked`。
+- 同一时间最多追踪一个任务，且**只有进行中的主线和支线可以被追踪**，每日委托不追踪（否则抛 `quest/invalid-input`）。`quest/track` 追踪一个任务时，自动取消之前的追踪，发一次 `quest/tracked`。
 - 被追踪的任务完成、归档或删除时，追踪自动清空（`questId: null`）。
 - 收起视图的悬停预览显示：被追踪任务的名字、当前章、当前目标，以及每日委托完成数和进行中的支线数。
 
@@ -279,6 +279,8 @@ preload 通过 `contextBridge` 暴露最底层的传输接口（`send`、`onDeli
 `quest/list` 返回按 `kind` 分组后各自按 `order` 升序的任务。界面自行分组显示：主线、支线、每日委托。
 
 `derived.dueToday`：应做的每日委托；或 `scheduledFor ≤ 今天`、`deadline ≤ 今天` 的进行中主线和支线。
+
+**"今天"在整个任务插件里一律指当前周期键**（按 `dayStartHour` 偏移后的日期），包括 `dueToday`、`overdue` 和每日委托。例如一天从 4 点开始时，凌晨 1 点仍然算前一天：前一天到期的支线此时是"今日限期"，还不算逾期。
 
 ### 8.7 请求与事件
 
