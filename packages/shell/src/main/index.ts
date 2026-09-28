@@ -13,6 +13,7 @@ import { createKWinFloat } from './kwin-float';
 import { registerShell } from './shell-state';
 import { Windows } from './windows';
 import { startUpdates } from './electron-updates';
+import { configureUserData } from './user-data';
 import { invalid, isJson } from './validation';
 
 const clock: Clock = {
@@ -23,6 +24,8 @@ const clock: Clock = {
   },
 };
 
+// The lock and every service must use the final directory, including migration fallback.
+const { migrationError } = configureUserData(app);
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -30,6 +33,9 @@ if (!app.requestSingleInstanceLock()) {
   const files = new JsonFiles(clock);
   const logs = createLogs(userData, clock);
   const log = logs.logger('shell');
+  if (migrationError !== undefined) {
+    log.warn('Could not migrate legacy user data', migrationError);
+  }
   let shutdown = async () => {};
   let installUpdate: (() => void) | undefined;
   let stopUpdates = () => {};
