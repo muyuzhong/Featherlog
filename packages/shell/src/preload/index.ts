@@ -2,9 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { DockCapabilities, FeatherlogPreload, Json } from '@featherlog/contracts';
 
 const kind = process.argv.includes('--featherlog-window=panel') ? 'panel' : 'collapsed';
-const anchored = process.argv.includes('--featherlog-dock=electron');
+const electron = process.argv.includes('--featherlog-dock=electron');
+const kwin = process.argv.includes('--featherlog-dock=kwin');
 const capabilities: DockCapabilities = {
-  anchored, keepAbove: anchored, focusSafe: anchored,
+  anchored: false, keepAbove: electron || kwin, focusSafe: electron,
 };
 const subscribe = <T extends unknown[]>(channel: string, listener: (...values: T) => void) => {
   const receive = (_event: Electron.IpcRendererEvent, ...values: T) => listener(...values);

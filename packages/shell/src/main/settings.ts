@@ -4,9 +4,6 @@ import { JsonFiles } from './storage';
 import { invalid, isJson, record } from './validation';
 
 const shellSchema = {
-  edge: { type: 'string', enum: ['left', 'right'], default: 'right' },
-  display: { type: 'string', default: 'auto' },
-  verticalPosition: { type: 'number', minimum: 0, maximum: 1, default: .5 },
   paper: { type: 'string', enum: ['vellum', 'golden', 'aged'], default: 'vellum' },
   compatMode: { type: 'boolean', default: false },
 };
@@ -82,9 +79,6 @@ export class Settings {
         default:
           valid = false;
       }
-    }
-    if (scope === 'shell' && key === 'display') {
-      valid = valid && (value === 'auto' || (typeof value === 'string' && /^-?\d+$/.test(value)));
     }
     if (!valid) invalid(`Invalid setting ${scope}/${key}`, 'shell/invalid-setting');
   }

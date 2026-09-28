@@ -28,8 +28,7 @@ async function fixture() {
 
 it('applies shell and plugin defaults without sharing mutable snapshots', async () => {
   const { settings } = await fixture();
-  expect(settings.all()).toEqual({ shell: { edge: 'right', display: 'auto', verticalPosition: .5,
-    paper: 'vellum', compatMode: false }, example: { hour: 4, scale: .5, label: 'label', enabled: true } });
+  expect(settings.all()).toEqual({ shell: { paper: 'vellum', compatMode: false }, example: { hour: 4, scale: .5, label: 'label', enabled: true } });
   const snapshot = settings.all();
   snapshot.example!.hour = 12;
   expect(settings.forPlugin('example').get('hour')).toBe(4);
@@ -54,8 +53,8 @@ it('serializes writes, persists the required shape and notifies plugins and wind
   const offPlugin = settings.forPlugin('example').onChange(plugin);
   const offWindow = settings.onChange(window);
   await Promise.all([
-    settings.set('example', 'hour', 0), settings.set('shell', 'edge', 'left'),
-    settings.set('shell', 'display', '42'), settings.set('example', 'scale', .25),
+    settings.set('example', 'hour', 0), settings.set('shell', 'paper', 'aged'),
+    settings.set('shell', 'compatMode', true), settings.set('example', 'scale', .25),
   ]);
   expect(plugin).toHaveBeenCalledTimes(2);
   expect(window).toHaveBeenCalledTimes(4);
@@ -63,7 +62,7 @@ it('serializes writes, persists the required shape and notifies plugins and wind
   expect(plugin).toHaveBeenCalledTimes(2);
   await settings.flush();
   const saved = JSON.parse(await readFile(join(root, 'settings.json'), 'utf8')) as Json;
-  expect(saved).toMatchObject({ shell: { edge: 'left', display: '42' },
+  expect(saved).toMatchObject({ shell: { paper: 'aged', compatMode: true },
     plugins: { example: { hour: 0, scale: .25 } } });
   expect(new Settings(root, manifests, saved, files, log).all()).toEqual(settings.all());
   offPlugin();
@@ -85,4 +84,11 @@ it('does not commit or notify on disk failure and isolates failing listeners', a
   await settings.set('example', 'hour', 5);
   expect(listener).toHaveBeenCalledOnce();
   expect(log.error).toHaveBeenCalledOnce();
+});
+
+it('ignores removed placement settings from existing files', async () => {
+  const { root, manifests, files, log } = await fixture();
+  const settings = new Settings(root, manifests, { shell: { edge: 'left', display: '42',
+    verticalPosition: .2 }, plugins: {} }, files, log);
+  expect(settings.all().shell).toEqual({ paper: 'vellum', compatMode: false });
 });

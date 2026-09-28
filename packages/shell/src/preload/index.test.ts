@@ -14,8 +14,8 @@ afterEach(() => {
   vi.clearAllMocks();
   vi.resetModules();
 });
-async function load(kind: 'collapsed' | 'panel') {
-  process.argv = [...originalArgs, `--featherlog-window=${kind}`, '--featherlog-dock=electron'];
+async function load(kind: 'collapsed' | 'panel', dock = 'electron') {
+  process.argv = [...originalArgs, `--featherlog-window=${kind}`, `--featherlog-dock=${dock}`];
   await import('./index');
   expect(mocks.expose.mock.calls[0]![0]).toBe('featherlog');
   return mocks.expose.mock.calls[0]![1] as FeatherlogPreload;
@@ -25,7 +25,7 @@ it('exposes only the contract and strips Electron events from callbacks', async 
   const api = await load('collapsed');
   expect(Object.keys(api).sort()).toEqual(['bus', 'dock', 'panel', 'platform', 'settings', 'window']);
   expect(api.window.kind).toBe('collapsed');
-  expect(api.platform.dock).toEqual({ anchored: true, keepAbove: true, focusSafe: true });
+  expect(api.platform.dock).toEqual({ anchored: false, keepAbove: true, focusSafe: true });
   const listener = vi.fn();
   const off = api.bus.onDeliver(listener);
   const callback = mocks.on.mock.calls[0]![1] as (...args: unknown[]) => void;
@@ -60,4 +60,9 @@ it('preserves setting rejection codes as cloneable data for contextBridge', asyn
   });
   mocks.invoke.mockResolvedValueOnce({});
   await expect(api.settings.set('shell', 'edge', 'left')).resolves.toBeUndefined();
+});
+
+it.each(['kwin', 'plain'])('reports %s float capabilities', async dock => {
+  const api = await load('collapsed', dock);
+  expect(api.platform.dock).toEqual({ anchored: false, keepAbove: dock === 'kwin', focusSafe: false });
 });
