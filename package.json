@@ -9,7 +9,9 @@
   "scripts": {
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",
-    "dev": "pnpm --filter @featherlog/playground dev"
+    "dev": "pnpm --filter @featherlog/playground dev",
+    "app": "pnpm --filter @featherlog/shell app",
+    "build:app": "pnpm --filter @featherlog/shell build:app"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
