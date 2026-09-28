@@ -103,6 +103,9 @@ importers:
       '@featherlog/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@featherlog/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0
