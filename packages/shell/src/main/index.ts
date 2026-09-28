@@ -27,7 +27,7 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   const userData = app.getPath('userData');
-  const files = new JsonFiles();
+  const files = new JsonFiles(clock);
   const logs = createLogs(userData, clock);
   const log = logs.logger('shell');
   let shutdown = async () => {};

@@ -32,15 +32,15 @@ async function fixture(packaged = true) {
   directories.push(directory);
   electron.app.isPackaged = packaged;
   electron.app.getPath.mockReturnValue(directory);
-  const files = new JsonFiles();
   const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-  const settings = new Settings(directory, [], undefined, files, log);
   let now = 0;
   const timers = new Map<() => void, number>();
   const clock: Clock = { now: () => now, setTimeout(callback, ms) {
     timers.set(callback, now + ms);
     return () => { timers.delete(callback); };
   } };
+  const files = new JsonFiles(clock);
+  const settings = new Settings(directory, [], undefined, files, log);
   const kernel = createKernel({ clock, log, createServices: () => { throw new Error('No plugins'); } });
   const bus = kernel.createBus('shell');
   const notify = vi.fn(() => null);

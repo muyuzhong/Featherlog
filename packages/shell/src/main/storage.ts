@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { mkdir, open, readFile, readdir, rename, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { Json, PluginStorage } from '@featherlog/contracts';
+import type { Clock, Json, PluginStorage } from '@featherlog/contracts';
 import { invalid, isJson } from './validation';
 
 function missing(cause: unknown): boolean {
@@ -28,6 +28,24 @@ export function readJsonSync(file: string): Json | undefined {
 
 export class JsonFiles {
   private pending = new Map<string, Promise<void>>();
+
+  constructor(private clock: Clock) {}
+
+  private async replace(temporary: string, file: string): Promise<void> {
+    const delays = [20, 40, 80, 160, 320, 380];
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await rename(temporary, file);
+        return;
+      } catch (cause) {
+        const delay = delays[attempt];
+        if (delay === undefined || !(cause instanceof Error && 'code' in cause &&
+          ['EPERM', 'EACCES', 'EBUSY'].includes(String(cause.code)))) throw cause;
+        // Windows readers and scanners can briefly prevent atomic replacement.
+        await new Promise<void>(resolve => { this.clock.setTimeout(resolve, delay); });
+      }
+    }
+  }
 
   private enqueue(file: string, work: () => Promise<void>): Promise<void> {
     const result = (this.pending.get(file) ?? Promise.resolve()).then(work);
@@ -65,7 +83,7 @@ export class JsonFiles {
         } finally {
           await handle.close();
         }
-        await rename(temporary, file);
+        await this.replace(temporary, file);
       } finally {
         await unlink(temporary).catch(cause => {
           if (!missing(cause)) throw cause;
