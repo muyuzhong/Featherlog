@@ -17,7 +17,7 @@ function useJustBecame(value: boolean) {
 }
 
 /** The right page: one quest, opened. */
-export function DetailPage({ quest, store, today }: { quest: Quest; store: QuestStore; today: string }) {
+export function DetailPage({ quest, store, today, onEdit }: { quest: Quest; store: QuestStore; today: string; onEdit(): void }) {
   const chapter = currentChapter(quest);
   const ci = Math.min(quest.derived.chapterIndex, quest.chapters.length - 1);
   const objectives = chapter?.objectives ?? [];
@@ -76,6 +76,9 @@ export function DetailPage({ quest, store, today }: { quest: Quest; store: Quest
       <Objectives quest={quest} store={store} />
 
       <Ledger quest={quest} today={today} />
+      <div className={styles.pageTools}>
+        <button onClick={onEdit}>修订</button>
+      </div>
     </div>
   );
 }
