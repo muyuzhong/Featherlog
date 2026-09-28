@@ -325,7 +325,9 @@ export async function setup(ctx: MainContext): Promise<void> {
         if (target === objective) reached = true;
         if (!reached) continue;
         delete target.doneAt;
-        if (target.count) target.count.current = 0;
+        if (target.count) {
+          target.count.current = Math.min(target.count.current, target.count.target - 1);
+        }
         delete item.doneAt;
       }
     }
@@ -406,7 +408,8 @@ export async function setup(ctx: MainContext): Promise<void> {
   register('quest/track', (draft, payload, tx) => {
     const quest = payload.id === null ? null : find(draft, payload.id);
     if (quest) {
-      valid(quest.status === 'active' && !done(quest), 'Only unfinished quests can be tracked');
+      valid(quest.status === 'active' && quest.kind !== 'daily',
+        'Only active main and side quests can be tracked');
     }
     const previous = draft.quests.find(item => item.tracked);
     if ((previous?.id ?? null) !== (quest?.id ?? null)) {
