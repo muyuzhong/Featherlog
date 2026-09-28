@@ -35,7 +35,7 @@ featherlog/
 │  └─ shell/                   Electron 外壳
 │     ├─ src/main/             插件宿主、IPC 桥、窗口、存储、设置   Codex
 │     ├─ src/preload/          preload 脚本            Codex
-│     └─ src/renderer/         全部界面                Claude
+│     └─ src/renderer/         全部界面（含窗口入口 app/）  Claude
 └─ plugins/
    └─ quest/
       ├─ manifest.json         插件清单                共享，改动需审
@@ -165,35 +165,137 @@ featherlog/
 - `ctx.settings`：只读。值由外壳的设置页写入；默认值来自清单里 settings schema 的 `default`。
 - `ctx.clock`：所有和时间有关的逻辑都必须用它，不直接用 `Date.now()` 和全局 `setTimeout`，以便测试时注入模拟时钟。
 
-## 6. 进程与窗口
+## 6. 外壳：进程、窗口与 IPC
 
 ```
-┌──────────────────────── Electron 主进程 ─────────────────────────┐
-│  内核（总线 + 生命周期）                                            │
-│   ├─ 外壳主进程：shell/* 应答者、窗口管理、存储、设置、IPC 桥          │
-│   └─ 各插件的主进程部分（quest ...）                                │
-└──────────────┬─────────────────────┬──────────────────┬──────────┘
-          IPC  │                IPC  │             IPC  │
-     ┌─────────┴────────┐  ┌─────────┴──────┐  ┌────────┴──────┐
-     │ 收起窗口          │  │ 面板窗口        │  │ 弹窗窗口       │
-     │ 图标 + 悬停预览    │  │ 标签页 + 设置   │  │ 一次一个弹窗    │
-     └──────────────────┘  └────────────────┘  └───────────────┘
+┌────────────────────────── Electron 主进程 ───────────────────────────┐
+│  内核（总线 + 生命周期）                                               │
+│   ├─ 外壳主进程：shell/* 应答者 · IPC 桥 · 存储 · 设置 · 窗口 · 贴边(§9)  │
+│   └─ 各插件的主进程部分（quest …）                                     │
+└───────────────┬───────────────────────────────┬──────────────────────┘
+          IPC   │  preload: window.featherlog    │  IPC
+     ┌──────────┴──────────┐            ┌────────┴───────────┐
+     │ 收起窗口（贴边卷轴）   │            │ 面板窗口（任务日志）  │
+     │ 图标 · 悬停便签 · 通知 │            │ 标签页 · 设置        │
+     └─────────────────────┘            └────────────────────┘
 ```
 
-### 6.1 IPC 桥
+弹窗窗口（`shell/show-popup`）在做八股弹窗时再加，v1 不实现，也不注册对应的应答者（请求会得到 `no-handler`）。
 
-- 窗口 → 主进程：`send(envelope)`，事件或请求。主进程用 `inject` 投入总线。
-- 主进程 → 窗口：`deliver(envelope)`，只投递该窗口订阅了的事件，以及该窗口发出的请求的响应。
-- 订阅：窗口用 `subscribe(types[])` / `unsubscribe(types[])` 声明自己关心的事件类型，主进程**不做全量广播**。`*` 只允许开发模式下的总线检查器使用。
-- 窗口**不能**注册请求应答者。所有应答者都在主进程。
-- 窗口里消息的 `source` 就是对应插件的 id（v1 不做安全校验）。
-- 请求的超时由主进程的内核负责，窗口侧只等待 `replyTo` 匹配的响应。
+### 6.1 构建与目录
 
-### 6.2 preload
+用 electron-vite 构建三个产物，都在 `packages/shell` 里：
 
-preload 通过 `contextBridge` 暴露最底层的传输接口（`send`、`onDeliver`、`subscribe`、`unsubscribe`、读取清单、读写设置）。窗口侧的 `UiBus` 封装（按类型分发、把响应对上请求）由前端在渲染进程里实现。
+| 产物 | 入口 | 负责方 |
+|---|---|---|
+| 主进程 | `src/main/index.ts` | Codex |
+| preload（沙箱，CommonJS） | `src/preload/index.ts` | Codex |
+| 渲染层（单页，按 `?window=collapsed\|panel` 渲染不同窗口） | `src/renderer/app/index.html` | Claude |
 
-窗口控制相关的接口（展开、收起、尺寸）等竖栏原型结束后再定，见第 9 节。
+- 根目录脚本：`pnpm app` 启动开发版（electron-vite dev），`pnpm build:app` 构建。安装包打包在 v1 之后。
+- `app.isPackaged` 为 `false` 时，内核以开发模式运行（纯 JSON 校验、命名空间检查）。
+- 单实例：`app.requestSingleInstanceLock()`；重复启动时打开面板。
+
+**插件组装（组合根）**：v1 只支持仓库内置插件，构建时静态引入。
+
+- 主进程：`src/main/plugins.ts` 列出每个插件的 `{ manifest, setup }`（引入 `@featherlog/plugin-*/manifest.json` 与 `@featherlog/plugin-*/main`）。
+- 渲染层：`src/renderer/app/plugins.ts` 列出每个插件的界面入口（`@featherlog/plugin-*/ui`）。
+- 这两个文件是全仓库**唯一**允许引入插件包的地方（AGENTS.md 规则 1 的例外）。
+
+### 6.2 启动与退出
+
+1. 取单实例锁，读取设置（§6.6），选择贴边实现（§9）。兼容模式要在 `app.whenReady()` 之前加命令行开关。
+2. 创建内核：真实时钟（`Date.now` / 全局 `setTimeout`）、日志器、`createServices`（§6.6 的存储与设置）。
+3. `kernel.createBus('shell')`，注册外壳的应答者（§6.5）。
+4. 创建 IPC 桥（§6.3），再 `kernel.load(内置插件)`。
+5. 创建收起窗口并交给贴边实现；面板窗口在第一次打开时才创建，之后关闭只隐藏、不销毁。
+6. 退出（右键菜单"退出"、系统退出）：逆序卸载插件、`dock.detach()`、等待未完成的存储写入，然后退出。
+
+### 6.3 IPC 桥
+
+通道固定为四个：
+
+| 通道 | 方向 | 内容 |
+|---|---|---|
+| `bus:send` | 窗口 → 主进程 | 事件或请求信封，主进程用 `kernel.inject` 投入总线 |
+| `bus:deliver` | 主进程 → 窗口 | 该窗口订阅了的事件；该窗口发出的请求的响应 |
+| `bus:subscribe` / `bus:unsubscribe` | 窗口 → 主进程 | 事件类型数组 |
+
+- 主进程只接受形状合法的信封：`kind` 为 `event` 或 `request`，`type` 形如 `<模块>/<动作>`，`id` 与 `source` 为非空字符串；不合法的丢弃并记日志。
+- 投递来自 `kernel.observe`：事件按订阅投递，**不做全量广播**；响应按"请求 id → 发出它的窗口"的映射投递，投递后删除映射。
+- 窗口销毁或重新加载时，清空它的订阅和未决映射。
+- 窗口**不能**注册应答者。窗口里消息的 `source` 是对应插件的 id，外壳自己的界面用 `shell`（v1 不做来源校验）。
+- 请求超时由主进程的内核负责，窗口侧只等 `replyTo` 匹配的响应。
+- `*` 订阅只在开发模式下允许（总线检查器）。
+
+### 6.4 preload：`window.featherlog`
+
+接口类型是契约的一部分：`packages/contracts/src/preload.ts` 的 `FeatherlogPreload`。要点：
+
+- `window.kind`：`collapsed` 或 `panel`，主进程创建窗口时通过 `additionalArguments` 传给 preload。
+- `bus`：§6.3 的原始传输；渲染层用它构造 `UiBus`。
+- `settings`：`all()`、`set(scope, key, value)`、`onChange`。`scope` 是 `shell` 或插件 id。
+- `dock`（只在收起窗口有效）：`resize({ width, height, expanded })` 按内容调整窗口尺寸，由贴边实现保持锚定；`expanded` 变化时主进程发 `shell/view-changed`（`collapsed` ↔ `preview`）。`menu()` 弹出原生右键菜单：打开任务日志 / 设置 / 退出。
+- `panel`（只在面板窗口有效）：`close()` 隐藏面板并发 `shell/view-changed`。
+- `platform`：操作系统，以及当前贴边实现的能力（§9），设置页据此显示提示。
+
+打开面板不经过 preload，任何人都用总线请求 `shell/open-panel`。
+
+### 6.5 外壳的应答与事件
+
+| 请求 | 行为 |
+|---|---|
+| `shell/state` | 返回 `ShellState`：当前视图、全部角标、面板最近打开的标签页与参数。窗口加载后先取一次 |
+| `shell/open-panel` | 创建或显示并聚焦面板窗口，记下标签页与参数，发 `shell/view-changed`（`view: "panel"`，带 `tabId`、`params`） |
+| `shell/set-badge` | 记下角标，发 `shell/badge-changed` |
+| `shell/notify` | 发 `shell/notified`（带唯一 `id`），由收起窗口显示 |
+
+外壳的界面状态（角标、面板、通知）全部通过总线上的这些事件同步到窗口，不另开私有通道，总线检查器也能看到。
+
+### 6.6 存储、设置、日志的实现
+
+**存储**（`ctx.storage`，§5.5 的语义）：
+
+- 位置：`<userData>/plugins/<插件 id>/<encodeURIComponent(键)>.json`。
+- `set`：写 `*.tmp` → `fsync` → `rename`，同一个键的写入串行执行。
+- `get`：文件不存在返回 `undefined`；JSON 解析失败抛错（code `shell/storage-corrupt`），**不覆盖、不删除**原文件。
+- `keys`：列出该插件目录下的键。
+
+**设置**：
+
+- 全部保存在 `<userData>/settings.json`：`{ "shell": {...}, "plugins": { "<id>": {...} } }`，原子写入。
+- 默认值：插件来自清单 `contributes.settings.schema` 的 `default`；外壳来自下表。
+- `set` 按 schema 校验（v1 支持 `integer`/`number` 含 `minimum`/`maximum`、`string` 含 `enum`、`boolean`），不合法时以 `shell/invalid-setting` 拒绝。
+- 变化同时通知插件的 `ctx.settings.onChange` 和所有窗口的 `settings.onChange`。
+
+外壳自己的设置（scope `shell`）：
+
+| 键 | 值 | 默认 | 说明 |
+|---|---|---|---|
+| `edge` | `"right"` / `"left"` | `"right"` | 卷轴贴在哪条边 |
+| `display` | `"auto"` 或显示器 id | `"auto"` | `auto`：贴右边时选最右侧的显示器，贴左边时选最左侧的 |
+| `verticalPosition` | 0–1 | 0.5 | 卷轴在该边上的竖直位置 |
+| `paper` | `"vellum"` / `"golden"` / `"aged"` | `"vellum"` | 纸张（渲染层读取） |
+| `compatMode` | 布尔 | `false` | Linux 兼容模式：强制 XWayland（§9），重启后生效 |
+
+**日志**：主进程与插件日志写到控制台和 `<userData>/logs/main.log`，单个文件超过 1 MB 轮转，保留 3 个。插件日志带 `[插件 id]` 前缀。
+
+### 6.7 窗口
+
+**收起窗口**：
+
+- 无边框、透明背景、始终置顶、不进任务栏、不可调整大小、无系统阴影，用 `showInactive()` 显示。
+- 标题固定为 `featherlog-dock`（KWin 脚本据此识别，§9）；主进程拦截 `page-title-updated`，不让网页标题覆盖它。
+- 尺寸完全由渲染层通过 `dock.resize` 决定，主进程把宽限制在 40–720、高限制在 80–900。
+- macOS：`setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })`，并隐藏 Dock 图标（`app.dock.hide()`）。
+
+**面板窗口**：
+
+- 无边框（标题栏由渲染层绘制，带拖动区域），可调整大小，最小 960×640，默认 1240×800。
+- 首次打开时居中于卷轴所在的显示器；记住上次的位置与尺寸（外壳存储）。
+- 关闭（×、Esc）只隐藏；背景色设为 `#1f150d`，避免显示时闪白。
+
+**安全**（两个窗口都适用）：`contextIsolation: true`、`sandbox: true`、`nodeIntegration: false`；`setWindowOpenHandler` 一律拒绝；阻止 `will-navigate`；渲染层 HTML 带 CSP。
 
 ## 7. 界面插槽
 
@@ -223,7 +325,7 @@ preload 通过 `contextBridge` 暴露最底层的传输接口（`send`、`onDeli
 
 ### 7.3 外壳的消息
 
-见 `contracts/src/shell.ts`：`shell/open-panel`、`shell/set-badge`、`shell/notify`、`shell/show-popup`、`shell/dismiss-popup`；事件 `shell/view-changed`、`shell/popup-closed`。`shell/show-popup` 立即返回 `popupId`，关闭时通过 `shell/popup-closed` 带回结果。
+见 `contracts/src/shell.ts` 与 §6.5：请求 `shell/state`、`shell/open-panel`、`shell/set-badge`、`shell/notify`；事件 `shell/view-changed`、`shell/badge-changed`、`shell/notified`。弹窗相关的 `shell/show-popup`、`shell/dismiss-popup`、`shell/popup-closed` 已在契约中，但 v1 不实现：`shell/show-popup` 立即返回 `popupId`，关闭时通过 `shell/popup-closed` 带回结果。
 
 ## 8. 任务面板插件（quest）
 
@@ -313,17 +415,68 @@ preload 通过 `contextBridge` 暴露最底层的传输接口（`send`、`onDeli
 |---|---|---|---|
 | `dayStartHour` | 0–23 整数 | 4 | 一天从几点开始；修改后按新值重新计算周期 |
 
-## 9. 平台适配（待竖栏原型结论）
+## 9. 平台适配：卷轴贴边
 
-收起视图的理想形态是贴边竖栏，能力不足的平台退化为浮窗：
+收起窗口要贴在屏幕边缘、始终置顶、出现时不抢键盘焦点。不同平台能做到的程度不同，外壳用一个统一接口屏蔽差异，内核和插件对此无感知。
 
-| 平台 | 能力 | 形态 |
-|---|---|---|
-| Windows、macOS、Linux X11 | 可定位、可置顶 | 可拖动的浮窗，拖到屏幕边缘吸附为竖栏 |
-| KDE Wayland | 通过 KWin 脚本定位和置顶 | 同上 |
-| 其他 Wayland | 都不行 | 普通浮窗，由用户自己拖动 |
+### 9.1 接口
 
-外壳启动时检测平台能力，决定开放哪些功能。这一层只属于外壳，内核和插件无感知。具体接口在原型结束后补充到本节。
+```ts
+interface Dock {
+  readonly capabilities: DockCapabilities; // 见 contracts/src/preload.ts
+  attach(window: BrowserWindow, placement: Placement): Promise<void>;
+  /** 设置里的 edge / display / verticalPosition 变化时调用。 */
+  place(placement: Placement): Promise<void>;
+  /** 渲染层要求改变尺寸时调用；改完仍然贴边。 */
+  resize(size: { width: number; height: number }): void;
+  detach(): Promise<void>;
+}
+type Placement = { edge: 'left' | 'right'; display: Electron.Display; verticalPosition: number };
+```
+
+### 9.2 选择哪种实现
+
+| 条件 | 实现 | anchored | keepAbove | focusSafe |
+|---|---|---|---|---|
+| Windows、macOS；Linux X11；Linux 兼容模式 | `ElectronDock` | ✓ | ✓ | ✓ |
+| Linux Wayland，且 `XDG_CURRENT_DESKTOP` 含 `KDE` | `KWinDock` | ✓ | ✓ | ✓ |
+| 其他 Linux Wayland（如 GNOME） | `FloatingDock` | ✗ | ✗ | ✗ |
+
+判断 Wayland：`process.platform === 'linux'`、存在 `WAYLAND_DISPLAY`、且没有开启兼容模式（`ozone-platform` 不是 `x11`）。
+
+### 9.3 ElectronDock
+
+- 位置由 `display.workArea` 算出：贴右边时 `x = 右边界 − 宽`，贴左边时 `x = 左边界`；`y = workArea.y + (workArea.height − 高) × verticalPosition`。
+- `resize` 直接 `setBounds` 到新的锚定位置。
+- `setAlwaysOnTop(true, 'floating')`；显示器增减、分辨率变化（`screen` 的 `display-*` 事件）时重新 `place`。
+
+### 9.4 KWinDock（KDE Plasma，Wayland）
+
+Wayland 下应用不能自己定位窗口，交给 KWin 脚本完成。这一方案在原型中已在 KDE Plasma 6.7 上验证（`spike/collapsed-view`）。
+
+- **加载**：按配置生成 KWin 脚本，写到 `<userData>/kwin/featherlog-dock.js`，通过 DBus 加载：
+  - `org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript(路径, "featherlog-dock")` 得到脚本 id；
+  - 调用 `/Scripting/Script<id>` 的 `org.kde.kwin.Script.run`；
+  - 卸载用 `unloadScript("featherlog-dock")`。
+- **DBus 调用**：用 `execFile` 调 `qdbus6`，找不到时依次尝试 `qdbus`、`gdbus`。封装成可注入的执行器，方便测试。
+- **启动时先卸载同名脚本**：上次崩溃留下的脚本无害，但要先清掉。
+- **脚本的职责**：
+  1. 按窗口标题 `featherlog-dock` 找到收起窗口（窗口出现时，以及标题变化时都要检查）；
+  2. 设置 `keepAbove`、`onAllDesktops`、`skipTaskbar`、`skipPager`、`skipSwitcher`；
+  3. 按 edge、目标显示器和 verticalPosition 锚定位置；
+  4. 监听 `frameGeometryChanged`：客户端改变尺寸后重新锚定（加守卫，避免在回调里改几何又触发自己）；
+  5. **窗口出现时把焦点还给之前的活动窗口**（原型观察到：Wayland 下即使 `showInactive`，KWin 仍会激活新窗口）。
+- **显示器匹配**：配置里传 Electron display 的逻辑坐标范围，脚本选中心点落在其中的 output；找不到就用第一个。
+- `resize`：只调整窗口尺寸，由脚本重新锚定。`place`：重新生成并重新加载脚本。`detach`：卸载脚本。
+
+### 9.5 FloatingDock（其他 Wayland）
+
+- 不定位、不保证置顶，由合成器决定窗口位置；渲染层在卷轴上提供拖动区域，用户可以自己拖。
+- 设置页据 `capabilities` 提示："当前桌面不支持贴边，可开启兼容模式后重启"。
+
+### 9.6 兼容模式
+
+设置 `compatMode = true` 时，主进程在 `app.whenReady()` 之前执行 `app.commandLine.appendSwitch('ozone-platform', 'x11')`，改走 XWayland，从而使用 `ElectronDock`。代价：XWayland 只有一个全局缩放比例，在缩放比例不同的多块屏上，其中一块可能发糊（原型在 1 倍和 1.25 倍混合的双屏上观察到这个问题）。
 
 ## 10. 前端
 

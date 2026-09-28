@@ -6,6 +6,7 @@ export type * from './bus';
 export type * from './envelope';
 export type * from './kernel';
 export type * from './plugin';
+export type * from './preload';
 export type * from './quest';
 export type * from './shell';
 export type * from './slots';

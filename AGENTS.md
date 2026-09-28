@@ -18,7 +18,7 @@
 
 ## 硬性规则
 
-1. **模块之间不得互相 import。** 插件只能 import `@featherlog/contracts` 和第三方库。插件之间、插件与外壳之间只通过总线通信。
+1. **模块之间不得互相 import。** 插件只能 import `@featherlog/contracts` 和第三方库。插件之间、插件与外壳之间只通过总线通信。唯一的例外是外壳的两个组合根：`packages/shell/src/main/plugins.ts` 与 `packages/shell/src/renderer/app/plugins.ts` 可以引入插件包（design §6.1）。
 2. **内核不认识任何具体消息类型。** `packages/kernel` 里不能出现 `quest/`、`shell/` 这类字符串（测试除外）。
 3. **消息必须是纯 JSON**：不用 `undefined`、`Date`、`Map`、类实例、函数。时间用 ISO 字符串或毫秒数。
 4. **契约只加不改。** 需要修改 `packages/contracts` 或 `manifest.json` 时，PR 描述里必须有单独的"契约变更"一节，列出每处改动和原因。不要为了让实现方便而悄悄修改契约。
