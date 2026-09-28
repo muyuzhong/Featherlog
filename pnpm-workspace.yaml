@@ -2,5 +2,6 @@ packages:
   - packages/*
   - plugins/*
 allowBuilds:
+  electron-winstaller: false
   esbuild: true
   usocket: false
