@@ -254,6 +254,13 @@ featherlog/
 
 ### 6.6 存储、设置、日志的实现
 
+**数据目录**（下文的 `<userData>`）：
+
+- 安装版为系统的应用数据目录下的 `Featherlog`（Linux `~/.config/Featherlog`，Windows `%APPDATA%\Featherlog`，macOS `~/Library/Application Support/Featherlog`）。
+- 开发模式（未打包）为同一位置的 `Featherlog-dev`，开发调试不会碰到真实的任务日志。
+- 在 `app.whenReady()` 之前用 `app.setPath('userData', …)` 设定；应用名同时设为 `Featherlog`。
+- 迁移：v0.1.0 误用了 `@featherlog/shell`。安装版启动时，若 `Featherlog` 不存在而 `@featherlog/shell` 存在，就把后者整个改名为前者（同一文件系统上的 rename），失败时记日志并继续使用旧目录，不丢数据。开发模式不迁移。
+
 **存储**（`ctx.storage`，§5.5 的语义）：
 
 - 位置：`<userData>/plugins/<插件 id>/<encodeURIComponent(键)>.json`。
