@@ -1,4 +1,4 @@
-import type { Badge, CollapsedIconContribution } from '@featherlog/contracts';
+import type { Badge, CollapsedIconContribution, UnfoldSide } from '@featherlog/contracts';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { InkIcon } from '../icons';
@@ -10,7 +10,8 @@ type Props = {
   registry: SlotRegistry;
   icons: CollapsedIconContribution[];
   badges: Record<string, Badge | null>;
-  edge?: 'left' | 'right';
+  /** Which side the preview unfolds to (design §9.3). */
+  unfold?: UnfoldSide;
   /** Where the shell cannot dock the window, the scroll's rods become a drag handle (design §9.5). */
   draggable?: boolean;
   onOpen(icon: CollapsedIconContribution): void;
@@ -20,8 +21,8 @@ type Props = {
 const LEAVE_DELAY_MS = 260;
 const PREVIEW_MAX_HEIGHT = 560;
 
-/** The collapsed view: a small hanging scroll on the screen edge that unrolls a preview on hover. */
-export function CollapsedView({ registry, icons, badges, edge = 'right', draggable = false, onOpen, onPreviewChange }: Props) {
+/** The collapsed view: a small floating hanging scroll that unrolls a preview on hover. */
+export function CollapsedView({ registry, icons, badges, unfold = 'left', draggable = false, onOpen, onPreviewChange }: Props) {
   const ordered = [...icons].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [height, setHeight] = useState(240);
@@ -42,15 +43,15 @@ export function CollapsedView({ registry, icons, badges, edge = 'right', draggab
   const progress = ordered.map((icon) => badges[icon.id]).find((b): b is Extract<Badge, { kind: 'progress' }> => b?.kind === 'progress');
 
   return (
-    <div className={`${styles.root} ${edge === 'left' ? styles.left : ''}`} onMouseLeave={leave} onMouseEnter={stay}>
+    <div className={`${styles.root} ${unfold === 'right' ? styles.unfoldRight : ''}`} onMouseLeave={leave} onMouseEnter={stay}>
       <AnimatePresence>
         {previewId && (
           <motion.div
             key="preview"
             className={styles.previewShadow}
-            initial={{ clipPath: edge === 'right' ? 'inset(0 0 0 100%)' : 'inset(0 100% 0 0)', x: edge === 'right' ? 18 : -18 }}
+            initial={{ clipPath: unfold === 'left' ? 'inset(0 0 0 100%)' : 'inset(0 100% 0 0)', x: unfold === 'left' ? 18 : -18 }}
             animate={{ clipPath: 'inset(0 0 0 0%)', x: 0 }}
-            exit={{ clipPath: edge === 'right' ? 'inset(0 0 0 100%)' : 'inset(0 100% 0 0)', x: edge === 'right' ? 12 : -12 }}
+            exit={{ clipPath: unfold === 'left' ? 'inset(0 0 0 100%)' : 'inset(0 100% 0 0)', x: unfold === 'left' ? 12 : -12 }}
             transition={{ duration: 0.42, ease: [0.22, 0.8, 0.32, 1] }}
           >
             <div className={`${styles.preview} fl-paper`} style={{ height: Math.min(height, PREVIEW_MAX_HEIGHT) }}>

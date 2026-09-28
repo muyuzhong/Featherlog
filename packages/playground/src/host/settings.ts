@@ -6,9 +6,6 @@ type Listener = (scope: string, key: string, value: Json) => void;
 
 /** The shell's own settings and their defaults (design §6.6). */
 export const SHELL_DEFAULTS: Record<string, Json> = {
-  edge: 'right',
-  display: 'auto',
-  verticalPosition: 0.5,
   paper: 'vellum',
   compatMode: false,
 };

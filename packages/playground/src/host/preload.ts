@@ -50,10 +50,12 @@ export function createFakePreload(
     dock: {
       resize: (size) => shell.resizeDock(size),
       menu: onMenu,
+      side: async () => shell.side(),
+      onSide: (listener) => shell.onSide((side) => setTimeout(() => listener(side), 0)),
     },
     panel: {
       close: () => shell.closePanel(),
     },
-    platform: { os: 'linux', dock: { anchored: true, keepAbove: true, focusSafe: true } },
+    platform: { os: 'linux', dock: { anchored: false, keepAbove: true, focusSafe: true } },
   };
 }

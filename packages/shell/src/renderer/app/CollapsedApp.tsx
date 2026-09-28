@@ -1,8 +1,8 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import type { UnfoldSide } from '@featherlog/contracts';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CollapsedView } from '../collapsed/CollapsedView';
 import type { WindowRuntime } from './runtime';
 import { useNotifications, useShellState } from './shell-state';
-import { useSetting } from './use-setting';
 import { Toasts } from './Toasts';
 import styles from './App.module.css';
 
@@ -14,7 +14,7 @@ export function CollapsedApp({ runtime }: { runtime: WindowRuntime }) {
   const { preload, registry, shellBus, manifests } = runtime;
   const shell = useShellState(shellBus);
   const [toasts, dismiss] = useNotifications(shellBus);
-  const edge = useSetting<'left' | 'right'>(runtime, 'shell', 'edge') ?? 'right';
+  const unfold = useUnfoldSide(preload.dock);
   const [expanded, setExpanded] = useState(false);
   const content = useRef<HTMLDivElement>(null);
   const icons = manifests.flatMap((m) => m.contributes?.collapsedIcons ?? []);
@@ -35,7 +35,7 @@ export function CollapsedApp({ runtime }: { runtime: WindowRuntime }) {
   return (
     <div
       ref={content}
-      className={`${styles.collapsed} ${edge === 'left' ? styles.left : ''}`}
+      className={`${styles.collapsed} ${unfold === 'right' ? styles.unfoldRight : ''}`}
       onContextMenu={(event) => {
         event.preventDefault();
         preload.dock.menu();
@@ -46,11 +46,26 @@ export function CollapsedApp({ runtime }: { runtime: WindowRuntime }) {
         registry={registry}
         icons={icons}
         badges={shell.badges}
-        edge={edge}
+        unfold={unfold}
         draggable={!preload.platform.dock.anchored}
         onOpen={(icon) => void shellBus.request('shell/open-panel', icon.opens ? { tab: icon.opens } : {}).catch(console.error)}
         onPreviewChange={(id) => setExpanded(id !== null)}
       />
     </div>
   );
+}
+
+/** The side the shell says the preview should unfold to; "left" for shells that don't say. */
+function useUnfoldSide(dock: WindowRuntime['preload']['dock']): UnfoldSide {
+  const [side, setSide] = useState<UnfoldSide>('left');
+  useEffect(() => {
+    let alive = true;
+    dock.side?.().then((initial) => alive && setSide(initial), console.error);
+    const stop = dock.onSide?.(setSide);
+    return () => {
+      alive = false;
+      stop?.();
+    };
+  }, [dock]);
+  return side;
 }
