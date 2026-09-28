@@ -115,6 +115,12 @@ if (!app.requestSingleInstanceLock()) {
         if (!peer.isDestroyed()) peer.send('settings:changed', scope, key, value);
       }
     });
+    ipcMain.handle('dock:side', event => {
+      if (!trusted(event) || peers.get(event.sender) !== 'collapsed') {
+        invalid('Dock direction is only available to the collapsed window');
+      }
+      return dock.side;
+    });
     ipcMain.on('dock:resize', (event, size: unknown) => {
       if (trusted(event) && peers.get(event.sender) === 'collapsed') windows.resize(size);
     });

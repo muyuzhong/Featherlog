@@ -66,3 +66,23 @@ it.each(['kwin', 'plain'])('reports %s float capabilities', async dock => {
   const api = await load('collapsed', dock);
   expect(api.platform.dock).toEqual({ anchored: false, keepAbove: dock === 'kwin', focusSafe: false });
 });
+
+it('reads and subscribes to unfold direction only in the collapsed window', async () => {
+  const api = await load('collapsed');
+  mocks.invoke.mockResolvedValueOnce('right');
+  await expect(api.dock.side!()).resolves.toBe('right');
+  expect(mocks.invoke).toHaveBeenCalledWith('dock:side');
+  const listener = vi.fn();
+  const off = api.dock.onSide!(listener);
+  const callback = mocks.on.mock.calls.at(-1)![1] as (...args: unknown[]) => void;
+  callback({ privileged: true }, 'left');
+  expect(listener).toHaveBeenCalledWith('left');
+  off();
+  expect(mocks.removeListener).toHaveBeenCalledWith('dock:side-changed', callback);
+});
+
+it('does not expose unfold direction controls to the panel', async () => {
+  const api = await load('panel');
+  expect(api.dock.side).toBeUndefined();
+  expect(api.dock.onSide).toBeUndefined();
+});
