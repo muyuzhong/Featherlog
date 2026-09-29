@@ -29,9 +29,8 @@ export function releaseTask(command, { version, tag, repo, id }, run = gh) {
   };
   let release = find();
   if (!release && command === 'prepare') {
-    run('release', 'create', tag, '--repo', repo, '--verify-tag', '--draft',
-      '--title', tag, '--notes', '');
-    release = find();
+    release = JSON.parse(run('api', '-X', 'POST', `repos/${repo}/releases`,
+      '-f', `tag_name=${tag}`, '-f', `name=${tag}`, '-F', 'draft=true'));
   }
   if (!release) throw new Error(`Draft ${tag} does not exist`);
   if (command !== 'prepare' && String(release.id) !== id) {
