@@ -16,10 +16,14 @@ jobs:
       release_id: ${{ steps.draft.outputs.release_id }}
     steps:
       - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           package-manager-cache: false
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
       - name: Verify version and prepare the draft
         id: draft
         run: node .github/scripts/release.mjs prepare
@@ -51,7 +55,6 @@ jobs:
           path: ${{ env.electron_config_cache }}
           key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build:app
       - name: Check the prepared draft before upload
