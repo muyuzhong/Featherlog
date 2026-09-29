@@ -14,7 +14,7 @@ import type {
   ResponseData,
   ResponsePayload,
 } from '@featherlog/contracts';
-import { assertJson, handlerError, kernelError, snapshot } from './messages';
+import { assertJson, freeze, handlerError, kernelError, snapshot } from './messages';
 
 export interface MainPlugin {
   manifest: PluginManifest;
@@ -35,6 +35,7 @@ type Scope = {
   id: string;
   disposed: boolean;
   cleanups: Set<Dispose>;
+  pending: Set<Dispose>;
 };
 type Subscription = {
   active: boolean;
@@ -46,7 +47,7 @@ type Responder = {
 };
 
 function failure(code: KernelErrorCode, message: string): ResponsePayload {
-  return { ok: false, error: { code, message } };
+  return Object.freeze({ ok: false, error: Object.freeze({ code, message }) });
 }
 
 export function createKernel(options: KernelOptions) {
@@ -54,11 +55,6 @@ export function createKernel(options: KernelOptions) {
   const responders = new Map<string, Responder>();
   const observers = new Set<Subscription>();
   const plugins = new Map<string, Scope>();
-  const pending = new Set<{
-    sender: Scope | undefined;
-    receiver: Scope | undefined;
-    cancel: Dispose;
-  }>();
   const copy = <T>(value: T): T => snapshot(value, options.development ?? false);
   const guard = (scope: Scope) => {
     if (scope.disposed) throw kernelError('disposed', `Plugin ${scope.id} is disposed`);
@@ -115,7 +111,7 @@ export function createKernel(options: KernelOptions) {
       v: 1,
       kind,
       type,
-      payload: copy(payload),
+      payload,
       source,
       id: globalThis.crypto.randomUUID(),
       time: options.clock.now(),
@@ -135,21 +131,19 @@ export function createKernel(options: KernelOptions) {
   };
   const dispatch = (message: Envelope, sender?: Scope, timeoutMs = 5000): Promise<unknown> => {
     const responder = responders.get(message.type);
+    const deadline = options.clock.now() + timeoutMs;
     return new Promise((resolve, reject) => {
       let settled = false;
       let cancelTimer: Dispose = () => {};
-      const entry = {
-        sender,
-        receiver: responder?.scope,
-        cancel: () => finish(failure('disposed', 'Plugin was disposed'), 'kernel'),
-      };
+      const cancel = () => finish(failure('disposed', 'Plugin was disposed'), 'kernel');
       const finish = (payload: ResponsePayload, source: string) => {
         if (settled) return;
         const response = envelope('response', message.type, payload, source, {
           replyTo: message.id,
         });
         settled = true;
-        pending.delete(entry);
+        sender?.pending.delete(cancel);
+        responder?.scope.pending.delete(cancel);
         cancelTimer();
         publish(response);
         const result = response.payload;
@@ -157,17 +151,15 @@ export function createKernel(options: KernelOptions) {
         else reject(Object.assign(new Error(result.error.message), result.error));
       };
       if (responder && !responder.scope.disposed) {
-        pending.add(entry);
-        cancelTimer = options.clock.setTimeout(() => {
-          finish(failure('timeout', `Request ${message.type} timed out`), 'kernel');
-        }, timeoutMs);
+        sender?.pending.add(cancel);
+        responder.scope.pending.add(cancel);
       }
       publish(message);
       if (!responder) {
         finish(failure('no-handler', `No handler for ${message.type}`), 'kernel');
         return;
       }
-      if (responder.scope.disposed) entry.cancel();
+      if (responder.scope.disposed) cancel();
       if (settled) return;
       const invalidResponse = () => {
         finish(failure('not-json', 'Response data must be cloneable JSON'), 'kernel');
@@ -175,19 +167,23 @@ export function createKernel(options: KernelOptions) {
       const failed = (cause: unknown) => {
         if (settled) return;
         try {
-          finish({ ok: false, error: handlerError(cause) }, responder.scope.id);
+          finish(Object.freeze({ ok: false, error: copy(handlerError(cause)) }), responder.scope.id);
         } catch {
           invalidResponse();
         }
       };
       queueMicrotask(() => {
         if (settled) return;
+        if (timeoutMs > 0 && options.clock.now() >= deadline) {
+          finish(failure('timeout', `Request ${message.type} timed out`), 'kernel');
+          return;
+        }
         try {
           const result = responder.call(message.payload, message);
           const succeeded = (data: unknown) => {
             if (settled) return;
             try {
-              finish({ ok: true, data }, responder.scope.id);
+              finish(Object.freeze({ ok: true, data: copy(data) }), responder.scope.id);
             } catch {
               invalidResponse();
             }
@@ -200,6 +196,13 @@ export function createKernel(options: KernelOptions) {
             typeof result.then === 'function'
           ) {
             void Promise.resolve(result).then(succeeded, failed);
+            // Let immediately resolved handlers finish without creating a native timer.
+            queueMicrotask(() => {
+              if (settled) return;
+              cancelTimer = options.clock.setTimeout(() => {
+                finish(failure('timeout', `Request ${message.type} timed out`), 'kernel');
+              }, Math.max(0, deadline - options.clock.now()));
+            });
           } else {
             succeeded(result);
           }
@@ -228,7 +231,7 @@ export function createKernel(options: KernelOptions) {
           if (options.development) assertJson(payload);
           return;
         }
-        emit(envelope('event', type, payload, scope.id, config));
+        emit(envelope('event', type, copy(payload), scope.id, config));
       },
       on(type, listener) {
         guard(scope);
@@ -248,11 +251,12 @@ export function createKernel(options: KernelOptions) {
         payload: RequestPayload<K>,
         config?: RequestOptions,
       ): Promise<ResponseData<K>> {
-        const metadata = config?.causedBy === undefined ? {} : { causedBy: config.causedBy };
-        const message = envelope('request', type, payload, scope.id, metadata);
         if (scope.disposed) {
+          if (options.development) assertJson(payload);
           return Promise.reject(kernelError('disposed', `Plugin ${scope.id} is disposed`));
         }
+        const metadata = config?.causedBy === undefined ? {} : { causedBy: config.causedBy };
+        const message = envelope('request', type, copy(payload), scope.id, metadata);
         return dispatch(message, scope, config?.timeoutMs) as Promise<ResponseData<K>>;
       },
       handle(type, handler) {
@@ -271,12 +275,12 @@ export function createKernel(options: KernelOptions) {
   const disposeScope = (scope: Scope) => {
     if (scope.disposed) return;
     scope.disposed = true;
-    for (const entry of [...pending]) {
-      if (entry.sender === scope || entry.receiver === scope) entry.cancel();
-    }
+    for (const cancel of [...scope.pending]) cancel();
     for (const cleanup of [...scope.cleanups].reverse()) invoke(cleanup);
   };
   const lifecycle = (type: string, payload: unknown) => {
+    // Lifecycle payloads are built here, so no external owner needs a separate copy.
+    freeze(payload);
     emit(envelope('event', type, payload, 'kernel'));
   };
   const unload = (pluginId: string) => {
@@ -302,7 +306,7 @@ export function createKernel(options: KernelOptions) {
     }
     for (const { manifest, setup } of entries) {
       const id = manifest.id;
-      const scope: Scope = { id, disposed: false, cleanups: new Set() };
+      const scope: Scope = { id, disposed: false, cleanups: new Set(), pending: new Set() };
       plugins.set(id, scope);
       let cancelSetupTimer: Dispose = () => {};
       let timedOut = false;
@@ -371,7 +375,7 @@ export function createKernel(options: KernelOptions) {
   };
   return {
     createBus(source: string): Bus {
-      return makeBus({ id: source, disposed: false, cleanups: new Set() }, false);
+      return makeBus({ id: source, disposed: false, cleanups: new Set(), pending: new Set() }, false);
     },
     observe(callback: (message: Envelope) => void): Dispose {
       return subscribe(observers, (_, message) => callback(message));

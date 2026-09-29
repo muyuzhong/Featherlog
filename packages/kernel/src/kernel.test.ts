@@ -141,6 +141,61 @@ describe('§4.3 events', () => {
 });
 
 describe('§4.3 requests', () => {
+  it.each([false, true])('does not arm a timer for an immediate result (async=%s)', async asynchronous => {
+    const { bus, clock } = fixture();
+    const timer = vi.spyOn(clock, 'setTimeout');
+    bus.handle('alpha/get', () => asynchronous ? Promise.resolve(1) : 1);
+    await expect(bus.request('alpha/get', null)).resolves.toBe(1);
+    await flush();
+    expect(timer).not.toHaveBeenCalled();
+  });
+
+  it('keeps the original deadline when an asynchronous responder takes time to start', async () => {
+    const { bus, advance, timers } = fixture();
+    bus.handle('alpha/get', () => {
+      advance(20);
+      return new Promise(() => {});
+    });
+    const result = expect(bus.request('alpha/get', null, { timeoutMs: 25 }))
+      .rejects.toMatchObject({ code: 'timeout' });
+    await flush();
+    expect([...timers.values()]).toEqual([1025]);
+    advance(5);
+    await result;
+    expect(timers.size).toBe(0);
+  });
+
+  it('copies only the request payload for a missing handler and freezes its failure', async () => {
+    const { bus, messages } = fixture();
+    const clone = vi.spyOn(globalThis, 'structuredClone');
+    try {
+      await expect(bus.request('alpha/get', null)).rejects.toMatchObject({ code: 'no-handler' });
+      expect(clone).toHaveBeenCalledTimes(1);
+      const response = messages.find(message => message.kind === 'response')!;
+      expect(Object.isFrozen(response.payload)).toBe(true);
+      expect(Object.isFrozen((response.payload as { error: unknown }).error)).toBe(true);
+    } finally {
+      clone.mockRestore();
+    }
+  });
+
+  it('does not copy payloads for disposed senders and still validates development JSON', async () => {
+    const { kernel } = fixture();
+    let bus!: Bus;
+    await kernel.load([plugin('alpha', ctx => { bus = ctx.bus; })]);
+    kernel.unload('alpha');
+    const clone = vi.spyOn(globalThis, 'structuredClone');
+    try {
+      await expect(bus.request('alpha/get', { values: [1, 2] }))
+        .rejects.toMatchObject({ code: 'disposed' });
+      expect(() => bus.request('alpha/get', undefined))
+        .toThrow(expect.objectContaining({ code: 'not-json' }));
+      expect(clone).not.toHaveBeenCalled();
+    } finally {
+      clone.mockRestore();
+    }
+  });
+
   it('rejects missing handlers immediately as a Promise and looks up at send time', async () => {
     const { bus, timers } = fixture();
     let result!: Promise<unknown>;
@@ -211,6 +266,7 @@ const cycle: Record<string, unknown> = {}; cycle.self = cycle;
 class Example { value = 1; }
 class ExampleArray extends Array {}
 const invalid = [undefined, () => {}, new Date(), new Map(), new Example(), new ExampleArray(), cycle, NaN, Infinity, 1n, Symbol('x'), { x: undefined }, [undefined], Array(1), { [Symbol('x')]: 1 }, Object.defineProperty({}, 'x', { value: 1 }), { get x() { return 1; } }, Object.assign([], { x: 1 })];
+invalid.push(Object.assign(Array(1), { '01': 1 }), Object.assign(Array(1), { [Symbol('index')]: 1 }));
 describe('§4.3 pure JSON', () => {
   it.each(invalid.map((value, index) => [index, value] as const))('rejects invalid payload %i synchronously for emit/request/inject', (_, value) => {
     const { bus, kernel } = fixture();
