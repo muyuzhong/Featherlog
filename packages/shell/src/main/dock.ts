@@ -54,10 +54,12 @@ export function defaultBounds(area: Rectangle, size: { width: number; height: nu
 export function resizedBounds(previous: Rectangle, size: { width: number; height: number },
   area: Rectangle, side: UnfoldSide = 'left'): Rectangle {
   const x = side === 'left' ? previous.x + previous.width - size.width : previous.x;
+  // The scroll is vertically centered; integer half-heights avoid drift across odd sizes.
+  const y = previous.y + Math.floor(previous.height / 2) - Math.floor(size.height / 2);
   return {
     x: Math.round(Math.max(area.x, Math.min(x,
       area.x + area.width - size.width))),
-    y: Math.round(Math.max(area.y, Math.min(previous.y, area.y + area.height - size.height))),
+    y: Math.round(Math.max(area.y, Math.min(y, area.y + area.height - size.height))),
     width: size.width, height: size.height,
   };
 }

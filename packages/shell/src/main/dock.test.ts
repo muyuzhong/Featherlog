@@ -36,12 +36,22 @@ it('starts at the rightmost display edge and vertical center in logical coordina
     .toEqual({ x: 2480, y: 480, width: 80, height: 320 });
 });
 
-it('preserves the right edge and top when expanding and collapsing a freely moved window', () => {
+it('preserves the right edge and vertical center when expanding and collapsing a freely moved window', () => {
   const previous = { x: -500, y: 200, width: 80, height: 320 };
   const area = display(-1920).bounds;
   const expanded = resizedBounds(previous, { width: 400, height: 500 }, area);
-  expect(expanded).toEqual({ x: -820, y: 200, width: 400, height: 500 });
+  expect(expanded).toEqual({ x: -820, y: 110, width: 400, height: 500 });
   expect(resizedBounds(expanded, { width: 80, height: 320 }, area)).toEqual(previous);
+});
+
+it('does not accumulate position drift as animated heights alternate between even and odd pixels', () => {
+  const original = { x: 1000, y: 300, width: 98, height: 248 };
+  let bounds = original;
+  for (const height of [288, 287, 280, 275, 270, 261, 250, 249, 248]) {
+    bounds = resizedBounds(bounds, { width: 448, height }, display(0).bounds);
+    expect(bounds.y + Math.floor(bounds.height / 2)).toBe(424);
+  }
+  expect(resizedBounds(bounds, original, display(0).bounds)).toEqual(original);
 });
 
 it('clamps expanded content within both horizontal and vertical display boundaries', () => {
@@ -101,7 +111,7 @@ it('debounces moved positions, persists on detach and restores on attach', async
   await dock.attach(window as unknown as BrowserWindow);
   expect(window.bounds).toEqual({ x: 2200, y: 400, width: 80, height: 320 });
   dock.resize({ width: 240, height: 500 });
-  expect(window.bounds).toEqual({ x: 2200, y: 400, width: 240, height: 500 });
+  expect(window.bounds).toEqual({ x: 2200, y: 310, width: 240, height: 500 });
   await dock.detach();
 });
 
