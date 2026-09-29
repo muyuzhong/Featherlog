@@ -90,6 +90,12 @@ async function fixture(options: {
 }
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
+function storedRecord(f: Fixture, id: string) {
+  const index = f.data.get('state') as { quests: { id: string; key: string }[] };
+  return f.data.get(index.quests.find(quest => quest.id === id)!.key) as {
+    quest: Record<string, Json>; history: string[];
+  };
+}
 async function command<K extends keyof QuestRequests>(
   f: Fixture, type: K, payload: RequestPayload<K>, expected: string[],
 ) {
@@ -490,9 +496,9 @@ describe('§8.5 daily periods, quotas and streaks', () => {
     expect(restarted.events()).toEqual([]);
     expect((await restarted.get(quest.id)).cycle!.current).toBe(7);
     await restarted.request('quest/complete', { id: quest.id });
-    expect(restarted.data.get('state')).toMatchObject({ history: { [quest.id]: ['2026-09-28'] } });
+    expect(storedRecord(restarted, quest.id).history).toEqual(['2026-09-28']);
     await restarted.request('quest/uncomplete', { id: quest.id });
-    expect(restarted.data.get('state')).toMatchObject({ history: { [quest.id]: [] } });
+    expect(storedRecord(restarted, quest.id).history).toEqual([]);
     restarted.setTime(local('2026-09-28'));
     expect((await restarted.get(quest.id)).cycle!.current).toBe(9);
   });
@@ -633,7 +639,9 @@ describe('§5 and §8.8 persistence and resource isolation', () => {
         'schemaVersion' in value)).toBe(false);
       expect(values.some(value => value && typeof value === 'object' &&
         'chapters' in value && 'id' in value && value.id === untouched.id)).toBe(false);
-      expect(write).toHaveBeenCalledOnce();
+      expect(write).toHaveBeenCalledTimes(2);
+      expect(write.mock.calls[0]![1]).toMatchObject({ quest: { id: counted.id } });
+      expect(write.mock.calls[1]![0]).toBe('state');
     } finally {
       clone.mockRestore();
       write.mockRestore();
@@ -653,17 +661,33 @@ describe('§5 and §8.8 persistence and resource isolation', () => {
     expect((await restarted.get(second.id)).tracked).toBe(false);
   });
 
+  it('does not publish or acknowledge an update whose index cannot be committed', async () => {
+    const f = await fixture();
+    const quest = await f.create(daily);
+    const set = f.storage.set.bind(f.storage);
+    vi.spyOn(f.storage, 'set').mockImplementation(async (key, value) => {
+      if (key === 'state') throw new Error('index locked');
+      await set(key, value);
+    });
+    f.messages.length = 0;
+    await expect(f.request('quest/complete', { id: quest.id })).rejects.toThrow('index locked');
+    expect(f.events()).toEqual([]);
+    expect(await f.get(quest.id)).toEqual(quest);
+    const restarted = await fixture({ data: f.data });
+    expect(await restarted.get(quest.id)).toEqual(quest);
+  });
+
   it('persists schema, quests without derived, history and period; survives restart', async () => {
     const f = await fixture();
     const quest = await f.create(daily);
     await f.request('quest/complete', { id: quest.id });
     const stored = f.data.get('state') as {
-      schemaVersion: number; quests: Record<string, Json>[];
-      history: Record<string, string[]>; meta: { lastPeriodKey: string };
+      schemaVersion: number; quests: { id: string; key: string }[];
+      meta: { lastPeriodKey: string };
     };
-    expect(stored.schemaVersion).toBe(1);
-    expect(stored.quests[0]).not.toHaveProperty('derived');
-    expect(stored.history[quest.id]).toEqual(['2026-09-28']);
+    expect(stored.schemaVersion).toBe(2);
+    expect(storedRecord(f, quest.id).quest).not.toHaveProperty('derived');
+    expect(storedRecord(f, quest.id).history).toEqual(['2026-09-28']);
     expect(stored.meta.lastPeriodKey).toBe('2026-09-28');
     f.kernel.unload('quest');
     expect(f.listeners.size).toBe(0);
@@ -671,8 +695,8 @@ describe('§5 and §8.8 persistence and resource isolation', () => {
     const restarted = await fixture({ data: f.data });
     expect((await restarted.get(quest.id)).cycle!.done).toBe(true);
     await restarted.request('quest/delete', { id: quest.id });
-    const saved = restarted.data.get('state') as typeof stored;
-    expect(saved.history[quest.id]).toBeUndefined();
+    expect(restarted.data.get('state')).toMatchObject({ quests: [] });
+    expect([...restarted.data.keys()]).toEqual(['state']);
   });
 
   it('serializes concurrent writes and rolls back failed storage writes without events', async () => {
@@ -691,9 +715,9 @@ describe('§5 and §8.8 persistence and resource isolation', () => {
   });
 
   it('refuses unsupported storage versions rather than overwriting them', async () => {
-    const data = new Map<string, Json>([['state', { schemaVersion: 2 }]]);
+    const data = new Map<string, Json>([['state', { schemaVersion: 3 }]]);
     await expect(fixture({ data })).rejects.toThrow('Unsupported quest schemaVersion');
-    expect(data.get('state')).toEqual({ schemaVersion: 2 });
+    expect(data.get('state')).toEqual({ schemaVersion: 3 });
   });
 
   it('uses the local shifted calendar consistently around DST and month/year transitions', () => {
