@@ -1,7 +1,7 @@
 import { mkdtemp, rm, readFile, writeFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { renameSync } from 'node:fs';
+import { readFileSync, renameSync } from 'node:fs';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { Json, PluginManifest } from '@featherlog/contracts';
 import { loadSettings, Settings } from './settings';
@@ -9,7 +9,7 @@ import { JsonFiles } from './storage';
 
 vi.mock('node:fs', async importOriginal => {
   const fs = await importOriginal<typeof import('node:fs')>();
-  return { ...fs, renameSync: vi.fn(fs.renameSync) };
+  return { ...fs, readFileSync: vi.fn(fs.readFileSync), renameSync: vi.fn(fs.renameSync) };
 });
 
 const directories: string[] = [];
@@ -132,8 +132,10 @@ it('loads missing or valid settings without recovery and does not hide filesyste
   expect(load().all()).toEqual(f.settings.all());
   await f.settings.set('shell', 'compatMode', true);
   expect(load().all().shell!.compatMode).toBe(true);
-  const invalidPath = join(f.root, 'settings.json');
-  expect(() => loadSettings(invalidPath, f.manifests, f.files, f.log, clock)).toThrow();
+  vi.mocked(readFileSync).mockImplementationOnce(() => {
+    throw Object.assign(new Error('access denied'), { code: 'EACCES' });
+  });
+  expect(load).toThrow('access denied');
   expect(f.log.warn).not.toHaveBeenCalled();
   expect(await readdir(f.root)).toEqual(['settings.json']);
 });
