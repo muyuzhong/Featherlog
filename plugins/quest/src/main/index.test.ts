@@ -573,6 +573,41 @@ describe('§8.6 derived fields, list and reorder', () => {
 });
 
 describe('§5 and §8.8 persistence and resource isolation', () => {
+  it('copies only the quest being written and retains unrelated cached views', async () => {
+    const f = await fixture();
+    const counted = await f.create({ ...daily, quota: { target: 100 } });
+    const untouched = await f.create(main);
+    await f.get(counted.id);
+    const write = vi.spyOn(f.storage, 'set').mockResolvedValue(undefined);
+    const clone = vi.spyOn(globalThis, 'structuredClone');
+    try {
+      await f.request('quest/count', { id: counted.id, delta: 1 });
+      await f.get(untouched.id);
+      const values = clone.mock.calls.map(([value]) => value);
+      expect(values.some(value => value && typeof value === 'object' &&
+        'schemaVersion' in value)).toBe(false);
+      expect(values.some(value => value && typeof value === 'object' &&
+        'chapters' in value && 'id' in value && value.id === untouched.id)).toBe(false);
+      expect(write).toHaveBeenCalledOnce();
+    } finally {
+      clone.mockRestore();
+      write.mockRestore();
+    }
+  });
+
+  it('rolls back both quests when switching tracking fails to persist', async () => {
+    const f = await fixture();
+    const first = await f.create();
+    const second = await f.create();
+    await f.request('quest/track', { id: first.id });
+    vi.spyOn(f.storage, 'set').mockRejectedValueOnce(new Error('disk full'));
+    await expect(f.request('quest/track', { id: second.id })).rejects.toThrow('disk full');
+    await f.request('quest/update', { id: first.id, patch: { title: 'Changed' } });
+    const restarted = await fixture({ data: f.data });
+    expect((await restarted.get(first.id)).tracked).toBe(true);
+    expect((await restarted.get(second.id)).tracked).toBe(false);
+  });
+
   it('persists schema, quests without derived, history and period; survives restart', async () => {
     const f = await fixture();
     const quest = await f.create(daily);

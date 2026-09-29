@@ -78,7 +78,9 @@ export async function setup(ctx: MainContext): Promise<void> {
     causedBy?: string,
     readOnly = false,
   ): Promise<T> => {
-    const draft = readOnly ? state : structuredClone(state);
+    const draft = readOnly ? state : {
+      ...state, quests: [...state.quests], history: { ...state.history }, meta: { ...state.meta },
+    };
     const notifications: Array<() => void> = [];
     const now = ctx.clock.now();
     const key = periodKey(now, hour);
@@ -124,11 +126,11 @@ export async function setup(ctx: MainContext): Promise<void> {
       if (current === state.meta.lastPeriodKey) return;
       await transaction((draft, tx) => {
         const previous = draft.meta.lastPeriodKey;
-        for (const quest of draft.quests) {
-          if (quest.kind !== 'daily') continue;
-          quest.cycle = { periodKey: current, current: 0, done: false };
-          quest.updatedAt = new Date(tx.now).toISOString();
-        }
+        draft.quests = draft.quests.map(quest => {
+          if (quest.kind !== 'daily') return quest;
+          return { ...quest, cycle: { periodKey: current, current: 0, done: false },
+            updatedAt: new Date(tx.now).toISOString() };
+        });
         draft.meta.lastPeriodKey = current;
         tx.notify('quest/period-rolled', () => ({ previous, current }));
       }, causedBy);
@@ -153,8 +155,13 @@ export async function setup(ctx: MainContext): Promise<void> {
 
   const find = (draft: State, id: unknown): StoredQuest => {
     const key = text(id, 'quest id', Infinity, true);
-    return draft.quests.find(quest => quest.id === key) ??
-      fail('quest/not-found', 'Quest not found');
+    const index = draft.quests.findIndex(quest => quest.id === key);
+    const quest = draft.quests[index] ?? fail('quest/not-found', 'Quest not found');
+    // Draft arrays retain order until deletion; copy only quests this command can mutate.
+    if (draft !== state && quest === state.quests[index]) {
+      return draft.quests[index] = structuredClone(quest);
+    }
+    return quest;
   };
   const editable = (quest: StoredQuest) => {
     valid(quest.status !== 'archived', 'Archived quests cannot be progressed');
@@ -422,7 +429,8 @@ export async function setup(ctx: MainContext): Promise<void> {
       valid(quest.status === 'active' && quest.kind !== 'daily',
         'Only active main and side quests can be tracked');
     }
-    const previous = draft.quests.find(item => item.tracked);
+    const tracked = draft.quests.find(item => item.tracked);
+    const previous = tracked ? find(draft, tracked.id) : undefined;
     if ((previous?.id ?? null) !== (quest?.id ?? null)) {
       if (previous) {
         previous.tracked = false;
