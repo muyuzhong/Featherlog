@@ -38,15 +38,13 @@ export function assertJson(value: unknown, ancestors = new Set<object>()): void 
   const keys = Reflect.ownKeys(value);
   if (array && keys.length !== value.length + 1) return notJson();
   ancestors.add(value);
-  let index = 0;
-  for (const key of keys) {
-    if (array && key === 'length') continue;
-    const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
-    if (typeof key !== 'string' || !descriptor.enumerable || !('value' in descriptor)) {
+  // The key count plus an own data property at every index excludes holes and extra keys.
+  for (let index = 0; index < (array ? value.length : keys.length); index++) {
+    const key = array ? index : keys[index]!;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if ((!array && typeof key !== 'string') || !descriptor?.enumerable || !('value' in descriptor)) {
       return notJson();
     }
-    // Reflect lists array indices in ascending order, so dense arrays need no regex check.
-    if (array && key !== String(index++)) return notJson();
     assertJson(descriptor.value, ancestors);
   }
   ancestors.delete(value);
