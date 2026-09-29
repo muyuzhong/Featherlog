@@ -8,7 +8,7 @@ export function expectedAssets(version) {
   const prefix = `Featherlog-${version}`;
   const installers = [`${prefix}-x64.exe`];
   for (const arch of ['arm64', 'x64']) {
-    for (const ext of ['dmg', 'zip']) installers.push(`${prefix}-${arch}.${ext}`);
+    installers.push(`${prefix}-${arch}.dmg`);
   }
   return [
     `${prefix}-x86_64.AppImage`,

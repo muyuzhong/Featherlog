@@ -1,4 +1,7 @@
 import { createRequire } from 'node:module';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { expectedAssets, releaseTask } from './release.mjs';
@@ -11,9 +14,7 @@ const names = [
   'Featherlog-0.1.1-x86_64.AppImage',
   'Featherlog-0.1.1-x64.exe', 'Featherlog-0.1.1-x64.exe.blockmap',
   'Featherlog-0.1.1-arm64.dmg', 'Featherlog-0.1.1-arm64.dmg.blockmap',
-  'Featherlog-0.1.1-arm64.zip', 'Featherlog-0.1.1-arm64.zip.blockmap',
   'Featherlog-0.1.1-x64.dmg', 'Featherlog-0.1.1-x64.dmg.blockmap',
-  'Featherlog-0.1.1-x64.zip', 'Featherlog-0.1.1-x64.zip.blockmap',
   'latest.yml', 'latest-linux.yml', 'latest-mac.yml',
 ];
 const assets = names.map(name => ({ name, state: 'uploaded', size: 100 }));
@@ -86,9 +87,39 @@ function verify(items = assets) {
   return releaseTask('verify', options, gh);
 }
 
-it('accepts exactly the 14 expected, fully uploaded assets across API pages', () => {
+it('accepts exactly the 10 expected, fully uploaded assets across API pages', () => {
   expect(expectedAssets('0.1.1')).toEqual([...names].sort());
   expect(verify()).toBe('42');
+});
+
+it('the installed builder generates mac update metadata from both DMGs without ZIPs', async () => {
+  const shell = createRequire(new URL('../../packages/shell/package.json', import.meta.url));
+  const builder = createRequire(shell.resolve('electron-builder'));
+  const appBuilder = createRequire(builder.resolve('app-builder-lib'));
+  const { createUpdateInfoTasks, writeUpdateInfoFiles } = appBuilder('./publish/updateInfoBuilder');
+  const { Platform } = appBuilder('./core');
+  const { Arch } = appBuilder('builder-util');
+  const directory = await mkdtemp(join(tmpdir(), 'featherlog-mac-metadata-'));
+  const packager = {
+    platform: Platform.MAC, appInfo: { version: options.version },
+    platformSpecificBuildOptions: {}, config: {}, info: {},
+    getResource: async () => null,
+  };
+  const publish = { provider: 'github', owner: 'owner', repo: 'repo' };
+  try {
+    const tasks = (await Promise.all(['arm64', 'x64'].map(arch => createUpdateInfoTasks({
+      packager, target: { outDir: directory }, arch: Arch[arch],
+      file: join(directory, `Featherlog-${options.version}-${arch}.dmg`),
+      updateInfo: { sha512: 'test-checksum', size: 100 },
+    }, [publish])))).flat();
+    const emitArtifactCreated = vi.fn();
+    await writeUpdateInfoFiles(tasks, { emitArtifactCreated });
+    const metadata = await readFile(join(directory, 'latest-mac.yml'), 'utf8');
+    expect(metadata).toContain('Featherlog-0.1.1-arm64.dmg');
+    expect(metadata).toContain('Featherlog-0.1.1-x64.dmg');
+    expect(metadata).not.toContain('.zip');
+    expect(emitArtifactCreated).toHaveBeenCalledOnce();
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 it.each(names)('rejects a missing %s', name => {
