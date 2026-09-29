@@ -23,33 +23,36 @@ export function handlerError(value: unknown): BusErrorInfo {
   };
 }
 
+function notJson(): never {
+  throw kernelError('not-json', 'Message data must be pure JSON');
+}
+
 export function assertJson(value: unknown, ancestors = new Set<object>()): void {
-  const fail = () => {
-    throw kernelError('not-json', 'Message data must be pure JSON');
-  };
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
   if (typeof value === 'number' && Number.isFinite(value)) return;
-  if (typeof value !== 'object' || value === null || ancestors.has(value)) return fail();
+  if (typeof value !== 'object' || value === null || ancestors.has(value)) return notJson();
   const array = Array.isArray(value);
   const prototype = Object.getPrototypeOf(value);
-  if (array && prototype !== Array.prototype) return fail();
-  if (!array && prototype !== Object.prototype && prototype !== null) return fail();
+  if (array && prototype !== Array.prototype) return notJson();
+  if (!array && prototype !== Object.prototype && prototype !== null) return notJson();
   const keys = Reflect.ownKeys(value);
-  if (array && keys.length !== value.length + 1) return fail();
+  if (array && keys.length !== value.length + 1) return notJson();
   ancestors.add(value);
+  let index = 0;
   for (const key of keys) {
     if (array && key === 'length') continue;
     const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
     if (typeof key !== 'string' || !descriptor.enumerable || !('value' in descriptor)) {
-      return fail();
+      return notJson();
     }
-    if (array && (!/^(0|[1-9]\d*)$/.test(key) || Number(key) >= value.length)) return fail();
+    // Reflect lists array indices in ascending order, so dense arrays need no regex check.
+    if (array && key !== String(index++)) return notJson();
     assertJson(descriptor.value, ancestors);
   }
   ancestors.delete(value);
 }
 
-function freeze(value: unknown): void {
+export function freeze(value: unknown): void {
   if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return;
   // Freeze before recursing so production-mode cyclic input cannot loop forever.
   Object.freeze(value);
