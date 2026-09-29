@@ -87,7 +87,7 @@ featherlog/
 
 **请求**
 
-- 发出请求时查找应答者；没有应答者时，Promise **立即** 以 `no-handler` 拒绝（异步拒绝，不是同步抛出）。
+- 发出请求时查找应答者；没有应答者时，Promise **立即** 以 `no-handler` 拒绝（异步拒绝，不是同步抛出）。观察者仍依次收到请求信封和 `no-handler` 错误响应信封。
 - 应答者在微任务中调用，**绝不在 `request` 的调用栈里同步执行**：`request()` 返回时应答者尚未运行。这与事件的投递方式一致，也与跨 IPC 时请求必然异步的行为一致，避免插件之间的重入问题。应答者同步返回的数据，仍在进入总线的那一刻复制并冻结。
 - 默认超时 5000 ms，可通过 `timeoutMs` 调整。超时后以 `timeout` 拒绝，之后到达的响应被丢弃。
 - 应答者抛出的 Error 若带有形如 `<模块>/<原因>` 的字符串 `code`（如 `quest/not-found`），则把 `code`、`message`、`data` 原样转给请求方。其他任何错误都变成 `handler-error`，`message` 保留原文。"其他错误"包括 Node 的系统错误（`ENOENT` 等），也包括应答者内部再发请求时收到的 `timeout`、`no-handler`：请求方只应看到"它请求的那个应答者"的结果，不应把下游的超时误认为自己的超时。
@@ -98,12 +98,13 @@ featherlog/
 - 消息进入总线时，内核把 payload 深拷贝一份（`structuredClone`）并**深度冻结**，所有接收方（监听器、应答者、观察者）拿到的是这份只读副本。响应数据同样如此。
 - 因此：发送方之后修改自己的对象，不影响已经发出的消息；接收方也无法通过收到的对象改动发送方的内部状态，接收方之间也互不影响。这与跨 IPC 时的行为一致。
 - 开发模式和生产模式行为相同。
+- 大消息的成本随 payload 大小增加：请求和响应数据各自需要复制、冻结；开发模式还会逐属性检查纯 JSON，因此明显慢于生产模式。测量性能时应分别记录两种模式，并减少重复发送完整大状态。无人订阅且无观察者的本地事件省略快照与投递工作，开发期 JSON 校验仍保留；内核自产且外部不可达的载荷直接冻结。
 
 **纯 JSON 校验**
 
 - 开发模式下，内核校验每个 payload 和响应数据是否为纯 JSON：只允许 `null`、布尔、字符串、有限数字、数组（非稀疏、无额外属性）、普通对象（原型为 `Object.prototype` 或 `null`，只有可枚举的字符串键数据属性），且无循环引用。`-0` 视为合法（序列化后是 `0`，数值上相等）。
 - 不通过时 `emit`/`request` 同步抛出 `not-json`；应答者返回的数据不通过时，请求以 `not-json` 失败。
-- 生产模式跳过校验（复制和冻结仍然进行）。
+- 生产模式跳过校验（复制和冻结仍然进行），调用方仍必须遵守纯 JSON 契约。可被 `structuredClone` 复制的非法值（如 `undefined`、`BigInt`）不保证被内核拒绝，后续 JSON 序列化可能丢值或失败；纯 JSON 输入的复制隔离语义在两种模式下一致。
 
 ### 4.4 兼容规则
 
@@ -116,7 +117,7 @@ featherlog/
 
 外壳主进程需要把总线延伸到窗口，总线检查器需要看到全部流量。内核为此提供两个宿主级接口：
 
-- `observe(fn: (envelope) => void): Dispose`：观察经过总线的**每一条**信封，包括请求和响应。
+- `observe(fn: (envelope) => void): Dispose`：观察经过总线的**每一条**信封，包括请求和响应。观察者在发布信封的调用栈内同步执行，必须避免阻塞；耗时处理应自行异步调度。
 - `inject(envelope): void`：从外部投入一条信封（来自窗口或以后的外部程序），保留其 `source`。若是请求，内核照常查找应答者、处理超时，产生的响应信封（含 `no-handler`、`timeout` 错误响应）通过 `observe` 发出，宿主据 `replyTo` 转回给来源。
 
 ## 5. 插件
@@ -298,7 +299,7 @@ featherlog/
 **面板窗口**：
 
 - 无边框（标题栏由渲染层绘制，带拖动区域），可调整大小，最小 960×640，默认 1240×800。
-- 首次打开时居中于卷轴所在的显示器；记住上次的位置与尺寸（外壳存储）。
+- 首次打开时，在 `focusSafe` 平台居中于卷轴所在的显示器工作区；Wayland 下无法可靠读取卷轴位置时（KWinFloat/PlainFloat），回退到最右侧显示器的工作区。记住上次的位置与尺寸（外壳存储）。
 - 关闭（×、Esc）只隐藏；背景色设为 `#1f150d`，避免显示时闪白。
 
 **安全**（两个窗口都适用）：`contextIsolation: true`、`sandbox: true`、`nodeIntegration: false`；`setWindowOpenHandler` 一律拒绝；阻止 `will-navigate`；渲染层 HTML 带 CSP。
@@ -404,8 +405,8 @@ featherlog/
 | `quest/complete` | `quest/completed`（已完成时幂等，不发事件） |
 | `quest/uncomplete` | `quest/uncompleted`（未完成时幂等） |
 | `quest/track` | `quest/tracked`（没有变化时不发） |
-| `quest/archive` | `quest/updated`（`changed: ["status"]`） |
-| `quest/delete` | `quest/deleted` |
+| `quest/archive` | `quest/updated`（`changed: ["status"]`）；被追踪时再发 `quest/tracked` |
+| `quest/delete` | `quest/deleted`；被追踪时再发 `quest/tracked` |
 | `quest/reorder` | 每个 `order` 变化的任务发一次 `quest/updated` |
 
 - 事件携带完整的 `quest` 快照（包含 `derived`），界面收到后直接替换本地数据。
@@ -433,9 +434,11 @@ featherlog/
 ```ts
 interface Dock {
   readonly capabilities: DockCapabilities; // 见 contracts/src/preload.ts
+  readonly side: UnfoldSide;
+  onSide(listener: (side: UnfoldSide) => void): Dispose;
   attach(window: BrowserWindow): Promise<void>;
   /** 渲染层要求改变尺寸时调用（§9.3 的规则）。 */
-  resize(size: { width: number; height: number }): void;
+  resize(size: { width: number; height: number; expanded?: boolean }): void;
   detach(): Promise<void>;
 }
 ```
