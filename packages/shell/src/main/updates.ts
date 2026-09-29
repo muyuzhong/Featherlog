@@ -11,6 +11,7 @@ export type Updater = Pick<AppUpdater, 'checkForUpdates' | 'downloadUpdate' |
   removeListener(event: 'download-progress', listener: (info: ProgressInfo) => void): unknown;
 };
 const interval = 6 * 60 * 60 * 1000;
+const stallTimeout = 120_000;
 const releaseBase = 'https://github.com/muyuzhong/Featherlog/releases/tag/';
 
 export function updateMode(packaged: boolean, platform: string, appImage: string | undefined,
@@ -44,14 +45,14 @@ export function registerUpdates(options: {
   log: Logger;
   current: string;
   mode: UpdateMode;
-  updater?: Updater;
+  createUpdater?: () => Updater;
   automatic: boolean;
   notifiedVersions: string[];
   saveNotified: (versions: string[]) => Promise<void>;
   openExternal: (url: string) => Promise<void>;
   quitToInstall: () => void;
 }) {
-  const { bus, clock, log, current, mode, updater } = options;
+  const { bus, clock, log, current, mode } = options;
   const offline = mode === 'unsupported' || mode === 'managed';
   let state: UpdateState = { current, status: offline ? mode : 'idle' };
   let automatic = options.automatic;
@@ -59,8 +60,16 @@ export function registerUpdates(options: {
   let disposed = false;
   let lastCheck: number | undefined;
   let progressAt = -Infinity;
+  let progressPercent = 0;
   let timer: Dispose = () => {};
   let quitTimer: Dispose = () => {};
+  let watchdog: Dispose = () => {};
+  let refreshWatchdog = () => {};
+  let cancelDownload = () => {};
+  let updater: Updater | undefined;
+  let detachUpdater = () => {};
+  let failures = 0;
+  let retryAt: number | undefined;
   const startedAt = clock.now();
   const notified = new Set(options.notifiedVersions);
   const changed = (next: UpdateState) => {
@@ -76,23 +85,62 @@ export function registerUpdates(options: {
     changed({ current, status: 'error', message, checkedAt: new Date(clock.now()).toISOString() });
   };
   const progress = (info: ProgressInfo) => {
-    if (state.status !== 'downloading' || !Number.isFinite(info.percent) ||
-      clock.now() - progressAt < 500) return;
+    if (state.status !== 'downloading' || !Number.isFinite(info.percent)) return;
+    if (info.percent > progressPercent) {
+      progressPercent = info.percent;
+      refreshWatchdog();
+    }
+    if (clock.now() - progressAt < 500) return;
     progressAt = clock.now();
     changed({ ...state, percent: Math.max(0, Math.min(100, info.percent)) });
   };
   const schedule = () => {
     timer();
-    if (disposed || !automatic || offline) return;
-    const due = lastCheck === undefined ? startedAt + 30_000 : lastCheck + interval;
-    timer = clock.setTimeout(() => {
-      check();
-      // A long download still needs a future check, without spinning an overdue timer.
-      if (busy) timer = clock.setTimeout(schedule, interval);
-    }, Math.max(0, due - clock.now()));
+    if (disposed || busy || !automatic || offline) return;
+    const due = retryAt ?? (lastCheck === undefined ? startedAt + 30_000 : lastCheck + interval);
+    timer = clock.setTimeout(check, Math.max(0, due - clock.now()));
+  };
+  const connect = () => {
+    if (!options.createUpdater) throw new Error('Packaged updates require an updater');
+    const instance = options.createUpdater();
+    instance.autoDownload = false;
+    instance.autoInstallOnAppQuit = mode === 'automatic';
+    const onError = (cause: Error) => { if (updater === instance) fail(cause); };
+    instance.on('error', onError);
+    instance.on('download-progress', progress);
+    detachUpdater = () => {
+      instance.removeListener('download-progress', progress);
+      // A retired check can still emit errors; keep its guarded listener until GC.
+      updater = undefined;
+    };
+    return instance;
+  };
+  const watched = async <T>(work: Promise<T>, instance: Updater): Promise<T> => {
+    try {
+      return await new Promise<T>((resolve, reject) => {
+        refreshWatchdog = () => {
+          watchdog();
+          watchdog = clock.setTimeout(() => {
+            // electron-updater caches pending promises, so retries need a fresh instance.
+            instance.autoInstallOnAppQuit = false;
+            detachUpdater();
+            cancelDownload();
+            reject(Object.assign(new Error('Update operation stalled for 120 seconds'), {
+              code: 'shell/update-timeout',
+            }));
+          }, stallTimeout);
+        };
+        refreshWatchdog();
+        work.then(resolve, reject);
+      });
+    } finally {
+      watchdog();
+      refreshWatchdog = () => {};
+    }
   };
   const run = async () => {
-    const result = await updater!.checkForUpdates();
+    const instance = updater ?? (updater = connect());
+    const result = await watched(instance.checkForUpdates(), instance);
     if (disposed) return;
     if (!result) throw new Error('Update check returned no result');
     if (!result.isUpdateAvailable) {
@@ -108,8 +156,11 @@ export function registerUpdates(options: {
       return;
     }
     progressAt = clock.now();
+    progressPercent = 0;
     changed({ current, status: 'downloading', version, percent: 0 });
-    await updater!.downloadUpdate();
+    cancelDownload = () => result.cancellationToken?.cancel();
+    await watched(instance.downloadUpdate(result.cancellationToken), instance);
+    cancelDownload = () => {};
     if (disposed) return;
     changed({ current, status: 'ready', ...details });
     if (notified.has(version)) return;
@@ -125,20 +176,23 @@ export function registerUpdates(options: {
   const check = () => {
     if (disposed || busy || offline) return;
     busy = true;
+    timer();
     lastCheck = clock.now();
     changed({ current, status: 'checking' });
-    void run().catch(fail).finally(() => {
+    void run().then(() => {
+      failures = 0;
+      retryAt = undefined;
+    }).catch(cause => {
+      fail(cause);
+      const delay = [5 * 60_000, 15 * 60_000, 60 * 60_000][failures++] ?? interval;
+      retryAt = clock.now() + delay;
+    }).finally(() => {
+      cancelDownload = () => {};
       busy = false;
       schedule();
     });
   };
-  if (!offline) {
-    if (!updater) throw new Error('Packaged updates require an updater');
-    updater.autoDownload = false;
-    updater.autoInstallOnAppQuit = mode === 'automatic';
-    updater.on('error', fail);
-    updater.on('download-progress', progress);
-  }
+  if (!offline) updater = connect();
   const handlers = [
     bus.handle('shell/update-state', () => state),
     bus.handle('shell/check-update', () => { check(); return null; }),
@@ -161,15 +215,17 @@ export function registerUpdates(options: {
   return {
     setAutomatic(value: boolean) { automatic = value; schedule(); },
     resume() {
-      if (automatic && clock.now() - (lastCheck ?? startedAt) > interval) check();
+      if (automatic && (state.status === 'error' ||
+        clock.now() - (lastCheck ?? startedAt) > interval)) check();
     },
     dispose() {
       disposed = true;
       timer();
       quitTimer();
+      watchdog();
+      cancelDownload();
       for (const handler of handlers) handler();
-      updater?.removeListener('error', fail);
-      updater?.removeListener('download-progress', progress);
+      detachUpdater();
     },
   };
 }

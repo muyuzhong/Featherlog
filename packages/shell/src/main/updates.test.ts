@@ -44,12 +44,13 @@ function fixture(mode: UpdateMode = 'automatic', automatic = true, notifiedVersi
   const changes: UpdateState[] = [];
   bus.on('shell/update-changed', state => { changes.push(state); });
   const updater = new FakeUpdater();
+  const createUpdater = vi.fn(() => new FakeUpdater()).mockReturnValueOnce(updater);
   const openExternal = vi.fn(async (_url: string) => {});
   const quitToInstall = vi.fn();
   const saveNotified = vi.fn(async (_versions: string[]) => {});
-  const updates = registerUpdates({ bus, clock, log, current: '0.1.0', mode, updater,
+  const updates = registerUpdates({ bus, clock, log, current: '0.1.0', mode, createUpdater,
     automatic, openExternal, quitToInstall, notifiedVersions, saveNotified });
-  return { updater, bus, log, changes, notify, saveNotified, openExternal, quitToInstall, updates, timers,
+  return { updater, createUpdater, bus, log, changes, notify, saveNotified, openExternal, quitToInstall, updates, timers,
     state: () => bus.request('shell/update-state', {}),
     check: async () => { const answer = await bus.request('shell/check-update', {});
       await flush(); return answer; },
@@ -192,7 +193,7 @@ it('returns null without awaiting the check or download and serializes both phas
   await flush();
   expect((await f.state()).status).toBe('downloading');
   await f.check();
-  await f.advance(13 * hour);
+  await f.advance(10_000);
   f.updates.resume();
   expect(f.updater.checkForUpdates).toHaveBeenCalledOnce();
   expect(f.updater.downloadUpdate).toHaveBeenCalledOnce();
@@ -281,11 +282,118 @@ it('logs errors without notifications, releases the lock, and retries on schedul
     checkedAt: '1970-01-01T00:00:30.000Z' });
   expect(f.log.error).toHaveBeenCalledOnce();
   expect(f.notify).not.toHaveBeenCalled();
-  await f.advance(6 * hour);
+  await f.advance(5 * 60_000);
   expect((await f.state()).status).toBe('latest');
   f.updater.checkForUpdates.mockResolvedValueOnce(null);
   await f.check();
   expect((await f.state()).status).toBe('error');
+});
+
+it.each(['resolve', 'reject'] as const)('recovers a hung check and ignores its late %s', async late => {
+  const f = fixture();
+  const hanging = deferred<UpdateCheckResult>();
+  f.updater.checkForUpdates.mockReturnValue(hanging.promise);
+  await f.check();
+  await f.advance(119_999);
+  expect((await f.state()).status).toBe('checking');
+  await f.advance(1);
+  expect((await f.state()).status).toBe('error');
+  expect(f.updater.autoInstallOnAppQuit).toBe(false);
+  await f.check();
+  expect(f.createUpdater).toHaveBeenCalledTimes(2);
+  const recovered = await f.state();
+  expect(recovered.status).toBe('latest');
+  f.updater.emit('error', new Error('late event'));
+  if (late === 'resolve') hanging.resolve(result());
+  else hanging.reject(new Error('late rejection'));
+  await flush();
+  expect(await f.state()).toEqual(recovered);
+  expect(f.updater.downloadUpdate).not.toHaveBeenCalled();
+  expect(f.notify).not.toHaveBeenCalled();
+  expect(f.log.error).toHaveBeenCalledOnce();
+});
+
+it('cancels a stalled download and ignores old progress and completion during a retry', async () => {
+  const f = fixture();
+  const hanging = deferred<string[]>();
+  const cancellationToken = { cancel: vi.fn() } as unknown as NonNullable<UpdateCheckResult['cancellationToken']>;
+  f.updater.checkForUpdates.mockResolvedValue({ ...result(), cancellationToken });
+  f.updater.downloadUpdate.mockReturnValue(hanging.promise);
+  await f.check();
+  expect(f.updater.downloadUpdate).toHaveBeenCalledWith(cancellationToken);
+  await f.advance(120_000);
+  expect(cancellationToken.cancel).toHaveBeenCalledOnce();
+  expect(f.updater.autoInstallOnAppQuit).toBe(false);
+  const next = new FakeUpdater();
+  next.checkForUpdates.mockResolvedValue(result());
+  const download = deferred<string[]>();
+  next.downloadUpdate.mockReturnValue(download.promise);
+  f.createUpdater.mockReturnValueOnce(next);
+  await f.check();
+  f.updater.emit('download-progress', { percent: 100 });
+  f.updater.emit('error', new Error('late download error'));
+  hanging.resolve(['stale']);
+  await flush();
+  expect(await f.state()).toMatchObject({ status: 'downloading', percent: 0 });
+  expect(f.notify).not.toHaveBeenCalled();
+  download.resolve(['new']);
+  await flush();
+  expect((await f.state()).status).toBe('ready');
+  expect(f.notify).toHaveBeenCalledOnce();
+});
+
+it('allows long downloads with advancing progress, but repeated progress cannot mask a stall', async () => {
+  const f = fixture();
+  f.updater.checkForUpdates.mockResolvedValue(result());
+  f.updater.downloadUpdate.mockReturnValue(new Promise(() => {}));
+  await f.check();
+  for (const percent of [10, 20, 30]) {
+    await f.advance(119_000);
+    f.updater.emit('download-progress', { percent });
+  }
+  expect((await f.state()).status).toBe('downloading');
+  await f.advance(119_999);
+  f.updater.emit('download-progress', { percent: 30 });
+  await f.advance(1);
+  expect((await f.state()).status).toBe('error');
+});
+
+it('backs off failures at 5m, 15m, 1h, 6h and resets after success', async () => {
+  const f = fixture();
+  f.updater.checkForUpdates.mockRejectedValue(new Error('offline'));
+  await f.check();
+  let calls = 1;
+  for (const delay of [5 * 60_000, 15 * 60_000, hour, 6 * hour, 6 * hour]) {
+    await f.advance(delay - 1);
+    expect(f.updater.checkForUpdates).toHaveBeenCalledTimes(calls);
+    await f.advance(1);
+    expect(f.updater.checkForUpdates).toHaveBeenCalledTimes(++calls);
+  }
+  f.updater.checkForUpdates.mockResolvedValueOnce(result(false));
+  await f.check();
+  await f.advance(6 * hour - 1);
+  expect(f.updater.checkForUpdates).toHaveBeenCalledTimes(++calls);
+  await f.advance(1);
+  expect(f.updater.checkForUpdates).toHaveBeenCalledTimes(++calls);
+  await f.advance(5 * 60_000);
+  expect(f.updater.checkForUpdates).toHaveBeenCalledTimes(++calls);
+});
+
+it('retries a failed check on resume and suppresses automatic retries when disabled', async () => {
+  const f = fixture();
+  f.updater.checkForUpdates.mockRejectedValue(new Error('offline'));
+  await f.check();
+  f.updates.resume();
+  await flush();
+  expect(f.updater.checkForUpdates).toHaveBeenCalledTimes(2);
+  f.updates.setAutomatic(false);
+  f.updates.resume();
+  await f.advance(12 * hour);
+  expect(f.updater.checkForUpdates).toHaveBeenCalledTimes(2);
+  expect(f.timers.size).toBe(0);
+  f.updater.checkForUpdates.mockResolvedValue(result(false));
+  await f.check();
+  expect((await f.state()).status).toBe('latest');
 });
 
 it('throttles progress to 500 ms, bounds percentages and always sends the final state', async () => {
