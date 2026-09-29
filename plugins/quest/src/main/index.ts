@@ -1,11 +1,12 @@
 import type {
-  Chapter, Dispose, EventPayload, Json, MainContext, Objective, Quest, QuestEvents, QuestRequests,
+  Chapter, Dispose, EventPayload, MainContext, Objective, Quest, QuestEvents, QuestRequests,
   RequestPayload, ResponseData,
 } from '@featherlog/contracts';
 import {
   chapters, derived, fail, input, nextBoundary, object, patch, periodKey, text, valid,
 } from './model';
 import type { State, StoredQuest } from './model';
+import { openState } from './storage';
 
 type Transaction = {
   now: number;
@@ -29,31 +30,8 @@ export async function setup(ctx: MainContext): Promise<void> {
     return Number(value);
   };
   let hour = setting();
-  // One atomic storage record prevents quests/history/meta from diverging on a failed write.
-  const stored = await ctx.storage.get('state');
-  if (disposed) return;
-  let state: State;
-  if (stored === undefined) {
-    state = {
-      schemaVersion: 1, quests: [], history: {},
-      meta: { lastPeriodKey: periodKey(ctx.clock.now(), hour) },
-    };
-    await ctx.storage.set('state', state as unknown as Json);
-  } else {
-    object(stored);
-    valid(stored.schemaVersion === 1, 'Unsupported quest schemaVersion');
-    valid(Array.isArray(stored.quests), 'Invalid stored quests');
-    object(stored.history);
-    object(stored.meta);
-    valid(typeof stored.meta.lastPeriodKey === 'string', 'Invalid stored period');
-    for (const value of stored.quests) {
-      object(value);
-      input({ ...value, chapters: value.kind === 'daily' ? undefined : value.chapters });
-      valid(typeof value.id === 'string' && typeof value.createdAt === 'string',
-        'Invalid stored quest');
-    }
-    state = structuredClone(stored) as unknown as State;
-  }
+  const persistence = await openState(ctx.storage, ctx.log, periodKey(ctx.clock.now(), hour));
+  let state = persistence.state;
   if (disposed) return;
 
   const enqueue = <T>(work: () => Promise<T>): Promise<T> => {
@@ -101,7 +79,7 @@ export async function setup(ctx: MainContext): Promise<void> {
     };
     const result = work(draft, tx);
     if (notifications.length) {
-      await ctx.storage.set('state', draft as unknown as Json);
+      await persistence.save(draft);
       state = draft;
       if (!disposed) {
         for (const notify of notifications) notify();
