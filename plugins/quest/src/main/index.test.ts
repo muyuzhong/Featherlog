@@ -502,6 +502,31 @@ describe('§8.5 daily periods, quotas and streaks', () => {
 });
 
 describe('§8.6 derived fields, list and reorder', () => {
+  it('reads without cloning or writing state and reuses unchanged quest views', async () => {
+    const f = await fixture();
+    const quest = await f.create(daily);
+    const clone = vi.spyOn(globalThis, 'structuredClone');
+    const write = vi.spyOn(f.storage, 'set');
+    try {
+      await f.get(quest.id);
+      await f.request('quest/list', {});
+      expect(write).not.toHaveBeenCalled();
+      expect(clone.mock.calls.some(([value]) => value && typeof value === 'object' &&
+        ('schemaVersion' in value || 'chapters' in value))).toBe(false);
+      const completed = (await f.request('quest/complete', { id: quest.id })).quest;
+      expect((await f.get(quest.id)).derived.streak).toBe(1);
+      vi.spyOn(f.storage, 'set').mockRejectedValueOnce(new Error('disk full'));
+      await expect(f.request('quest/uncomplete', { id: quest.id })).rejects.toThrow('disk full');
+      expect(await f.get(quest.id)).toEqual(completed);
+      f.setTime(local('2026-09-29'));
+      expect((await f.get(quest.id)).cycle?.done).toBe(false);
+      expect((await f.get(quest.id)).derived.streak).toBe(1);
+    } finally {
+      clone.mockRestore();
+      write.mockRestore();
+    }
+  });
+
   it('groups kinds then sorts by order, filters, and emits only changed orders', async () => {
     const f = await fixture();
     const dailyQuest = await f.create(daily);

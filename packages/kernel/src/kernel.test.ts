@@ -63,6 +63,40 @@ const incoming = (kind: Envelope['kind'], type = 'alpha/get', payload: unknown =
 });
 
 describe('§4.3 events', () => {
+  it('skips unobserved event snapshots but retains development JSON validation', async () => {
+    const { clock, log } = fixture();
+    const kernel = createKernel({ development: true, clock, log,
+      createServices: () => { throw new Error('unused'); } });
+    const bus = kernel.createBus('shell');
+    const clone = vi.spyOn(globalThis, 'structuredClone');
+    try {
+      bus.emit('alpha/changed', { value: 1 });
+      expect(clone).not.toHaveBeenCalled();
+      expect(() => bus.emit('alpha/changed', undefined))
+        .toThrow(expect.objectContaining({ code: 'not-json' }));
+      const listener = vi.fn();
+      bus.on('alpha/changed', listener);
+      await flush();
+      expect(listener).not.toHaveBeenCalled();
+      bus.emit('alpha/changed', { value: 2 });
+      await flush();
+      expect(listener).toHaveBeenCalledOnce();
+      expect(clone).toHaveBeenCalledOnce();
+    } finally {
+      clone.mockRestore();
+    }
+  });
+
+  it('reports rejected object and callable thenables from callbacks', async () => {
+    const { kernel, bus, log } = fixture();
+    const then = (_resolve: unknown, reject: (cause: unknown) => void) => reject(new Error('thenable'));
+    kernel.observe(() => ({ then }));
+    kernel.observe(() => Object.assign(() => {}, { then }));
+    bus.emit('alpha/changed', null);
+    await flush();
+    expect(log.error).toHaveBeenCalledTimes(2);
+  });
+
   it('returns immediately, invokes in send order without awaiting completion, and never replays', async () => {
     const { bus } = fixture();
     const first = deferred();

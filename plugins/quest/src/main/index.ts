@@ -72,16 +72,26 @@ export async function setup(ctx: MainContext): Promise<void> {
       iconId: 'quest/tracker', badge: tracked ? { kind: 'progress', value } : null,
     }).catch(cause => ctx.log.error('Could not update quest badge', cause));
   };
+  const views = new WeakMap<StoredQuest, { key: string; hour: number; quest: Quest }>();
   const transaction = async <T>(
     work: (draft: State, tx: Transaction) => T,
     causedBy?: string,
+    readOnly = false,
   ): Promise<T> => {
-    const draft = structuredClone(state);
+    const draft = readOnly ? state : structuredClone(state);
     const notifications: Array<() => void> = [];
     const now = ctx.clock.now();
+    const key = periodKey(now, hour);
     const tx: Transaction = {
       now,
-      view: quest => ({ ...structuredClone(quest), derived: derived(quest, draft, now, hour) }),
+      view: quest => {
+        const cached = views.get(quest);
+        if (cached?.key === key && cached.hour === hour) return cached.quest;
+        const view = { ...structuredClone(quest), derived: derived(quest, draft, now, hour) };
+        // Writes use fresh quest objects; views are requested only after mutation is complete.
+        views.set(quest, { key, hour, quest: view });
+        return view;
+      },
       notify: (type, payload) => {
         notifications.push(() => ctx.bus.emit(type, payload(),
           causedBy === undefined ? {} : { causedBy }));
@@ -230,11 +240,12 @@ export async function setup(ctx: MainContext): Promise<void> {
   const register = <K extends keyof QuestRequests>(
     type: K,
     work: (draft: State, payload: RequestPayload<K>, tx: Transaction) => ResponseData<K>,
+    readOnly = false,
   ) => {
     ctx.bus.handle(type, (payload, envelope) => enqueue(async () => {
       await roll(envelope.id);
       object(payload);
-      return transaction((draft, tx) => work(draft, payload, tx), envelope.id);
+      return transaction((draft, tx) => work(draft, payload, tx), envelope.id, readOnly);
     }));
   };
 
@@ -252,8 +263,8 @@ export async function setup(ctx: MainContext): Promise<void> {
       (!filter.status || quest.status === filter.status))
       .sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind) || a.order - b.order)
       .map(tx.view) };
-  });
-  register('quest/get', (draft, payload, tx) => ({ quest: tx.view(find(draft, payload.id)) }));
+  }, true);
+  register('quest/get', (draft, payload, tx) => ({ quest: tx.view(find(draft, payload.id)) }), true);
   register('quest/create', (draft, payload, tx) => {
     const fields = input(payload.input);
     const now = new Date(tx.now).toISOString();
