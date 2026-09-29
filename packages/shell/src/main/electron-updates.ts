@@ -13,10 +13,10 @@ export function startUpdates(bus: Bus, clock: Clock, log: Logger, settings: Sett
   const mode = updateMode(app.isPackaged, process.platform, process.env.APPIMAGE,
     existsSync(join(dirname(process.execPath), 'Uninstall Featherlog.exe')),
     existsSync(join(process.resourcesPath, 'package-type')));
-  const updater = mode === 'unsupported' || mode === 'managed' ? undefined : process.platform === 'linux'
-    ? new electronUpdater.AppImageUpdater() : process.platform === 'darwin'
+  let updater: electronUpdater.AppUpdater | undefined;
+  const createUpdater = () => {
+    updater = process.platform === 'linux' ? new electronUpdater.AppImageUpdater() : process.platform === 'darwin'
       ? new electronUpdater.MacUpdater() : new electronUpdater.NsisUpdater();
-  if (updater) {
     updater.logger = log;
     updater.allowPrerelease = false;
     updater.allowDowngrade = false;
@@ -25,7 +25,8 @@ export function startUpdates(bus: Bus, clock: Clock, log: Logger, settings: Sett
     if (mode === 'manual') updater.isUpdaterActive = () => app.isPackaged;
     updater.setFeedURL({ provider: 'github', owner: 'muyuzhong', repo: 'Featherlog' });
     configureUpdateNetwork(updater.netSession);
-  }
+    return updater;
+  };
   const historyPath = join(app.getPath('userData'), 'updates.json');
   let notifiedVersions: string[] = [];
   try {
@@ -36,7 +37,7 @@ export function startUpdates(bus: Bus, clock: Clock, log: Logger, settings: Sett
   } catch (cause) {
     log.warn('Could not read update notification history', cause);
   }
-  const updates = registerUpdates({ bus, clock, log, mode, updater,
+  const updates = registerUpdates({ bus, clock, log, mode, createUpdater,
     notifiedVersions, saveNotified: versions => files.write(historyPath, versions),
     current: app.getVersion(), automatic: settings.all().shell!.autoUpdate === true,
     openExternal: url => shell.openExternal(url),
