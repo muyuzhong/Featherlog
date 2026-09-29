@@ -11,6 +11,9 @@ files:
 npmRebuild: false
 asar: true
 artifactName: Featherlog-${version}-${arch}.${ext}
+toolsets:
+  # Bundle the static runtime so users do not need the host's libfuse.so.2.
+  appimage: "1.0.3"
 publish:
   provider: github
   owner: muyuzhong
