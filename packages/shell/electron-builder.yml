@@ -7,6 +7,8 @@ directories:
   buildResources: resources
 files:
   - out/**/*
+  # Electron uses the preceding WOFF2 source; WOFF is only a legacy browser fallback.
+  - '!out/renderer/assets/*.woff'
   - package.json
 npmRebuild: false
 asar: true
