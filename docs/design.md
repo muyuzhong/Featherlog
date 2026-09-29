@@ -377,7 +377,8 @@ featherlog/
 
 - **周期键** `periodKey` = 把当前时间减去 `dayStartHour` 小时后，在系统本地时区下的日期。默认 `dayStartHour = 4`。
 - 每日委托在某个周期"应做"：`freq: daily` 每天都应做；`freq: weekly` 在 `weekdays` 包含该日期星期几时应做。
-- **跨周期**：发现周期键变化时，把所有每日委托的 `cycle` 重置为 `{ periodKey: 新值, current: 0, done: false }`，并发一次 `quest/period-rolled`。检测时机：`setup` 时；用 `ctx.clock.setTimeout` 定到下一个边界；**每次处理请求前**（笔记本睡眠时定时器不可靠）。
+- **跨周期**：发现周期键大于已记录的周期键时，把所有每日委托的 `cycle` 重置为 `{ periodKey: 新值, current: 0, done: false }`，并发一次 `quest/period-rolled`。检测时机：`setup` 时；用 `ctx.clock.setTimeout` 定到下一个边界；**每次处理请求前**（笔记本睡眠时定时器不可靠）。
+- 修改 `dayStartHour` 或系统时间导致周期键倒退时，保留已记录周期、每日委托进度和历史日期，不发 `quest/period-rolled`，也不重映射历史。每日委托的新建、计数、撤销、应做判断与连续记录继续使用已记录周期，直到新周期超过它；主线与支线的日期判断仍立即采用新设置。
 - 有 `quota` 的委托：`done` 等价于 `cycle.current >= quota.target`；`quest/count`（不带 `objectiveId`）达到配额时自动完成并发 `quest/completed`。`quest/complete` 把 `current` 设为 `target`；`quest/uncomplete` 把 `current` 设为 `max(0, target - 1)`。
 - **连续记录** `derived.streak`：从上一个应做周期往前数连续完成的应做周期数，当前周期已完成再加 1。不应做的日子不中断，早于创建日期的周期不计。只做展示，**没有惩罚**。
 
