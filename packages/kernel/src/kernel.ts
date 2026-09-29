@@ -14,7 +14,7 @@ import type {
   ResponseData,
   ResponsePayload,
 } from '@featherlog/contracts';
-import { handlerError, kernelError, snapshot } from './messages';
+import { assertJson, handlerError, kernelError, snapshot } from './messages';
 
 export interface MainPlugin {
   manifest: PluginManifest;
@@ -73,7 +73,11 @@ export function createKernel(options: KernelOptions) {
   };
   const invoke = (callback: () => unknown) => {
     try {
-      void Promise.resolve(callback()).catch(report);
+      const result = callback();
+      if (result !== null && (typeof result === 'object' || typeof result === 'function') &&
+        'then' in result && typeof result.then === 'function') {
+        void Promise.resolve(result).catch(report);
+      }
     } catch (cause) {
       report(cause);
     }
@@ -106,20 +110,23 @@ export function createKernel(options: KernelOptions) {
     payload: T,
     source: string,
     metadata: Pick<Envelope, 'causedBy' | 'replyTo'> = {},
-  ): Envelope<T> => Object.freeze({
-    v: 1,
-    kind,
-    type,
-    payload: copy(payload),
-    source,
-    id: globalThis.crypto.randomUUID(),
-    time: options.clock.now(),
-    ...(metadata.causedBy === undefined ? {} : { causedBy: metadata.causedBy }),
-    ...(metadata.replyTo === undefined ? {} : { replyTo: metadata.replyTo }),
-  });
+  ): Envelope<T> => {
+    const message: Envelope<T> = {
+      v: 1,
+      kind,
+      type,
+      payload: copy(payload),
+      source,
+      id: globalThis.crypto.randomUUID(),
+      time: options.clock.now(),
+    };
+    if (metadata.causedBy !== undefined) message.causedBy = metadata.causedBy;
+    if (metadata.replyTo !== undefined) message.replyTo = metadata.replyTo;
+    return Object.freeze(message);
+  };
   const emit = (message: Envelope) => {
     const targets = [...(listeners.get(message.type) ?? [])];
-    queueMicrotask(() => {
+    if (targets.length) queueMicrotask(() => {
       for (const target of targets) {
         if (target.active) invoke(() => target.call(message.payload, message));
       }
@@ -217,6 +224,10 @@ export function createKernel(options: KernelOptions) {
     return {
       emit(type, payload, config) {
         namespace(type);
+        if (!listeners.get(type)?.size && !observers.size) {
+          if (options.development) assertJson(payload);
+          return;
+        }
         emit(envelope('event', type, payload, scope.id, config));
       },
       on(type, listener) {

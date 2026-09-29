@@ -23,7 +23,7 @@ export function handlerError(value: unknown): BusErrorInfo {
   };
 }
 
-function assertJson(value: unknown, ancestors = new Set<object>()): void {
+export function assertJson(value: unknown, ancestors = new Set<object>()): void {
   const fail = () => {
     throw kernelError('not-json', 'Message data must be pure JSON');
   };
