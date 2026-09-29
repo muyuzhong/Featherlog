@@ -1,10 +1,16 @@
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { renameSync } from 'node:fs';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { Json, PluginManifest } from '@featherlog/contracts';
-import { Settings } from './settings';
+import { loadSettings, Settings } from './settings';
 import { JsonFiles } from './storage';
+
+vi.mock('node:fs', async importOriginal => {
+  const fs = await importOriginal<typeof import('node:fs')>();
+  return { ...fs, renameSync: vi.fn(fs.renameSync) };
+});
 
 const directories: string[] = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, {
@@ -98,4 +104,53 @@ it('ignores removed placement settings from existing files', async () => {
   const settings = new Settings(root, manifests, { shell: { edge: 'left', display: '42',
     verticalPosition: .2 }, plugins: {} }, files, log);
   expect(settings.all().shell).toEqual({ paper: 'vellum', compatMode: false, autoUpdate: true });
+});
+
+it.each(['{broken', 'null', '{}', '{"shell":{},"plugins":[]}',
+  '{"shell":{"paper":"aged"},"plugins":{"example":{"hour":24}}}']) (
+  'backs up damaged settings verbatim before using defaults: %s', async contents => {
+    const f = await fixture();
+    const path = join(f.root, 'settings.json');
+    await writeFile(path, contents);
+    const clock = { now: () => 1234, setTimeout: () => () => {} };
+    const recovered = loadSettings(f.root, f.manifests, f.files, f.log, clock);
+    expect(recovered.all()).toEqual(f.settings.all());
+    const backups = (await readdir(f.root)).filter(name => name.startsWith('settings.json.corrupt-1234-'));
+    expect(backups).toHaveLength(1);
+    expect(await readFile(join(f.root, backups[0]!), 'utf8')).toBe(contents);
+    expect(f.log.warn).toHaveBeenCalledOnce();
+    await recovered.set('shell', 'paper', 'golden');
+    expect(loadSettings(f.root, f.manifests, f.files, f.log, clock).all().shell!.paper).toBe('golden');
+    expect(await readFile(join(f.root, backups[0]!), 'utf8')).toBe(contents);
+  },
+);
+
+it('loads missing or valid settings without recovery and does not hide filesystem errors', async () => {
+  const f = await fixture();
+  const clock = { now: () => 0, setTimeout: () => () => {} };
+  const load = () => loadSettings(f.root, f.manifests, f.files, f.log, clock);
+  expect(load().all()).toEqual(f.settings.all());
+  await f.settings.set('shell', 'compatMode', true);
+  expect(load().all().shell!.compatMode).toBe(true);
+  const invalidPath = join(f.root, 'settings.json');
+  expect(() => loadSettings(invalidPath, f.manifests, f.files, f.log, clock)).toThrow();
+  expect(f.log.warn).not.toHaveBeenCalled();
+  expect(await readdir(f.root)).toEqual(['settings.json']);
+});
+
+it('preserves the original when backup fails and keeps manifest errors outside recovery', async () => {
+  const f = await fixture();
+  const path = join(f.root, 'settings.json');
+  await writeFile(path, '{broken');
+  const clock = { now: () => 0, setTimeout: () => () => {} };
+  vi.mocked(renameSync).mockImplementationOnce(() => { throw new Error('backup denied'); });
+  expect(() => loadSettings(f.root, f.manifests, f.files, f.log, clock)).toThrow('backup denied');
+  expect(await readFile(path, 'utf8')).toBe('{broken');
+  const invalid: PluginManifest[] = [{ id: 'bad', name: 'Bad', version: '1', contributes: {
+    settings: { schema: { properties: { value: { type: 'integer', default: 'bad' } } } },
+  } }];
+  expect(() => loadSettings(f.root, invalid, f.files, f.log, clock))
+    .toThrow(expect.objectContaining({ code: 'shell/invalid-setting' }));
+  expect(await readdir(f.root)).toEqual(['settings.json']);
+  expect(f.log.warn).not.toHaveBeenCalled();
 });
