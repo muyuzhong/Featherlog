@@ -51,9 +51,10 @@ function adopt(w) {
     if (next.width !== previous.width || next.height !== previous.height) {
       const area = previousOutput.geometry;
       const x = side === 'left' ? previous.x + previous.width - next.width : previous.x;
+      const y = previous.y + (previous.height - next.height) / 2;
       next.x = Math.max(area.x, Math.min(x,
         area.x + area.width - next.width));
-      next.y = Math.max(area.y, Math.min(previous.y, area.y + area.height - next.height));
+      next.y = Math.max(area.y, Math.min(y, area.y + area.height - next.height));
       guard = true;
       try { w.frameGeometry = next; }
       finally { guard = false; }

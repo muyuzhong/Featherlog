@@ -115,7 +115,11 @@ it('adopts late titles, preserves user movement, compensates only resize and gua
   expect(callDBus).toHaveBeenCalledWith('org.featherlog.Shell', '/Dock',
     'org.featherlog.Dock', 'SetSide', 'right', expect.any(Function));
   window.frameGeometry = { ...geometry, width: 400, height: 500 };
-  expect(geometry).toEqual({ x: 2500, y: 300, width: 400, height: 500 });
+  expect(geometry).toEqual({ x: 2500, y: 210, width: 400, height: 500 });
+  for (const height of [321, 334.4, 287.2, 320]) {
+    window.frameGeometry = { ...geometry, height };
+    expect(geometry.y + geometry.height / 2).toBeCloseTo(460);
+  }
   window.frameGeometry = { ...geometry, width: 80, height: 320 };
   expect(geometry.x).toBe(2500);
   window.frameGeometry = { ...geometry, x: 3700 };
