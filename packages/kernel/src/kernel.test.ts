@@ -62,6 +62,29 @@ const incoming = (kind: Envelope['kind'], type = 'alpha/get', payload: unknown =
   v: 1, kind, type, payload, id: crypto.randomUUID(), source: 'external:window', time: 42, causedBy: 'cause',
 });
 
+it.each([false, true])('keeps no-handler errors distinct and clone checks intact without observers (dev=%s)', async development => {
+  const { clock, log } = fixture();
+  const kernel = createKernel({ development, clock, log,
+    createServices: () => { throw new Error('unused'); } });
+  const bus = kernel.createBus('shell');
+  const now = vi.spyOn(clock, 'now');
+  const first = await bus.request('alpha/get', null).catch((cause: unknown) => cause);
+  const second = await bus.request('alpha/get', null).catch((cause: unknown) => cause);
+  expect(first).toBeInstanceOf(Error);
+  expect(first).toMatchObject({ code: 'no-handler', stack: expect.stringContaining('kernel.test') });
+  expect(first).not.toBe(second);
+  expect(now).not.toHaveBeenCalled();
+  expect(() => bus.request('alpha/get', () => {}))
+    .toThrow(expect.objectContaining({ code: 'not-json' }));
+  const seen: Envelope[] = [];
+  const off = kernel.observe(message => seen.push(message));
+  await expect(bus.request('alpha/get', null)).rejects.toMatchObject({ code: 'no-handler' });
+  expect(seen.map(message => message.kind)).toEqual(['request', 'response']);
+  off();
+  bus.handle('alpha/get', () => 42);
+  expect(await bus.request('alpha/get', null)).toBe(42);
+});
+
 describe('§4.3 events', () => {
   it('skips unobserved event snapshots but retains development JSON validation', async () => {
     const { clock, log } = fixture();

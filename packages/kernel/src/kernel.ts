@@ -147,7 +147,9 @@ export function createKernel(options: KernelOptions) {
         cancelTimer();
         publish(response);
         const result = response.payload;
-        if (result.ok) resolve(result.data);
+        // Injected requests return through observers, with no local Error consumer.
+        if (!sender) resolve(undefined);
+        else if (result.ok) resolve(result.data);
         else reject(Object.assign(new Error(result.error.message), result.error));
       };
       if (responder && !responder.scope.disposed) {
@@ -255,8 +257,12 @@ export function createKernel(options: KernelOptions) {
           if (options.development) assertJson(payload);
           return Promise.reject(kernelError('disposed', `Plugin ${scope.id} is disposed`));
         }
+        const data = copy(payload);
+        if (!responders.has(type) && !observers.size) {
+          return Promise.reject(kernelError('no-handler', `No handler for ${type}`));
+        }
         const metadata = config?.causedBy === undefined ? {} : { causedBy: config.causedBy };
-        const message = envelope('request', type, copy(payload), scope.id, metadata);
+        const message = envelope('request', type, data, scope.id, metadata);
         return dispatch(message, scope, config?.timeoutMs) as Promise<ResponseData<K>>;
       },
       handle(type, handler) {
