@@ -43,8 +43,6 @@ mac:
   target:
     - target: dmg
       arch: [arm64, x64]
-    - target: zip
-      arch: [arm64, x64]
   icon: resources/icon.png
   identity: null
   category: public.app-category.productivity
