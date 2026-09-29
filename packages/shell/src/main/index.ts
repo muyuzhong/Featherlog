@@ -4,8 +4,8 @@ import type { BrowserWindow, IpcMainEvent, IpcMainInvokeEvent, WebContents } fro
 import type { Clock, WindowKind } from '@featherlog/contracts';
 import { createKernel } from '@featherlog/kernel';
 import { plugins } from './plugins';
-import { JsonFiles, pluginStorage, readJsonSync } from './storage';
-import { Settings } from './settings';
+import { JsonFiles, pluginStorage } from './storage';
+import { loadSettings } from './settings';
 import { createLogs } from './log';
 import { createBusBridge } from './bridge';
 import { ElectronFloat, PlainFloat, selectDock } from './dock';
@@ -62,8 +62,7 @@ if (!app.requestSingleInstanceLock()) {
 
   const start = async () => {
     // This read must remain synchronous: compatibility switches precede Electron's ready event.
-    const settings = new Settings(userData, plugins.map(plugin => plugin.manifest),
-      readJsonSync(join(userData, 'settings.json')), files, log);
+    const settings = loadSettings(userData, plugins.map(plugin => plugin.manifest), files, log, clock);
     const compatMode = process.env.FEATHERLOG_COMPAT_MODE === '1' ||
       settings.all().shell!.compatMode === true;
     if (compatMode) app.commandLine.appendSwitch('ozone-platform', 'x11');

@@ -1,6 +1,8 @@
 import { join } from 'node:path';
-import type { Json, Logger, PluginManifest, PluginSettings } from '@featherlog/contracts';
-import { JsonFiles } from './storage';
+import { renameSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import type { Clock, Json, Logger, PluginManifest, PluginSettings } from '@featherlog/contracts';
+import { JsonFiles, readJsonSync } from './storage';
 import { invalid, isJson, record } from './validation';
 
 const shellSchema = {
@@ -10,6 +12,24 @@ const shellSchema = {
 };
 
 type Listener = (scope: string, key: string, value: Json) => void;
+
+export function loadSettings(userData: string, manifests: PluginManifest[], files: JsonFiles,
+  log: Logger, clock: Clock): Settings {
+  // Invalid manifest defaults are programming errors, not damaged user settings.
+  const defaults = new Settings(userData, manifests, undefined, files, log);
+  const path = join(userData, 'settings.json');
+  try {
+    return new Settings(userData, manifests, readJsonSync(path), files, log);
+  } catch (cause) {
+    if (!(cause instanceof Error && 'code' in cause &&
+      ['shell/storage-corrupt', 'shell/invalid-setting'].includes(String(cause.code)))) throw cause;
+    const backup = `${path}.corrupt-${clock.now()}-${randomUUID()}`;
+    // If backup fails, stop before defaults can overwrite the recoverable original.
+    renameSync(path, backup);
+    log.warn('Damaged settings backed up; using defaults', { backup, cause });
+    return defaults;
+  }
+}
 
 export class Settings {
   private schemas = new Map<string, Record<string, unknown>>([['shell', shellSchema]]);

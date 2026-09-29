@@ -271,6 +271,7 @@ featherlog/
 **设置**：
 
 - 全部保存在 `<userData>/settings.json`：`{ "shell": {...}, "plugins": { "<id>": {...} } }`，原子写入。
+- 启动时若设置 JSON、已知 scope 的结构或已知设置值损坏，先把原文件改名为 `settings.json.corrupt-<Clock 毫秒数>-<唯一标识>`，再使用全部默认值继续启动并记警告。备份失败或文件读取发生其他错误时继续抛错，不覆盖原文件；插件存储的损坏处理不变。
 - 默认值：插件来自清单 `contributes.settings.schema` 的 `default`；外壳来自下表。
 - `set` 按 schema 校验（v1 支持 `integer`/`number` 含 `minimum`/`maximum`、`string` 含 `enum`、`boolean`），不合法时以 `shell/invalid-setting` 拒绝。
 - 变化同时通知插件的 `ctx.settings.onChange` 和所有窗口的 `settings.onChange`。
