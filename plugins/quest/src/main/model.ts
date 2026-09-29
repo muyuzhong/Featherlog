@@ -212,7 +212,7 @@ export function due(quest: StoredQuest, key: string): boolean {
 export function derived(
   quest: StoredQuest, state: State, time: number, hour: number,
 ): QuestDerived {
-  const key = periodKey(time, hour);
+  const key = quest.kind === 'daily' ? state.meta.lastPeriodKey : periodKey(time, hour);
   const chapterIndex = quest.chapters.findIndex(chapter => chapter.objectives.some(o => !o.doneAt));
   const chapter = quest.chapters[chapterIndex];
   const objectiveIndex = chapter?.objectives.findIndex(objective => !objective.doneAt) ?? -1;

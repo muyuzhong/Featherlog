@@ -123,7 +123,7 @@ export async function setup(ctx: MainContext): Promise<void> {
   const roll = async (causedBy?: string) => {
     try {
       const current = periodKey(ctx.clock.now(), hour);
-      if (current === state.meta.lastPeriodKey) return;
+      if (current <= state.meta.lastPeriodKey) return;
       await transaction((draft, tx) => {
         const previous = draft.meta.lastPeriodKey;
         draft.quests = draft.quests.map(quest => {

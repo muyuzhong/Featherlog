@@ -446,10 +446,55 @@ describe('§8.5 daily periods, quotas and streaks', () => {
     expect([...f.timers.values()]).toContain(local('2026-09-30', 2));
     f.setHour(4);
     after = await f.get(quest.id);
-    expect(after.cycle!.periodKey).toBe('2026-09-28');
+    expect(after.cycle!.periodKey).toBe('2026-09-29');
     expect(after.cycle!.done).toBe(false);
     expect([...f.timers.values()]).toContain(local('2026-09-29', 4));
-    expect(f.events().filter(m => m.type === 'quest/period-rolled')).toHaveLength(2);
+    expect(f.events().filter(m => m.type === 'quest/period-rolled')).toHaveLength(1);
+  });
+
+  it('preserves progress, history and weekly due dates when settings move the period backwards', async () => {
+    const f = await fixture({ now: local('2026-09-28', 5, 30) });
+    const quest = await f.create({ ...daily, quota: { target: 10 },
+      recurrence: { freq: 'weekly', weekdays: [1] } });
+    await f.request('quest/count', { id: quest.id, delta: 10 });
+    const saved = structuredClone(f.data.get('state'));
+    f.messages.length = 0;
+    f.setHour(6);
+    expect(await f.get(quest.id)).toMatchObject({
+      cycle: { periodKey: '2026-09-28', current: 10, done: true },
+      derived: { streak: 1, dueToday: true },
+    });
+    expect(f.data.get('state')).toEqual(saved);
+    const created = await f.create(daily);
+    expect(created.cycle!.periodKey).toBe('2026-09-28');
+    f.setTime(local('2026-09-28', 6, 30));
+    expect((await f.get(quest.id)).derived.streak).toBe(1);
+    expect((await f.get(quest.id)).cycle!.done).toBe(true);
+    expect(f.events().some(event => event.type === 'quest/period-rolled')).toBe(false);
+    f.setTime(local('2026-09-29', 6));
+    expect(await f.get(quest.id)).toMatchObject({
+      cycle: { periodKey: '2026-09-29', current: 0, done: false },
+      derived: { streak: 1, dueToday: false },
+    });
+    expect(f.events().filter(event => event.type === 'quest/period-rolled')).toHaveLength(1);
+  });
+
+  it('keeps partial progress across clock rollback and restart, and undoes history at its original key', async () => {
+    const f = await fixture();
+    const quest = await f.create({ ...daily, quota: { target: 10 } });
+    await f.request('quest/count', { id: quest.id, delta: 7 });
+    f.setTime(local('2026-09-27'));
+    expect((await f.get(quest.id)).cycle).toEqual({ periodKey: '2026-09-28', current: 7, done: false });
+    f.kernel.unload('quest');
+    const restarted = await fixture({ data: f.data, now: local('2026-09-27') });
+    expect(restarted.events()).toEqual([]);
+    expect((await restarted.get(quest.id)).cycle!.current).toBe(7);
+    await restarted.request('quest/complete', { id: quest.id });
+    expect(restarted.data.get('state')).toMatchObject({ history: { [quest.id]: ['2026-09-28'] } });
+    await restarted.request('quest/uncomplete', { id: quest.id });
+    expect(restarted.data.get('state')).toMatchObject({ history: { [quest.id]: [] } });
+    restarted.setTime(local('2026-09-28'));
+    expect((await restarted.get(quest.id)).cycle!.current).toBe(9);
   });
 
   it('counts consecutive daily completions, respects creation period and breaks on a missed day', async () => {
