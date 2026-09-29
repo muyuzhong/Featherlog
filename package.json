@@ -14,8 +14,9 @@
     "build:app": "pnpm --filter @featherlog/shell build:app"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "5.0.2",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.2",
-    "vite": "^8.3.1"
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
   }
 }
