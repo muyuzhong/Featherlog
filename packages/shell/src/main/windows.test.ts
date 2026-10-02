@@ -18,9 +18,12 @@ class FakeWindow extends EventEmitter {
   webContents = Object.assign(new EventEmitter(), { setWindowOpenHandler: vi.fn(), send: vi.fn() });
   bounds: Rectangle;
   destroyed = false;
+  focused = false;
   show = vi.fn();
   showInactive = vi.fn();
-  focus = vi.fn();
+  focus = vi.fn(() => { this.focused = true; });
+  setFocusable = vi.fn();
+  isFocused = () => this.focused;
   hide = vi.fn();
   destroy = vi.fn(() => { this.destroyed = true; });
   isDestroyed = () => this.destroyed;
@@ -82,7 +85,8 @@ it('creates secure windows, attaches before showing inactive and preserves the d
   await f.windows.start();
   const collapsed = f.created[0]!;
   expect(collapsed.options).toMatchObject({ show: false, frame: false, transparent: true,
-    resizable: true, skipTaskbar: true, hasShadow: false, title: 'featherlog-dock', width: 80, height: 320 });
+    resizable: true, skipTaskbar: true, hasShadow: false, focusable: false,
+    title: 'featherlog-dock', width: 80, height: 320 });
   expect(f.dock.attach).toHaveBeenCalledWith(collapsed);
   expect(f.dock.attach.mock.invocationCallOrder[0]).toBeLessThan(collapsed.showInactive.mock.invocationCallOrder[0]!);
   expect(collapsed.show).not.toHaveBeenCalled();
@@ -102,6 +106,41 @@ it('creates secure windows, attaches before showing inactive and preserves the d
   }
   f.dock.onSide.mock.calls[0]![0]('right');
   expect(collapsed.webContents.send).toHaveBeenCalledWith('dock:side-changed', 'right');
+});
+
+it('requires a click for dock keyboard focus and revokes it on blur or a rejected activation', async () => {
+  const f = fixture(false);
+  await f.windows.start();
+  const collapsed = f.created[0]!;
+  const event = { preventDefault: vi.fn() };
+  const mouse = (type: string) => collapsed.webContents.emit('before-mouse-event', event, { type });
+  collapsed.emit('focus');
+  mouse('mouseMove');
+  expect(collapsed.focus).not.toHaveBeenCalled();
+  expect(collapsed.setFocusable).not.toHaveBeenCalled();
+  expect(f.view).not.toHaveBeenCalled();
+  mouse('mouseDown');
+  expect(collapsed.setFocusable).toHaveBeenLastCalledWith(true);
+  expect(collapsed.focus).toHaveBeenCalledOnce();
+  mouse('mouseUp');
+  expect(collapsed.setFocusable).toHaveBeenCalledOnce();
+  collapsed.focused = false;
+  collapsed.emit('blur');
+  expect(collapsed.setFocusable).toHaveBeenLastCalledWith(false);
+  collapsed.emit('focus');
+  expect(collapsed.setFocusable).toHaveBeenLastCalledWith(false);
+  collapsed.focus.mockImplementationOnce(() => {});
+  mouse('mouseDown');
+  mouse('mouseUp');
+  expect(collapsed.setFocusable.mock.calls.map(([value]) => value)).toEqual([true, false, true, false]);
+  expect(event.preventDefault).not.toHaveBeenCalled();
+  await f.windows.openPanel();
+  const panel = f.created[1]!;
+  expect(panel.options.focusable).toBe(true);
+  expect(panel.focus).toHaveBeenCalledOnce();
+  panel.emit('blur');
+  mouse('mouseMove');
+  expect(panel.setFocusable).not.toHaveBeenCalled();
 });
 
 it('clamps and rounds dock dimensions, rejects malformed sizes, and emits only view transitions', () => {

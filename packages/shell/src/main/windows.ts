@@ -35,6 +35,7 @@ export class Windows {
       backgroundColor: collapsed ? '#00000000' : '#1f150d',
       title: collapsed ? 'featherlog-dock' : '羽记',
       resizable: true, skipTaskbar: collapsed, hasShadow: !collapsed,
+      focusable: !collapsed,
       ...(collapsed ? {} : { minWidth: 960, minHeight: 640 }),
       webPreferences: {
         preload: join(import.meta.dirname, '../preload/index.cjs'),
@@ -54,6 +55,16 @@ export class Windows {
       kind, code, message,
     }));
     if (collapsed) {
+      // A compositor restoring focus must not reopen the preview; clicks can still use the keyboard.
+      window.webContents.on('before-mouse-event', (_event, mouse) => {
+        if (mouse.type === 'mouseDown') {
+          window.setFocusable(true);
+          window.focus();
+        } else if (mouse.type === 'mouseUp' && !window.isFocused()) {
+          window.setFocusable(false);
+        }
+      });
+      window.on('blur', () => window.setFocusable(false));
       window.on('page-title-updated', event => event.preventDefault());
       window.webContents.on('context-menu', () => this.menu());
       if (process.platform === 'darwin') {
