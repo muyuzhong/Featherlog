@@ -537,7 +537,7 @@ Wayland 下应用不能置顶、也不能定位自己，交给一个**很小的*
 - macOS 保留两个架构的 dmg 和更新元数据；手动下载不需要 zip，恢复签名自动更新时再增加 Squirrel.Mac 所需的 zip。
 - 运行时依赖（`dbus-next`、`electron-updater`）必须进安装包；其余代码都打进 bundle。pnpm 工作区的依赖布局由实现方处理，要求用打出的包实际启动验证。
 - **发布流程**：推送 `v<版本号>` 标签触发 GitHub Actions（`.github/workflows/release.yml`）。准备阶段安装依赖并集中运行一次 `pnpm typecheck`，通过后校验版本、准备草稿。随后三个平台并行：`pnpm install --frozen-lockfile` → `pnpm test` → 构建 → electron-builder 上传到同名 GitHub Release。各系统仍独立执行测试以覆盖平台差异；标签与 `version` 不一致时失败。
-- Release 先以**草稿**创建，维护者检查后手动发布。自动更新只看已发布的正式版，不看草稿和预发布版。
+- Release 先以**草稿**创建并自动生成发布说明。三个平台的测试、构建和上传全部成功，且完整安装包、blockmap 和 `latest*.yml` 校验通过后，CI 自动正式发布并设为 latest；任一平台失败或资产不完整时保留草稿，不发布。正式发布前再次核对草稿 ID 及全部资产，不覆盖已发布的版本。自动更新只看已发布的正式版，不看草稿和预发布版。
 
 ### 12.2 自动更新
 

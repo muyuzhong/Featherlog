@@ -128,7 +128,7 @@ pnpm test
 1. 修改 `packages/shell/package.json` 的 `version`，合并到 `main`。
 2. 推送同名标签：`git tag v0.2.0 && git push origin v0.2.0`。
 3. GitHub Actions 在 Linux、Windows、macOS 上测试、构建，并把安装包上传到一个**草稿** Release；标签与版本号不一致时直接失败。
-4. 检查草稿里的安装包和 `latest*.yml`，写好发布说明（会显示在应用的"看看更新了什么"里），再点 **Publish release**。已安装的客户端只会看到正式发布的版本，草稿和预发布版都不会触发更新。
+4. 三个平台全部成功，且安装包、blockmap 和 `latest*.yml` 齐全后，CI 自动正式发布并设为 latest，发布说明由 GitHub 自动生成。失败时保留草稿供排查；修复后可重跑工作流。已安装的客户端只会看到正式发布的版本，草稿和预发布版都不会触发更新。
 
 本地打包：`pnpm --filter @featherlog/shell package:app`，产物在 `packages/shell/dist`。
 
