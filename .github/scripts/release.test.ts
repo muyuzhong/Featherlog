@@ -30,7 +30,8 @@ it('creates one draft and reuses it on rerun', () => {
   const gh = vi.fn((...args: string[]) => {
     if (args[1] === '--paginate') return JSON.stringify([created ? [draft] : []]);
     expect(args).toEqual(['api', '-X', 'POST', 'repos/owner/repo/releases',
-      '-f', 'tag_name=v0.1.1', '-f', 'name=v0.1.1', '-F', 'draft=true']);
+      '-f', 'tag_name=v0.1.1', '-f', 'name=v0.1.1', '-F', 'draft=true',
+      '-F', 'generate_release_notes=true']);
     created = true;
     return JSON.stringify(draft);
   });
@@ -81,11 +82,41 @@ it('checks draft identity and publisher visibility before upload', () => {
   expect(() => releaseTask('check', options, gh)).toThrow('first page');
 });
 
-function verify(items = assets) {
+function verify(items = assets, command = 'verify') {
   const gh = vi.fn().mockReturnValueOnce(JSON.stringify([[draft]]))
     .mockReturnValueOnce(JSON.stringify([items.slice(0, 7), items.slice(7)]));
-  return releaseTask('verify', options, gh);
+  return releaseTask(command, options, gh);
 }
+
+it('publishes only the validated draft ID with complete assets and makes it latest', () => {
+  const gh = vi.fn().mockReturnValueOnce(JSON.stringify([[draft]]))
+    .mockReturnValueOnce(JSON.stringify([assets.slice(0, 7), assets.slice(7)]))
+    .mockReturnValueOnce(JSON.stringify({ ...draft, draft: false }));
+  expect(releaseTask('publish', options, gh)).toBe('42');
+  expect(gh.mock.calls[2]).toEqual(['api', '-X', 'PATCH', 'repos/owner/repo/releases/42',
+    '-F', 'draft=false', '-f', 'make_latest=true']);
+});
+
+it('does not publish a changed draft, a prerelease or incomplete assets', () => {
+  for (const [release, items, error] of [
+    [{ ...draft, id: 43 }, assets, 'Draft changed'],
+    [{ ...draft, prerelease: true }, assets, 'prerelease'],
+    [draft, assets.slice(1), 'missing'],
+  ] as const) {
+    const gh = vi.fn().mockReturnValueOnce(JSON.stringify([[release]]))
+      .mockReturnValueOnce(JSON.stringify([items]));
+    expect(() => releaseTask('publish', options, gh)).toThrow(error);
+    expect(gh.mock.calls.some(args => args.includes('PATCH'))).toBe(false);
+  }
+});
+
+it('propagates a publication API failure instead of reporting success', () => {
+  const gh = vi.fn().mockReturnValueOnce(JSON.stringify([[draft]]))
+    .mockReturnValueOnce(JSON.stringify([assets])).mockImplementationOnce(() => {
+      throw new Error('HTTP 403');
+    });
+  expect(() => releaseTask('publish', options, gh)).toThrow('HTTP 403');
+});
 
 it('accepts exactly the 10 expected, fully uploaded assets across API pages', () => {
   expect(expectedAssets('0.1.1')).toEqual([...names].sort());
@@ -126,11 +157,11 @@ it.each(names)('rejects a missing %s', name => {
   expect(() => verify(assets.filter(asset => asset.name !== name))).toThrow(name);
 });
 
-it('rejects extra, duplicate, empty and unfinished assets', () => {
-  expect(() => verify([...assets, { ...assets[0]!, name: 'unexpected.zip' }])).toThrow('extra');
-  expect(() => verify([...assets, assets[0]!])).toThrow('duplicate');
-  expect(() => verify(assets.map(asset => ({ ...asset, size: 0 })))).toThrow('incomplete');
-  expect(() => verify(assets.map(asset => ({ ...asset, state: 'starter' })))).toThrow('incomplete');
+it.each(['verify', 'publish'])('%s rejects extra, duplicate, empty and unfinished assets', command => {
+  expect(() => verify([...assets, { ...assets[0]!, name: 'unexpected.zip' }], command)).toThrow('extra');
+  expect(() => verify([...assets, assets[0]!], command)).toThrow('duplicate');
+  expect(() => verify(assets.map(asset => ({ ...asset, size: 0 })), command)).toThrow('incomplete');
+  expect(() => verify(assets.map(asset => ({ ...asset, state: 'starter' })), command)).toThrow('incomplete');
 });
 
 it('the installed publisher reuses a draft and cannot create one without a CI tag', async () => {

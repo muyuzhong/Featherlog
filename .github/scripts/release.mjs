@@ -19,7 +19,7 @@ export function expectedAssets(version) {
 
 export function releaseTask(command, { version, tag, repo, id }, run = gh) {
   if (tag !== `v${version}`) throw new Error(`Tag ${tag} does not match v${version}`);
-  if (!['prepare', 'check', 'verify'].includes(command)) throw new Error('Unknown release task');
+  if (!['prepare', 'check', 'verify', 'publish'].includes(command)) throw new Error('Unknown release task');
   const api = endpoint => JSON.parse(run('api', '--paginate', '--slurp', endpoint)).flat();
   const find = () => {
     const matches = api(`repos/${repo}/releases`).filter(release => release.tag_name === tag);
@@ -30,7 +30,8 @@ export function releaseTask(command, { version, tag, repo, id }, run = gh) {
   let release = find();
   if (!release && command === 'prepare') {
     release = JSON.parse(run('api', '-X', 'POST', `repos/${repo}/releases`,
-      '-f', `tag_name=${tag}`, '-f', `name=${tag}`, '-F', 'draft=true'));
+      '-f', `tag_name=${tag}`, '-f', `name=${tag}`, '-F', 'draft=true',
+      '-F', 'generate_release_notes=true'));
   }
   if (!release) throw new Error(`Draft ${tag} does not exist`);
   if (command !== 'prepare' && String(release.id) !== id) {
@@ -43,7 +44,7 @@ export function releaseTask(command, { version, tag, repo, id }, run = gh) {
       throw new Error(`Draft ${release.id} is outside the publisher's first page`);
     }
   }
-  if (command === 'verify') {
+  if (command === 'verify' || command === 'publish') {
     const assets = api(`repos/${repo}/releases/${release.id}/assets`);
     const expected = expectedAssets(version);
     const names = assets.map(asset => asset.name);
@@ -55,6 +56,11 @@ export function releaseTask(command, { version, tag, repo, id }, run = gh) {
       throw new Error(JSON.stringify({ missing, extra, duplicate,
         incomplete: incomplete.map(asset => asset.name) }));
     }
+  }
+  if (command === 'publish') {
+    if (release.prerelease) throw new Error(`${tag} is a prerelease`);
+    run('api', '-X', 'PATCH', `repos/${repo}/releases/${release.id}`,
+      '-F', 'draft=false', '-f', 'make_latest=true');
   }
   return String(release.id);
 }
@@ -68,5 +74,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (process.argv[2] === 'prepare' && process.env.GITHUB_OUTPUT) {
     appendFileSync(process.env.GITHUB_OUTPUT, `release_id=${id}\n`);
   }
-  console.log(`Draft ${id}: ${process.argv[2]} succeeded`);
+  console.log(`Release ${id}: ${process.argv[2]} succeeded`);
 }

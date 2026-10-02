@@ -86,3 +86,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
+      - name: Publish the verified release
+        if: ${{ needs.release.result == 'success' }}
+        run: node .github/scripts/release.mjs publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
