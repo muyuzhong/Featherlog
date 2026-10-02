@@ -1,7 +1,7 @@
 import { app, powerMonitor, shell } from 'electron';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import electronUpdater from 'electron-updater';
+import type { AppUpdater } from 'electron-updater';
 import type { Bus, Clock, Logger } from '@featherlog/contracts';
 import { Settings } from './settings';
 import { JsonFiles, readJsonSync } from './storage';
@@ -13,8 +13,9 @@ export function startUpdates(bus: Bus, clock: Clock, log: Logger, settings: Sett
   const mode = updateMode(app.isPackaged, process.platform, process.env.APPIMAGE,
     existsSync(join(dirname(process.execPath), 'Uninstall Featherlog.exe')),
     existsSync(join(process.resourcesPath, 'package-type')));
-  let updater: electronUpdater.AppUpdater | undefined;
-  const createUpdater = () => {
+  let updater: AppUpdater | undefined;
+  const createUpdater = async () => {
+    const { default: electronUpdater } = await import('electron-updater');
     updater = process.platform === 'linux' ? new electronUpdater.AppImageUpdater() : process.platform === 'darwin'
       ? new electronUpdater.MacUpdater() : new electronUpdater.NsisUpdater();
     updater.logger = log;

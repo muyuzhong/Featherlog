@@ -4,7 +4,7 @@ import { createKernel } from '@featherlog/kernel';
 import type { Clock, UpdateState } from '@featherlog/contracts';
 import type { UpdateCheckResult, UpdateInfo } from 'electron-updater';
 import { registerUpdates, releaseNotes, updateMode } from './updates';
-import type { UpdateMode } from './updates';
+import type { UpdateMode, Updater } from './updates';
 
 const hour = 3_600_000;
 const info: UpdateInfo = { version: '0.2.0', releaseDate: '2026-09-28T00:00:00Z', files: [],
@@ -44,7 +44,8 @@ function fixture(mode: UpdateMode = 'automatic', automatic = true, notifiedVersi
   const changes: UpdateState[] = [];
   bus.on('shell/update-changed', state => { changes.push(state); });
   const updater = new FakeUpdater();
-  const createUpdater = vi.fn(() => new FakeUpdater()).mockReturnValueOnce(updater);
+  const createUpdater = vi.fn<() => Updater | Promise<Updater>>(() => new FakeUpdater())
+    .mockReturnValueOnce(updater);
   const openExternal = vi.fn(async (_url: string) => {});
   const quitToInstall = vi.fn();
   const saveNotified = vi.fn(async (_versions: string[]) => {});
@@ -108,9 +109,12 @@ it.each(['unsupported', 'managed'] as const)(
 it('checks at 30 seconds and every 6 hours, sending complete states', async () => {
   const f = fixture();
   expect(await f.state()).toEqual({ current: '0.1.0', status: 'idle' });
+  expect(f.createUpdater).not.toHaveBeenCalled();
   await f.advance(29_999);
+  expect(f.createUpdater).not.toHaveBeenCalled();
   expect(f.updater.checkForUpdates).not.toHaveBeenCalled();
   await f.advance(1);
+  expect(f.createUpdater).toHaveBeenCalledOnce();
   expect(f.updater.checkForUpdates).toHaveBeenCalledTimes(1);
   expect(f.changes).toEqual([
     { current: '0.1.0', status: 'checking' },
@@ -122,6 +126,46 @@ it('checks at 30 seconds and every 6 hours, sending complete states', async () =
   expect(f.updater.checkForUpdates).toHaveBeenCalledTimes(2);
   await f.advance(6 * hour);
   expect(f.updater.checkForUpdates).toHaveBeenCalledTimes(3);
+  expect(f.createUpdater).toHaveBeenCalledOnce();
+});
+
+it('does not create an updater while automatic checks are disabled', async () => {
+  const f = fixture('automatic', false);
+  await f.advance(24 * hour);
+  f.updates.resume();
+  expect(f.createUpdater).not.toHaveBeenCalled();
+  await f.check();
+  expect(f.createUpdater).toHaveBeenCalledOnce();
+  expect(f.updater.checkForUpdates).toHaveBeenCalledOnce();
+});
+
+it('serializes asynchronous updater loading and ignores it after disposal', async () => {
+  const f = fixture();
+  const loading = deferred<Updater>();
+  f.createUpdater.mockReset().mockReturnValue(loading.promise);
+  await f.check();
+  await f.check();
+  f.updates.resume();
+  expect(f.createUpdater).toHaveBeenCalledOnce();
+  expect((await f.state()).status).toBe('checking');
+  f.updates.dispose();
+  loading.resolve(f.updater);
+  await flush();
+  expect(f.updater.checkForUpdates).not.toHaveBeenCalled();
+  expect(f.updater.listenerCount('error')).toBe(0);
+  expect(f.updater.listenerCount('download-progress')).toBe(0);
+  expect(f.timers.size).toBe(0);
+});
+
+it('reports updater loading errors and retries with a fresh load', async () => {
+  const f = fixture();
+  f.createUpdater.mockReset().mockRejectedValueOnce(new Error('load failed'))
+    .mockResolvedValueOnce(f.updater);
+  await f.check();
+  expect(await f.state()).toMatchObject({ status: 'error', message: 'load failed' });
+  await f.advance(5 * 60_000);
+  expect((await f.state()).status).toBe('latest');
+  expect(f.createUpdater).toHaveBeenCalledTimes(2);
 });
 
 it('catches up after sleep without timer delivery, using the last manual or automatic check', async () => {

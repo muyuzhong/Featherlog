@@ -41,17 +41,24 @@ export async function openState(storage: PluginStorage, log: Logger, period: str
       valid(Array.isArray(stored.quests), 'Invalid stored quest index');
       const quests: unknown[] = [];
       const history: Record<string, unknown> = Object.create(null);
-      for (const reference of stored.quests) {
-        object(reference);
-        valid(typeof reference.id === 'string' && typeof reference.key === 'string' &&
-          recordKey.test(reference.key), 'Invalid stored quest reference');
-        const record = await storage.get(reference.key);
-        object(record);
-        object(record.quest);
-        valid(record.quest.id === reference.id, 'Stored quest reference mismatch');
-        quests.push(record.quest);
-        history[reference.id] = record.history;
-        references.push({ id: reference.id, key: reference.key });
+      // Bound open files and temporary buffers while overlapping independent reads.
+      for (let offset = 0; offset < stored.quests.length; offset += 16) {
+        const records = await Promise.all(stored.quests.slice(offset, offset + 16).map(async reference => {
+          object(reference);
+          valid(typeof reference.id === 'string' && typeof reference.key === 'string' &&
+            recordKey.test(reference.key), 'Invalid stored quest reference');
+          const record = await storage.get(reference.key);
+          object(record);
+          object(record.quest);
+          valid(record.quest.id === reference.id, 'Stored quest reference mismatch');
+          return { quest: record.quest, history: record.history,
+            reference: { id: reference.id, key: reference.key } };
+        }));
+        for (const record of records) {
+          quests.push(record.quest);
+          history[record.reference.id] = record.history;
+          references.push(record.reference);
+        }
       }
       loaded = { schemaVersion: 1, quests, history, meta: stored.meta };
     }
@@ -102,5 +109,5 @@ export async function openState(storage: PluginStorage, log: Logger, period: str
   try {
     await remove((await storage.keys()).filter(key => recordKey.test(key) && !retained.has(key)));
   } catch (cause) { log.warn('Could not list unused quest records', cause); }
-  return { state, save };
+  return { get state() { return state; }, save };
 }

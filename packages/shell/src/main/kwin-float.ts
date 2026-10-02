@@ -4,7 +4,6 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Dispose, Logger, UnfoldSide } from '@featherlog/contracts';
 import { PlainFloat, sideState } from './dock';
-import { registerDockService } from './dock-service';
 import type { Dock } from './dock';
 
 export function floatScript(title = 'featherlog-dock', dynamicSide = true): string {
@@ -88,8 +87,10 @@ const name = 'featherlog-float';
 
 export async function createKWinFloat(userData: string, log: Logger,
   run: Executor = execute,
-  register = (dock: KWinFloat) => registerDockService(
-    side => dock.acceptSide(side), () => dock.expanded, log),
+  register = async (dock: KWinFloat) => {
+    const { registerDockService } = await import('./dock-service');
+    return registerDockService(side => dock.acceptSide(side), () => dock.expanded, log);
+  },
 ): Promise<Dock> {
   let tool = '';
   let stopService: Dispose | undefined;

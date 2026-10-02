@@ -126,11 +126,17 @@ export class ElectronFloat implements Dock {
   resize(size: { width: number; height: number; expanded?: boolean }): void {
     if (!this.window || this.window.isDestroyed()) return;
     const previous = this.window.getBounds();
+    // Native bounds can lag behind a changed target, especially when reversing an animation.
+    const sameSize = this.resizePosition?.width === size.width &&
+      this.resizePosition.height === size.height;
     // Keep the direction locked through resize-generated moved events, including collapse.
     this.expanded = true;
     this.resizePosition = resizedBounds(previous, size,
       this.screen.getDisplayMatching(previous).bounds, this.side);
-    this.window.setBounds(this.resizePosition);
+    if (!sameSize || previous.x !== this.resizePosition.x || previous.y !== this.resizePosition.y ||
+      previous.width !== size.width || previous.height !== size.height) {
+      this.window.setBounds(this.resizePosition);
+    }
     this.expanded = size.expanded ?? false;
   }
   async detach(): Promise<void> {
