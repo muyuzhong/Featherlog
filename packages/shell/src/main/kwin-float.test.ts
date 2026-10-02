@@ -6,11 +6,39 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { createKWinFloat, floatScript, KWinFloat } from './kwin-float';
 import { PlainFloat } from './dock';
 
+const service = vi.hoisted(() => ({ loaded: false, stop: vi.fn(), register: vi.fn() }));
+vi.mock('./dock-service', () => {
+  service.loaded = true;
+  return { registerDockService: service.register };
+});
 const directories: string[] = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map(path =>
   rm(path, { recursive: true, force: true }))); });
 const log = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() });
 const missing = () => Object.assign(new Error('missing executable'), { code: 'ENOENT' });
+
+it('leaves the DBus service unloaded when KWin support is imported', () => {
+  expect(service.loaded).toBe(false);
+});
+
+it('loads the DBus service only after finding a KWin tool and cleans it up', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'featherlog-kwin-'));
+  directories.push(root);
+  service.register.mockResolvedValue(service.stop);
+  const run = vi.fn(async (_file: string, args: string[]) =>
+    args.includes('org.kde.kwin.Scripting.loadScript') ? '3' : '');
+  const dock = await createKWinFloat(root, log(), run);
+  expect(service.loaded).toBe(true);
+  expect(service.register).toHaveBeenCalledOnce();
+  const [acceptSide, expanded] = service.register.mock.calls[0]! as [
+    (side: 'left' | 'right') => 'left' | 'right', () => boolean,
+  ];
+  expect(acceptSide('right')).toBe('right');
+  dock.resize({ width: 80, height: 320, expanded: true });
+  expect(expanded()).toBe(true);
+  await dock.detach();
+  expect(service.stop).toHaveBeenCalledOnce();
+});
 
 it('generates the small float script with a safely encoded title', () => {
   expect(floatScript()).toMatchSnapshot();

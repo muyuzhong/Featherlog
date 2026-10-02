@@ -139,6 +139,42 @@ it('plain float resizes without positioning or unsupported capability promises',
   expect(window.setSize).toHaveBeenCalledOnce();
 });
 
+it('skips unchanged native bounds while preserving expansion state and screen clamping', async () => {
+  const { dock, window } = await fixture();
+  await dock.attach(window as unknown as BrowserWindow);
+  dock.resize({ width: 80, height: 320, expanded: true });
+  window.setBounds.mockClear();
+  for (let i = 0; i < 100; i++) dock.resize({ width: 80, height: 320, expanded: true });
+  expect(window.setBounds).not.toHaveBeenCalled();
+  window.bounds.x = 2200;
+  window.emit('moved');
+  expect(dock.side).toBe('left');
+  dock.resize({ width: 80, height: 320, expanded: false });
+  expect(window.setBounds).toHaveBeenCalledOnce();
+  window.setBounds.mockClear();
+  window.bounds.x = 2201;
+  window.emit('moved');
+  expect(dock.side).toBe('right');
+  window.bounds.x = 4000;
+  dock.resize({ width: 80, height: 320 });
+  expect(window.setBounds).toHaveBeenCalledOnce();
+  expect(window.bounds.x).toBe(3760);
+  await dock.detach();
+});
+
+it('does not skip reversing a resize whose native bounds have not caught up', async () => {
+  const { dock, window } = await fixture();
+  await dock.attach(window as unknown as BrowserWindow);
+  window.setBounds.mockClear();
+  window.setBounds.mockImplementationOnce(() => {});
+  dock.resize({ width: 400, height: 500, expanded: true });
+  expect(window.bounds.width).toBe(80);
+  dock.resize({ width: 80, height: 320, expanded: false });
+  expect(window.setBounds).toHaveBeenCalledTimes(2);
+  expect(window.setBounds).toHaveBeenLastCalledWith(window.bounds);
+  await dock.detach();
+});
+
 it.each([
   [-1920, -1800, 'right'], [-1920, -1000, 'left'],
   [0, 100, 'right'], [0, 920, 'left'], [2560, 2700, 'right'], [2560, 4200, 'left'],

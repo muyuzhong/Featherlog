@@ -54,6 +54,8 @@ it.each([1, 2, 3])('preserves legacy data when migration write %i fails', async 
 it.each([1, 2, 3])('rolls back multi-quest updates when write %i fails, then allows retry', async failure => {
   const f = fixture();
   const opened = await f.open();
+  const previous = opened.state;
+  const next = updated(previous);
   const original = structuredClone(f.data);
   const set = vi.mocked(f.storage.set).getMockImplementation()!;
   let count = 0;
@@ -61,16 +63,20 @@ it.each([1, 2, 3])('rolls back multi-quest updates when write %i fails, then all
     if (++count === failure) throw new Error('disk full');
     await set(key, value);
   });
-  await expect(opened.save(updated(opened.state))).rejects.toThrow('disk full');
+  await expect(opened.save(next)).rejects.toThrow('disk full');
+  expect(opened.state).toBe(previous);
   expect(f.data).toEqual(original);
   expect((await f.open()).state).toEqual(legacy());
-  await opened.save(updated(opened.state));
+  await opened.save(next);
+  expect(opened.state).toBe(next);
   expect((await f.open()).state).toEqual(updated(legacy()));
 });
 
 it('leaves readers on the old state until the index write has completed', async () => {
   const f = fixture();
   const opened = await f.open();
+  const previous = opened.state;
+  const next = updated(previous);
   const set = vi.mocked(f.storage.set).getMockImplementation()!;
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
@@ -81,9 +87,10 @@ it('leaves readers on the old state until the index write has completed', async 
     await set(key, value);
   });
   let finished = false;
-  const saving = opened.save(updated(opened.state)).then(() => { finished = true; });
+  const saving = opened.save(next).then(() => { finished = true; });
   await reached;
   expect(finished).toBe(false);
+  expect(opened.state).toBe(previous);
   expect(f.data.get('state')).toMatchObject({ schemaVersion: 2 });
   const index = f.data.get('state') as { quests: { key: string }[] };
   for (const reference of index.quests) {
@@ -91,6 +98,7 @@ it('leaves readers on the old state until the index write has completed', async 
   }
   release();
   await saving;
+  expect(opened.state).toBe(next);
   expect((await f.open()).state).toEqual(updated(legacy()));
 });
 
@@ -99,6 +107,7 @@ it('commits despite cleanup failure and removes crash orphans on the next startu
   const opened = await f.open();
   vi.spyOn(f.storage, 'delete').mockRejectedValue(new Error('locked'));
   await opened.save(updated(opened.state));
+  expect(opened.state).toEqual(updated(legacy()));
   expect([...f.data.keys()]).toHaveLength(5);
   expect(f.log.warn).toHaveBeenCalled();
   vi.spyOn(f.storage, 'delete').mockImplementation(async key => { f.data.delete(key); });
@@ -126,6 +135,47 @@ it('does not rewrite unchanged quests, even when their contents are large', asyn
   expect(writes.reduce((bytes, [, value]) => bytes + JSON.stringify(value).length, 0))
     .toBeLessThan(JSON.stringify(next).length / 10);
   expect((await f.open()).state.quests).toEqual(next.quests);
+});
+
+it('bounds concurrent record reads, preserves index order and validates before cleanup', async () => {
+  const initial = legacy();
+  initial.quests = Array.from({ length: 35 }, (_, index) => quest(String(index)));
+  initial.history = {};
+  const f = fixture(initial);
+  await f.open();
+  const get = f.storage.get.bind(f.storage);
+  let active = 0;
+  let maximum = 0;
+  vi.spyOn(f.storage, 'get').mockImplementation(async <T extends Json>(key: string) => {
+    if (key === 'state') return get<T>(key);
+    active++;
+    maximum = Math.max(maximum, active);
+    try { return await get<T>(key); }
+    finally { active--; }
+  });
+  expect((await f.open()).state.quests).toEqual(initial.quests);
+  expect(maximum).toBe(16);
+  expect(active).toBe(0);
+  vi.mocked(f.storage.delete).mockClear();
+  const index = f.data.get('state') as { quests: { key: string }[] };
+  f.data.delete(index.quests[20]!.key);
+  await expect(f.open()).rejects.toMatchObject({ code: 'quest/invalid-input' });
+  expect(f.storage.delete).not.toHaveBeenCalled();
+});
+
+it('keeps index order when parallel record reads finish in reverse order', async () => {
+  const f = fixture();
+  await f.open();
+  const get = f.storage.get.bind(f.storage);
+  const waiting = new Map<string, () => void>();
+  vi.spyOn(f.storage, 'get').mockImplementation(async <T extends Json>(key: string) => {
+    if (key !== 'state') await new Promise<void>(resolve => { waiting.set(key, resolve); });
+    return get<T>(key);
+  });
+  const reading = f.open();
+  await vi.waitFor(() => expect(waiting.size).toBe(2));
+  for (const release of [...waiting.values()].reverse()) release();
+  expect((await reading).state.quests.map(item => item.id)).toEqual(['a', 'b']);
 });
 
 it.each(['missing', 'mismatch', 'history', 'duplicate', 'version'])('preserves corrupt data (%s)', async mode => {

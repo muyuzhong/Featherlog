@@ -20,6 +20,7 @@ const daily: QuestInput = { kind: 'daily', title: 'Practice', recurrence: { freq
 async function fixture(options: {
   now?: number; hour?: number; data?: Map<string, Json>; badgeFails?: boolean;
   missingSetting?: boolean;
+  development?: boolean;
 } = {}) {
   let time = options.now ?? local('2026-09-28');
   const timers = new Map<() => void, number>();
@@ -47,7 +48,8 @@ async function fixture(options: {
   };
   const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const kernel = createKernel({
-    development: true, clock, log, createServices: () => ({ clock, storage, settings, log }),
+    development: options.development ?? true, clock, log,
+    createServices: () => ({ clock, storage, settings, log }),
   });
   const bus = kernel.createBus('shell');
   const messages: Envelope[] = [];
@@ -639,6 +641,8 @@ describe('§5 and §8.8 persistence and resource isolation', () => {
         'schemaVersion' in value)).toBe(false);
       expect(values.some(value => value && typeof value === 'object' &&
         'chapters' in value && 'id' in value && value.id === untouched.id)).toBe(false);
+      expect(values.filter(value => value && typeof value === 'object' &&
+        'chapters' in value && 'id' in value && value.id === counted.id)).toHaveLength(1);
       expect(write).toHaveBeenCalledTimes(2);
       expect(write.mock.calls[0]![1]).toMatchObject({ quest: { id: counted.id } });
       expect(write.mock.calls[1]![0]).toBe('state');
@@ -847,15 +851,36 @@ describe('editing and boundary regressions', () => {
     });
   });
 
-  it('leaves live state mutable only through requests', async () => {
-    const f = await fixture();
+  it.each([true, false])('isolates nested snapshots and rollback (development=%s)', async development => {
+    const f = await fixture({ development });
     const input = structuredClone(main);
+    input.chapters![0]!.objectives[0]!.count = { target: 3 };
     const pending = f.create(input);
     input.chapters![0]!.objectives[0]!.text = 'Caller edit';
     const quest = await pending;
     expect(quest.chapters[0]!.objectives[0]!.text).toBe('First');
     expect(() => { quest.chapters[0]!.objectives[0]!.text = 'Receiver edit'; }).toThrow();
     expect((await f.get(quest.id)).chapters[0]!.objectives[0]!.text).toBe('First');
+    const objective = quest.chapters[0]!.objectives[0]!;
+    const createdEvent = f.events()[0]!.payload as { quest: Quest };
+    const listed = (await f.request('quest/list', {})).quests[0]!;
+    const progressed = (await f.request('quest/count', {
+      id: quest.id, objectiveId: objective.id, set: 1,
+    })).quest;
+    expect(progressed.chapters[0]!.objectives[0]!.count!.current).toBe(1);
+    for (const snapshot of [quest, createdEvent.quest, listed]) {
+      expect(snapshot.chapters[0]!.objectives[0]!.count!.current).toBe(0);
+    }
+    vi.spyOn(f.storage, 'set').mockRejectedValueOnce(new Error('disk full'));
+    await expect(f.request('quest/count', {
+      id: quest.id, objectiveId: objective.id, set: 2,
+    })).rejects.toThrow('disk full');
+    expect(await f.get(quest.id)).toEqual(progressed);
+    const completed = (await f.request('quest/count', {
+      id: quest.id, objectiveId: objective.id, set: 3,
+    })).quest;
+    expect(completed.chapters[0]!.objectives[0]!.doneAt).toBeDefined();
+    expect(progressed.chapters[0]!.objectives[0]!.doneAt).toBeUndefined();
   });
 
   it('rejects malformed request shapes and does not coerce enum arrays', async () => {

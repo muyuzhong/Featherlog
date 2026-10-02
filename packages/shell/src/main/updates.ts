@@ -45,7 +45,7 @@ export function registerUpdates(options: {
   log: Logger;
   current: string;
   mode: UpdateMode;
-  createUpdater?: () => Updater;
+  createUpdater?: () => Updater | Promise<Updater>;
   automatic: boolean;
   notifiedVersions: string[];
   saveNotified: (versions: string[]) => Promise<void>;
@@ -100,9 +100,10 @@ export function registerUpdates(options: {
     const due = retryAt ?? (lastCheck === undefined ? startedAt + 30_000 : lastCheck + interval);
     timer = clock.setTimeout(check, Math.max(0, due - clock.now()));
   };
-  const connect = () => {
+  const connect = async () => {
     if (!options.createUpdater) throw new Error('Packaged updates require an updater');
-    const instance = options.createUpdater();
+    const instance = await options.createUpdater();
+    if (disposed) return instance;
     instance.autoDownload = false;
     instance.autoInstallOnAppQuit = mode === 'automatic';
     const onError = (cause: Error) => { if (updater === instance) fail(cause); };
@@ -139,7 +140,9 @@ export function registerUpdates(options: {
     }
   };
   const run = async () => {
-    const instance = updater ?? (updater = connect());
+    const instance = updater ?? await connect();
+    if (disposed) return;
+    updater = instance;
     const result = await watched(instance.checkForUpdates(), instance);
     if (disposed) return;
     if (!result) throw new Error('Update check returned no result');
@@ -192,7 +195,6 @@ export function registerUpdates(options: {
       schedule();
     });
   };
-  if (!offline) updater = connect();
   const handlers = [
     bus.handle('shell/update-state', () => state),
     bus.handle('shell/check-update', () => { check(); return null; }),

@@ -1,4 +1,4 @@
-import { app, ipcMain, screen } from 'electron';
+import { app, ipcMain, Menu, screen } from 'electron';
 import { join } from 'node:path';
 import type { BrowserWindow, IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron';
 import type { Clock, WindowKind } from '@featherlog/contracts';
@@ -29,6 +29,8 @@ const { migrationError } = configureUserData(app);
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  // Frameless windows use their own menus; macOS still needs native editing shortcuts.
+  if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
   const userData = app.getPath('userData');
   const files = new JsonFiles(clock);
   const logs = createLogs(userData, clock);

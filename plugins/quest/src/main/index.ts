@@ -67,8 +67,8 @@ export async function setup(ctx: MainContext): Promise<void> {
       view: quest => {
         const cached = views.get(quest);
         if (cached?.key === key && cached.hour === hour) return cached.quest;
-        const view = { ...structuredClone(quest), derived: derived(quest, draft, now, hour) };
-        // Writes use fresh quest objects; views are requested only after mutation is complete.
+        // Writes copy quests; the bus copies outgoing snapshots, so cached views can share data.
+        const view = { ...quest, derived: derived(quest, draft, now, hour) };
         views.set(quest, { key, hour, quest: view });
         return view;
       },

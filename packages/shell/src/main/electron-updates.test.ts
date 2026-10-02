@@ -14,12 +14,16 @@ const electron = vi.hoisted(() => ({
   shell: { openExternal: vi.fn(async () => {}) },
   powerMonitor: { on: vi.fn(), removeListener: vi.fn() },
   constructor: vi.fn(),
+  updaterModuleLoaded: false,
 }));
 vi.mock('electron', () => electron);
-vi.mock('electron-updater', () => ({ default: {
-  AppImageUpdater: electron.constructor, MacUpdater: electron.constructor,
-  NsisUpdater: electron.constructor,
-} }));
+vi.mock('electron-updater', () => {
+  electron.updaterModuleLoaded = true;
+  return { default: {
+    AppImageUpdater: electron.constructor, MacUpdater: electron.constructor,
+    NsisUpdater: electron.constructor,
+  } };
+});
 const directories: string[] = [];
 afterEach(async () => {
   vi.unstubAllEnvs();
@@ -68,10 +72,17 @@ async function fixture(packaged = true) {
   };
 }
 
+it('leaves electron-updater unloaded when the adapter is imported', () => {
+  expect(electron.updaterModuleLoaded).toBe(false);
+});
+
 it('configures only public stable GitHub releases, privacy filters and install-on-quit', async () => {
   vi.stubEnv('APPIMAGE', '/test/Featherlog.AppImage');
   const f = await fixture();
   const stop = f.start();
+  expect(electron.constructor).not.toHaveBeenCalled();
+  await f.bus.request('shell/check-update', {});
+  await vi.waitFor(async () => expect((await f.bus.request('shell/update-state', {})).status).toBe('latest'));
   expect(f.updater.setFeedURL).toHaveBeenCalledWith({
     provider: 'github', owner: 'muyuzhong', repo: 'Featherlog',
   });
@@ -83,10 +94,10 @@ it('configures only public stable GitHub releases, privacy filters and install-o
   await f.settings.set('shell', 'autoUpdate', false);
   expect(f.timers.size).toBe(0);
   f.resume();
-  expect(f.updater.checkForUpdates).not.toHaveBeenCalled();
+  expect(f.updater.checkForUpdates).toHaveBeenCalledOnce();
   await f.settings.set('shell', 'autoUpdate', true);
   f.resume();
-  expect(f.updater.checkForUpdates).toHaveBeenCalledOnce();
+  expect(f.updater.checkForUpdates).toHaveBeenCalledTimes(2);
   stop();
   expect(electron.powerMonitor.removeListener).toHaveBeenCalledWith('resume', expect.any(Function));
 });
@@ -95,6 +106,9 @@ it('allows packaged manual installations to check without enabling downloads', a
   vi.stubEnv('APPIMAGE', '');
   const f = await fixture();
   const stop = f.start();
+  expect(electron.constructor).not.toHaveBeenCalled();
+  await f.bus.request('shell/check-update', {});
+  await vi.waitFor(async () => expect((await f.bus.request('shell/update-state', {})).status).toBe('latest'));
   expect(f.updater.isUpdaterActive()).toBe(true);
   expect(f.updater.autoDownload).toBe(false);
   expect(f.updater.autoInstallOnAppQuit).toBe(false);
