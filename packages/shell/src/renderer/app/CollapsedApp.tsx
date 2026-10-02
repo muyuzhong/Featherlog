@@ -38,7 +38,6 @@ export function CollapsedApp({ runtime }: { runtime: WindowRuntime }) {
       className={`${styles.collapsed} ${unfold === 'right' ? styles.unfoldRight : ''}`}
       onContextMenu={(event) => {
         event.preventDefault();
-        preload.dock.menu();
       }}
     >
       {toasts.length > 0 && <Toasts toasts={toasts} onDismiss={dismiss} />}

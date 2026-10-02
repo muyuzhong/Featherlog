@@ -94,6 +94,8 @@ it('creates secure windows, attaches before showing inactive and preserves the d
   const titleEvent = { preventDefault: vi.fn() };
   collapsed.emit('page-title-updated', titleEvent);
   expect(titleEvent.preventDefault).toHaveBeenCalledOnce();
+  collapsed.webContents.emit('context-menu', {});
+  expect(electron.Menu.buildFromTemplate).not.toHaveBeenCalled();
   await f.windows.openPanel();
   for (const window of f.created) {
     expect(window.options.webPreferences).toMatchObject({ contextIsolation: true, sandbox: true, nodeIntegration: false });

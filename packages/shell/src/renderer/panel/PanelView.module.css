@@ -33,7 +33,8 @@
 }
 
 .tabs button,
-.settings {
+.settings,
+.quit {
   font: 13px var(--fl-font-hand);
   color: rgba(236, 220, 184, 0.5);
   background: none;
@@ -53,7 +54,8 @@
 }
 
 .tabs button:hover,
-.settings:hover {
+.settings:hover,
+.quit:hover {
   color: rgba(236, 220, 184, 0.78);
 }
 
@@ -69,6 +71,21 @@
   cursor: pointer;
   -webkit-app-region: no-drag;
   transition: color 0.2s, background 0.2s;
+}
+
+.quit {
+  -webkit-app-region: no-drag;
+}
+
+.quit:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.quitError {
+  color: #e9a490;
+  font: 12px var(--fl-font-hand);
+  -webkit-app-region: no-drag;
 }
 
 .tabs + .close,

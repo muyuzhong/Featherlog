@@ -88,7 +88,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     const bus = kernel.createBus('shell');
     let windows: Windows;
-    const shell = registerShell(bus, () => windows.openPanel());
+    const shell = registerShell(bus, () => windows.openPanel(), clock, () => app.quit());
     const bridge = createBusBridge(kernel, log, !app.isPackaged);
     const peers = new Map<WebContents, WindowKind>();
     const register = (window: BrowserWindow, kind: WindowKind) => {

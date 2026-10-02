@@ -1,10 +1,19 @@
-import type { Bus, ShellState } from '@featherlog/contracts';
+import type { Bus, Clock, ShellState } from '@featherlog/contracts';
 import { invalid, isJson, record } from './validation';
 
-export function registerShell(bus: Bus, openPanel: () => Promise<void>) {
+export function registerShell(bus: Bus, openPanel: () => Promise<void>, clock: Clock, quit: () => void) {
   const state: ShellState = { view: 'collapsed', badges: {}, panel: {} };
+  let quitTimer = () => {};
   const disposers = [
+    () => quitTimer(),
     bus.handle('shell/state', () => structuredClone(state)),
+    bus.handle('shell/quit', payload => {
+      if (!record(payload)) invalid('Invalid quit request');
+      // Reply before shutdown removes bus responders and closes the requesting window.
+      quitTimer();
+      quitTimer = clock.setTimeout(quit, 0);
+      return null;
+    }),
     bus.handle('shell/open-panel', async (payload, envelope) => {
       if (!record(payload) || (payload.tab !== undefined && typeof payload.tab !== 'string') ||
         (payload.params !== undefined && !isJson(payload.params))) invalid('Invalid panel request');
