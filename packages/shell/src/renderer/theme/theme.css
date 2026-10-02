@@ -7,6 +7,15 @@
 @import '@fontsource/ma-shan-zheng/400.css';
 @import '@chinese-fonts/xiaolai/dist/Xiaolai/result.css';
 
+/* Limit the ordinary font to Latin text so Chinese keeps its handwritten face. */
+@font-face {
+  font-family: 'Featherlog Latin';
+  src: local('Segoe UI'), local('Helvetica Neue'), local('Arial'),
+    local('Liberation Sans'), local('Noto Sans'), local('DejaVu Sans');
+  unicode-range: U+0000-024F, U+1E00-1EFF, U+2000-206F;
+  font-display: swap;
+}
+
 :root {
   /* Ink */
   --fl-ink: #2a1c11;
@@ -29,9 +38,9 @@
    *   display – brush lettering for section heads and quest names in lists
    *   hand    – pen writing for everything else
    */
-  --fl-font-display: 'Ma Shan Zheng', 'Xiaolai SC', 'KaiTi', serif;
+  --fl-font-display: 'Featherlog Latin', 'Ma Shan Zheng', 'Xiaolai SC', 'KaiTi', serif;
   --fl-font-title: var(--fl-font-display);
-  --fl-font-hand: 'Xiaolai SC', 'Kaiti SC', 'KaiTi', serif;
+  --fl-font-hand: 'Featherlog Latin', 'Xiaolai SC', 'Kaiti SC', 'KaiTi', serif;
 
   /* Motion */
   --fl-ease-ink: cubic-bezier(0.22, 0.8, 0.32, 1);
