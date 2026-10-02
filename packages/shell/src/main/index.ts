@@ -15,6 +15,7 @@ import { Windows } from './windows';
 import { startUpdates } from './electron-updates';
 import { configureUserData } from './user-data';
 import { invalid, isJson } from './validation';
+import { loadPlugins, showStartupError } from './startup';
 
 const clock: Clock = {
   now: () => Date.now(),
@@ -81,7 +82,8 @@ if (!app.requestSingleInstanceLock()) {
     });
     kernel.observe(message => {
       if (message.kind === 'event' && message.type.startsWith('kernel/')) {
-        log.info(message.type, message.payload);
+        if (message.type === 'kernel/plugin-failed') log.error(message.type, message.payload);
+        else log.info(message.type, message.payload);
       }
     });
     const bus = kernel.createBus('shell');
@@ -163,7 +165,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     if (process.platform === 'darwin') app.dock?.hide();
     log.info('Starting Featherlog', { platform: process.platform, compatMode, selected });
-    await kernel.load(plugins);
+    await loadPlugins(kernel, plugins, app.getVersion(), userData);
     if (quitting) return;
     await windows.start();
     openPanel = () => {
@@ -171,8 +173,17 @@ if (!app.requestSingleInstanceLock()) {
     };
     if (pendingOpen) openPanel();
   };
-  void start().catch(cause => {
+  void start().catch(async (cause: unknown) => {
     log.error('Startup failed', cause);
-    app.quit();
+    try {
+      // On Linux, error boxes shown before ready only reach stderr.
+      await app.whenReady();
+      const details = cause instanceof Error
+        ? `${'code' in cause && typeof cause.code === 'string' ? `${cause.code}: ` : ''}${cause.message}`
+        : String(cause);
+      showStartupError('羽记启动失败', details, app.getVersion(), userData);
+    } finally {
+      app.quit();
+    }
   });
 }
