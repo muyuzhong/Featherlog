@@ -52,9 +52,14 @@ function adopt(w) {
   reportSide(true);
   w.frameGeometryChanged.connect(() => {
     if (guard) return;
-    revision++;
     const next = copy(w.frameGeometry);
-    if (next.width !== previous.width || next.height !== previous.height) {
+    // QRectF edge arithmetic can change the last decimal bits during a pure move.
+    const resized = Math.abs(next.width - previous.width) > 0.001 ||
+      Math.abs(next.height - previous.height) > 0.001;
+    const moved = next.x !== previous.x || next.y !== previous.y;
+    if (!resized && !moved) return;
+    revision++;
+    if (resized) {
       const area = previousOutput.geometry;
       const x = side === 'left' ? previous.x + previous.width - next.width : previous.x;
       const y = previous.y + (previous.height - next.height) / 2;
@@ -69,6 +74,29 @@ function adopt(w) {
     }
     previous = copy(w.frameGeometry);
     previousOutput = w.output;
+  });
+  // A dock must not inherit the compositor's edge-tiling geometry.
+  w.tileChanged.connect(() => {
+    if (guard || !w.tile) return;
+    const restore = copy(previous);
+    guard = true;
+    try { w.tile = null; w.frameGeometry = restore; }
+    finally { guard = false; }
+    previous = copy(w.frameGeometry);
+    previousOutput = w.output;
+    revision++;
+    reportSide(false);
+  });
+  // Continuous movement can invalidate every asynchronous direction query.
+  w.interactiveMoveResizeFinished.connect(() => {
+    const next = copy(w.frameGeometry);
+    const area = w.output.geometry;
+    next.x = Math.max(area.x, Math.min(next.x, area.x + area.width - next.width));
+    next.y = Math.max(area.y, Math.min(next.y, area.y + area.height - next.height));
+    if (next.x !== w.frameGeometry.x || next.y !== w.frameGeometry.y) {
+      w.frameGeometry = next;
+    }
+    reportSide(false);
   });
 }
 function watch(w) {
@@ -120,7 +148,8 @@ export async function createKWinFloat(userData: string, log: Logger,
     const response = await call('/Scripting', 'org.kde.kwin.Scripting.loadScript', file, name);
     const id = response.match(/^(?:\(\s*)?(?:int32\s+)?(\d+)(?:,?\s*\))?$/)?.[1];
     if (!id) throw new Error(`Invalid KWin script id: ${response}`);
-    await call(`/Scripting/Script${id}`, 'org.kde.kwin.Script.run');
+    // KWin uses the script count as its id; unloading another script can cause collisions.
+    await call('/Scripting', 'org.kde.kwin.Scripting.start');
     log.info('KWin float script loaded', { tool, id });
     return dock;
   } catch (cause) {
