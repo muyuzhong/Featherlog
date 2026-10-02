@@ -66,6 +66,8 @@ export interface ShellEvents {
 export interface ShellRequests {
   'shell/state': { req: Record<string, never>; res: ShellState };
   'shell/open-panel': { req: { tab?: string; params?: Json }; res: null };
+  /** Acknowledge first, then quit through normal plugin cleanup and storage flushing. */
+  'shell/quit': { req: Record<string, never>; res: null };
   'shell/set-badge': { req: { iconId: string; badge: Badge | null }; res: null };
   'shell/notify': { req: ShellNotification; res: null };
   'shell/update-state': { req: Record<string, never>; res: UpdateState };

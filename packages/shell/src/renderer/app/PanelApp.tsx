@@ -45,6 +45,7 @@ export function PanelApp({ runtime }: { runtime: WindowRuntime }) {
         visible={visible}
         onSelectTab={setTab}
         onClose={() => preload.panel.close()}
+        onQuit={async () => { await shellBus.request('shell/quit', {}); }}
       />
     </div>
   );

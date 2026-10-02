@@ -66,7 +66,6 @@ export class Windows {
       });
       window.on('blur', () => window.setFocusable(false));
       window.on('page-title-updated', event => event.preventDefault());
-      window.webContents.on('context-menu', () => this.menu());
       if (process.platform === 'darwin') {
         window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
       }

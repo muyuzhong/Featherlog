@@ -1,5 +1,5 @@
 import type { Json, PanelTabContribution } from '@featherlog/contracts';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { InkIcon } from '../icons';
 import { SlotMount } from '../slots/SlotMount';
 import type { SlotRegistry } from '../slots/registry';
@@ -18,11 +18,26 @@ type Props = {
   visible: boolean;
   onSelectTab(id: string): void;
   onClose(): void;
+  onQuit(): Promise<void>;
 };
 
 /** The full panel: a leather-bound frame hosting one plugin tab at a time. */
-export function PanelView({ registry, tabs, activeTab, params, settings, visible, onSelectTab, onClose }: Props) {
+export function PanelView({ registry, tabs, activeTab, params, settings, visible, onSelectTab, onClose, onQuit }: Props) {
   const ordered = [...tabs].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const [quitting, setQuitting] = useState(false);
+  const [quitError, setQuitError] = useState<string>();
+  const quit = async () => {
+    if (quitting) return;
+    setQuitting(true);
+    setQuitError(undefined);
+    try {
+      await onQuit();
+    } catch (cause: unknown) {
+      setQuitError(`退出失败：${cause instanceof Error ? cause.message : String(cause)}`);
+    } finally {
+      setQuitting(false);
+    }
+  };
   return (
     <div className={`${styles.panel} fl-leather`}>
       <header className={styles.bar}>
@@ -45,6 +60,10 @@ export function PanelView({ registry, tabs, activeTab, params, settings, visible
             设置
           </button>
         )}
+        {quitError && <span className={styles.quitError} role="alert">{quitError}</span>}
+        <button className={styles.quit} onClick={() => void quit()} disabled={quitting}>
+          {quitting ? '退出中…' : '退出'}
+        </button>
         <button className={styles.close} onClick={onClose} aria-label="收起">
           <InkIcon name="x" size={15} />
         </button>

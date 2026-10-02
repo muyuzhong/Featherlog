@@ -1,11 +1,15 @@
 import { expect, it, vi } from 'vitest';
 import { createKernel } from '@featherlog/kernel';
-import type { Envelope, PluginStorage } from '@featherlog/contracts';
+import type { Clock, Envelope, PluginStorage } from '@featherlog/contracts';
 import { registerShell } from './shell-state';
 
 function fixture() {
   const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-  const clock = { now: () => 1, setTimeout: () => () => {} };
+  const timers = new Map<() => void, number>();
+  const clock: Clock = { now: () => 1, setTimeout: (callback, delay) => {
+    timers.set(callback, delay);
+    return () => { timers.delete(callback); };
+  } };
   const storage: PluginStorage = { get: async () => undefined,
     set: async () => {}, delete: async () => {}, keys: async () => [] };
   const kernel = createKernel({ development: true, clock, log, createServices: () => ({
@@ -13,10 +17,11 @@ function fixture() {
   }) });
   const bus = kernel.createBus('shell');
   const open = vi.fn(async () => {});
-  const shell = registerShell(bus, open);
+  const quit = vi.fn();
+  const shell = registerShell(bus, open, clock, quit);
   const messages: Envelope[] = [];
   kernel.observe(message => messages.push(message));
-  return { bus, shell, messages, open };
+  return { bus, shell, messages, open, quit, timers };
 }
 
 it('returns initial state, remembers panel params and emits causedBy-linked shell events', async () => {
@@ -72,4 +77,36 @@ it('rejects invalid badge and notification inputs without events or state change
   })).rejects.toMatchObject({ code: 'shell/invalid-input' });
   expect(messages.filter(m => m.kind === 'event')).toEqual([]);
   await expect(bus.request('shell/state', {})).resolves.toMatchObject({ badges: {} });
+});
+
+it('acknowledges quit before shutdown and coalesces repeated quit requests', async () => {
+  const { bus, messages, quit, timers } = fixture();
+  await expect(bus.request('shell/quit', {})).resolves.toBeNull();
+  await expect(bus.request('shell/quit', {})).resolves.toBeNull();
+  expect(quit).not.toHaveBeenCalled();
+  expect(messages.filter(message => message.type === 'shell/quit' && message.kind === 'response'))
+    .toHaveLength(2);
+  expect(timers.size).toBe(1);
+  expect([...timers.values()]).toEqual([0]);
+  for (const callback of timers.keys()) callback();
+  expect(quit).toHaveBeenCalledOnce();
+});
+
+it('cancels a pending quit and removes its handler on disposal', async () => {
+  const { bus, shell, quit, timers } = fixture();
+  await bus.request('shell/quit', {});
+  shell.dispose();
+  expect(timers.size).toBe(0);
+  expect(quit).not.toHaveBeenCalled();
+  await expect(bus.request('shell/quit', {})).rejects.toMatchObject({ code: 'no-handler' });
+});
+
+it('rejects malformed quit requests without scheduling shutdown', async () => {
+  const { bus, quit, timers } = fixture();
+  for (const payload of [null, [], 'quit']) {
+    await expect(bus.request('shell/quit', payload as unknown as Record<string, never>))
+      .rejects.toMatchObject({ code: 'shell/invalid-input' });
+  }
+  expect(timers.size).toBe(0);
+  expect(quit).not.toHaveBeenCalled();
 });

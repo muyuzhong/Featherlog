@@ -75,7 +75,7 @@ export function CollapsedView({ registry, icons, badges, unfold = 'left', dragga
             <button
               key={icon.id}
               className={`${styles.icon} ${previewId === icon.id ? styles.on : ''}`}
-              title={icon.title}
+              aria-label={icon.title}
               onMouseEnter={() => open(icon)}
               onFocus={() => open(icon)}
               onClick={() => onOpen(icon)}
