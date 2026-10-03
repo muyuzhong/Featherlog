@@ -7,6 +7,7 @@
   "ui": "src/ui/index.tsx",
   "emits": ["scribe/said", "scribe/state-changed", "scribe/recap-written", "scribe/epilogue-written"],
   "listens": [
+    "shell/view-changed",
     "kernel/ready",
     "quest/created",
     "quest/updated",
@@ -36,6 +37,7 @@
     "scribe/lines"
   ],
   "requests": [
+    "quest/period",
     "quest/list",
     "quest/get",
     "scribe/state",

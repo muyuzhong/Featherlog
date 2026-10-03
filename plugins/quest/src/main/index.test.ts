@@ -989,3 +989,20 @@ describe('§8 follow-up rules', () => {
     },
   );
 });
+
+describe('quest/period', () => {
+  it('returns the logical period without daily quests and follows custom dayStartHour', async () => {
+    const f = await fixture({ now: local('2026-10-04', 3), hour: 6 });
+    expect(await f.request('quest/period', {})).toEqual({ periodKey: '2026-10-03', dayStartHour: 6 });
+    f.setTime(local('2026-10-04', 5, 59), false);
+    expect((await f.request('quest/period', {})).periodKey).toBe('2026-10-03');
+    f.setTime(local('2026-10-04', 6), false);
+    expect((await f.request('quest/period', {})).periodKey).toBe('2026-10-04');
+    f.setTime(local('2026-10-06', 7), false);
+    expect((await f.request('quest/period', {})).periodKey).toBe('2026-10-06');
+    f.setTime(local('2026-10-03', 12), false);
+    expect((await f.request('quest/period', {})).periodKey).toBe('2026-10-06');
+    f.setHour(2);
+    expect((await f.request('quest/period', {})).dayStartHour).toBe(2);
+  });
+});
