@@ -115,6 +115,7 @@
 }
 
 .count {
+  position: relative;
   align-self: center;
   font-size: 22px;
   color: var(--fl-rubric);
@@ -189,4 +190,39 @@
 
 .compact .hidden {
   font-size: 13px;
+}
+
+/* ---- feedback ---- */
+.unlockable {
+  position: relative;
+}
+
+/* A brief warm glow behind an objective that has just come into view. */
+.wash {
+  position: absolute;
+  inset: 2px -6px;
+  border-radius: 12px 18px 14px 16px;
+  background: radial-gradient(120% 140% at 12% 50%, rgba(138, 43, 29, 0.16), transparent 70%);
+  pointer-events: none;
+}
+
+.tally {
+  display: inline-block;
+  transform-origin: 50% 70%;
+}
+
+.rise {
+  position: absolute;
+  right: 6px;
+  top: -2px;
+  font-size: 15px;
+  color: var(--fl-rubric);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wash,
+  .rise {
+    display: none;
+  }
 }

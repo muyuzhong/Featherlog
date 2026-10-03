@@ -4,6 +4,7 @@
 }
 
 .note {
+  position: relative;
   padding: 26px 28px 22px 30px;
   color: var(--fl-ink);
 }
@@ -81,5 +82,39 @@
 
 .value em {
   font-style: normal;
+  color: var(--fl-rubric);
+}
+
+/* ---- moments ---- */
+.kickerDone {
+  font-weight: normal;
+}
+
+.kickerDone span {
+  color: var(--fl-rubric);
+}
+
+/* A finished quest's last word on the note: the seal comes down over a paper wash. */
+.done {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  background: radial-gradient(70% 60% at 50% 45%, rgba(245, 229, 192, 0.96), rgba(239, 223, 185, 0.88));
+  cursor: pointer;
+}
+
+.doneName {
+  margin-top: 6px;
+  font: 24px var(--fl-font-title);
+  letter-spacing: 0.12em;
+  color: var(--fl-ink);
+}
+
+.doneLine {
+  font: 13px var(--fl-font-hand);
+  letter-spacing: 0.4em;
   color: var(--fl-rubric);
 }

@@ -1,6 +1,6 @@
 import type { Json } from '@featherlog/contracts';
 import { motion } from 'motion/react';
-import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import type { WindowRuntime } from '../app/runtime';
 import { useSetting } from '../app/use-setting';
 import { PAPERS, type Paper } from '../theme';
@@ -36,6 +36,10 @@ export function SettingsPage({ runtime }: { runtime: WindowRuntime }) {
 
             <Section title="卷轴">
               <DockNotes runtime={runtime} />
+            </Section>
+
+            <Section title="声音">
+              <SoundNotes runtime={runtime} />
             </Section>
 
             {sections.map((section) => (
@@ -162,6 +166,34 @@ function DockNotes({ runtime }: { runtime: WindowRuntime }) {
             description: '改走 XWayland，让卷轴能够置顶。代价是混合缩放的多块屏上可能发糊。',
           }}
           note={compat !== startedWith ? '已记下，重启羽记后生效' : '重启后生效'}
+        />
+      )}
+    </>
+  );
+}
+
+/** Sound on or off, and how loud; a change is heard at once at the new level. */
+function SoundNotes({ runtime }: { runtime: WindowRuntime }) {
+  const on = useSetting<boolean>(runtime, 'shell', 'sound') !== false;
+  const volume = useSetting<number>(runtime, 'shell', 'volume') ?? 6;
+  const heard = useRef({ on, volume });
+  useEffect(() => {
+    const changed = heard.current.on !== on || heard.current.volume !== volume;
+    heard.current = { on, volume };
+    if (changed && on) runtime.sound.play('unlock');
+  }, [on, volume, runtime]);
+  return (
+    <>
+      <FieldRow
+        runtime={runtime}
+        scope="shell"
+        field={{ key: 'sound', kind: 'boolean', title: '笔墨声', description: '落笔、翻页、盖火漆、章节告成时的声音。' }}
+      />
+      {on && (
+        <FieldRow
+          runtime={runtime}
+          scope="shell"
+          field={{ key: 'volume', kind: 'number', integer: true, min: 0, max: 10, title: '音量' }}
         />
       )}
     </>

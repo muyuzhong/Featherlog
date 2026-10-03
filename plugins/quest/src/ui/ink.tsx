@@ -12,6 +12,15 @@ const draw = (delay = 0, duration = 0.45) => ({
   transition: { pathLength: { delay, duration, ease: [0.4, 0, 0.2, 1] as const }, opacity: { delay, duration: 0.01 } },
 });
 
+/**
+ * A mark that is simply there. It still names its end state: a mark that began
+ * drawing and is re-rendered as not-fresh (two events in a row, say) must finish
+ * drawing rather than freeze at its first frame.
+ */
+const drawn = { initial: false, animate: { pathLength: 1, opacity: 1 } } as const;
+
+const ink = (animate: boolean, delay?: number, duration?: number) => (animate ? draw(delay, duration) : drawn);
+
 /** A tapered, slightly wavy rule, like a quill stroke. */
 export function InkRule({ className = '' }: { className?: string }) {
   return (
@@ -24,7 +33,7 @@ export function InkRule({ className = '' }: { className?: string }) {
 export function InkCheck({ animate = false, className = '' }: { animate?: boolean; className?: string }) {
   return (
     <svg className={`${styles.check} ${className}`} viewBox="0 0 22 22" aria-hidden>
-      <motion.path d="M4 11.8 C 5.6 13, 7 14.8, 8.3 16.8 C 10.9 11.4, 14.3 7.1, 18.8 3.4" {...(animate ? draw(0.28, 0.35) : {})} />
+      <motion.path d="M4 11.8 C 5.6 13, 7 14.8, 8.3 16.8 C 10.9 11.4, 14.3 7.1, 18.8 3.4" {...ink(animate, 0.28, 0.35)} />
     </svg>
   );
 }
@@ -33,7 +42,7 @@ export function InkCheck({ animate = false, className = '' }: { animate?: boolea
 export function InkStrike({ animate = false }: { animate?: boolean }) {
   return (
     <svg className={styles.strike} viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden>
-      <motion.path d="M1 6.2 C 18 4.4, 40 7.2, 62 5.2 S 90 4.4, 99 5.6" {...(animate ? draw(0, 0.4) : {})} />
+      <motion.path d="M1 6.2 C 18 4.4, 40 7.2, 62 5.2 S 90 4.4, 99 5.6" {...ink(animate, 0, 0.4)} />
     </svg>
   );
 }
@@ -43,7 +52,7 @@ export function InkBox({ checked, animate = false }: { checked: boolean; animate
     <svg className={styles.box} viewBox="0 0 22 22" aria-hidden>
       <path className={styles.boxFrame} d="M3.4 4.3 C 8.2 3.7, 12.8 3.6, 17.4 4 C 17.8 8.5, 17.7 13, 17.3 17.6 C 12.6 17.9, 8.1 18, 3.7 17.5 C 3.3 13, 3.2 8.6, 3.6 3.6" />
       {checked && (
-        <motion.path className={styles.boxTick} d="M5.6 10.6 C 7.4 12, 8.6 13.8, 9.6 15.8 C 12.4 10, 15.6 5.6, 20.4 1.6" {...(animate ? draw(0, 0.35) : {})} />
+        <motion.path className={styles.boxTick} d="M5.6 10.6 C 7.4 12, 8.6 13.8, 9.6 15.8 C 12.4 10, 15.6 5.6, 20.4 1.6" {...ink(animate, 0, 0.35)} />
       )}
     </svg>
   );

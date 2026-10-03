@@ -1,6 +1,6 @@
 import type { Chapter, Quest } from '@featherlog/contracts';
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { InkCheck, InkStrike, Quill } from './ink';
 import { cnCount } from './numerals';
 import type { QuestStore } from './store';
@@ -69,10 +69,21 @@ export function Objectives({ quest, store, compact = false }: Props) {
         {current && (
           <motion.li
             key={current.id}
-            initial={firstRender.current ? false : { opacity: 0, y: 5, filter: 'blur(3px)' }}
-            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-            transition={{ duration: 0.7, delay: 0.45, ease: [0.22, 0.8, 0.32, 1] }}
+            className={styles.unlockable}
+            // The next objective soaks into the page from the left, like ink, after the stroke lands.
+            initial={firstRender.current ? false : { opacity: 0, clipPath: 'inset(0 100% 0 0)', filter: 'blur(3px)' }}
+            animate={{ opacity: 1, clipPath: 'inset(0 0% 0 0)', filter: 'blur(0px)' }}
+            transition={{ duration: 0.75, delay: 0.45, ease: [0.22, 0.8, 0.32, 1] }}
           >
+            {!firstRender.current && (
+              <motion.span
+                className={styles.wash}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: [0, 1, 0] }}
+                transition={{ duration: 1.8, delay: 0.5, times: [0, 0.25, 1] }}
+                aria-hidden
+              />
+            )}
             <button
               className={styles.current}
               onClick={() =>
@@ -87,12 +98,7 @@ export function Objectives({ quest, store, compact = false }: Props) {
                 {current.detail && <span className={styles.detail}>{current.detail}</span>}
                 <span className={styles.hint}>{current.count ? '轻点添一笔' : '轻点落笔'}</span>
               </span>
-              {current.count && (
-                <span className={styles.count}>
-                  {current.count.current}
-                  <small> / {current.count.target}{current.count.unit ?? ''}</small>
-                </span>
-              )}
+              {current.count && <Count {...current.count} />}
             </button>
           </motion.li>
         )}
@@ -113,5 +119,44 @@ export function Objectives({ quest, store, compact = false }: Props) {
           </li>
         ))}
     </ol>
+  );
+}
+
+/** A counted objective's tally: each step bounces, with a "+1" rising off the page. */
+function Count({ current, target, unit }: { current: number; target: number; unit?: string }) {
+  const previous = useRef(current);
+  const [rises, setRises] = useState<number[]>([]);
+  useEffect(() => {
+    if (current > previous.current) setRises((list) => [...list.slice(-3), current]);
+    previous.current = current;
+  }, [current]);
+  return (
+    <span className={styles.count}>
+      <motion.span
+        key={current}
+        className={styles.tally}
+        initial={rises.length ? { scale: 1.45 } : false}
+        animate={{ scale: 1 }}
+        transition={{ type: 'spring', stiffness: 520, damping: 16 }}
+      >
+        {current}
+      </motion.span>
+      <small> / {target}{unit ?? ''}</small>
+      <AnimatePresence>
+        {rises.map((n) => (
+          <motion.span
+            key={n}
+            className={styles.rise}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: [0, 1, 0], y: -22 }}
+            transition={{ duration: 0.9, ease: 'easeOut' }}
+            onAnimationComplete={() => setRises((list) => list.filter((m) => m !== n))}
+            aria-hidden
+          >
+            +1
+          </motion.span>
+        ))}
+      </AnimatePresence>
+    </span>
   );
 }
