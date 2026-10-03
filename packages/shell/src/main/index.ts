@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { BrowserWindow, IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron';
 import type { Clock, WindowKind } from '@featherlog/contracts';
 import { createKernel } from '@featherlog/kernel';
-import { plugins } from './plugins';
+import { createPlugins } from './plugins';
 import { JsonFiles, pluginStorage } from './storage';
 import { loadSettings } from './settings';
 import { Secrets, registerSecretIpc } from './secrets';
@@ -65,6 +65,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   const start = async () => {
+    const { plugins, observe } = createPlugins();
     // This read must remain synchronous: compatibility switches precede Electron's ready event.
     const settings = loadSettings(userData, plugins.map(plugin => plugin.manifest), files, log, clock);
     const secrets = new Secrets(userData, settings, files, log);
@@ -83,6 +84,7 @@ if (!app.requestSingleInstanceLock()) {
         storage: pluginStorage(userData, id, files), settings: settings.forPlugin(id),
         secrets: secrets.forPlugin(id) }),
     });
+    kernel.observe(observe);
     kernel.observe(message => {
       if (message.kind === 'event' && message.type.startsWith('kernel/')) {
         if (message.type === 'kernel/plugin-failed') log.error(message.type, message.payload);

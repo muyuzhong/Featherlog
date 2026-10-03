@@ -24,6 +24,7 @@
     "@featherlog/contracts": "workspace:*",
     "@featherlog/kernel": "workspace:*",
     "@featherlog/plugin-quest": "workspace:*",
+    "@featherlog/plugin-scribe": "workspace:*",
     "@fontsource/ma-shan-zheng": "^5.3.1",
     "@types/node": "^26.6.3",
     "@types/react": "^19.3.0",

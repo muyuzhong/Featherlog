@@ -249,6 +249,9 @@ export async function setup(ctx: MainContext): Promise<void> {
       .sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind) || a.order - b.order)
       .map(tx.view) };
   }, true);
+  register('quest/period', draft => ({
+    periodKey: draft.meta.lastPeriodKey, dayStartHour: hour,
+  }), true);
   register('quest/get', (draft, payload, tx) => ({ quest: tx.view(find(draft, payload.id)) }), true);
   register('quest/create', (draft, payload, tx) => {
     const fields = input(payload.input);

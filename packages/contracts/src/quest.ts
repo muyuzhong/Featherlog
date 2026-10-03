@@ -170,6 +170,8 @@ export interface QuestEvents {
 }
 
 export interface QuestRequests {
+  /** The quest plugin's logical period, including its configured day boundary. */
+  'quest/period': { req: Record<string, never>; res: { periodKey: LocalDate; dayStartHour: number } };
   'quest/list': { req: { filter?: QuestFilter }; res: { quests: Quest[] } };
   'quest/get': { req: { id: string }; res: { quest: Quest } };
   'quest/create': { req: { input: QuestInput }; res: { quest: Quest } };

@@ -36,6 +36,7 @@
     "scribe/epilogue-written"
   ],
   "handles": [
+    "quest/period",
     "quest/list",
     "quest/get",
     "quest/create",
