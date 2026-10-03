@@ -427,6 +427,35 @@ describe('§4.5 host API', () => {
     expect(messages).toHaveLength(2);
     expect(messages[1]).toMatchObject({ kind: 'response', type: request.type, replyTo: request.id, payload: mode === 'success' ? { ok: true, data: null } : { ok: false, error: { code: mode } } });
   });
+  it('lets the host extend an injected request deadline without changing its envelope', async () => {
+    const { kernel, bus, messages, advance } = fixture();
+    const reply = deferred();
+    bus.handle('alpha/get', () => reply.promise);
+    const request = incoming('request');
+    kernel.inject(request, { timeoutMs: 65_000 });
+    await flush();
+    advance(6000);
+    expect(messages).toEqual([request]);
+    reply.resolve(123);
+    await flush();
+    expect(messages[1]).toMatchObject({ replyTo: request.id, payload: { ok: true, data: 123 } });
+    advance(59_000);
+    expect(messages).toHaveLength(2);
+  });
+  it('times out an injected request at the host deadline and discards a late reply', async () => {
+    const { kernel, bus, messages, advance } = fixture();
+    const reply = deferred();
+    bus.handle('alpha/get', () => reply.promise);
+    kernel.inject(incoming('request'), { timeoutMs: 65_000 });
+    await flush();
+    advance(64_999);
+    expect(messages).toHaveLength(1);
+    advance(1);
+    expect(messages[1]).toMatchObject({ payload: { ok: false, error: { code: 'timeout' } } });
+    reply.resolve(123);
+    await flush();
+    expect(messages).toHaveLength(2);
+  });
 });
 
 describe('§5.3–5.4 lifecycle and §4.2 namespaces', () => {
