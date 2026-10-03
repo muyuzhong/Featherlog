@@ -17,6 +17,7 @@ export const BUILTIN: Record<ScribeTopic, readonly string[]> = {
   reopen: ['这一笔撤回了，接着来。', '改一笔也算落笔，日志容得下。', '旧墨不碍事，往下写吧。'],
   board: ['先沿着眼前这一步走。', '这件放在今日页首。', '每日的小事，也值得一笔。'],
   greeting: ['这一步若太重，我可以帮你拆小。', '这处停了些时日，要拆成小步吗？', '不妨拆小这一步，稿纸由你定。'],
+  stall: ['这一步若太重，我可以帮你拆小。', '这处停了些时日，要拆成小步吗？', '不妨拆小这一步，稿纸由你定。'],
 };
 export function builtin(topic: ScribeTopic, index = 0): string {
   return BUILTIN[topic][index % BUILTIN[topic].length]!;
