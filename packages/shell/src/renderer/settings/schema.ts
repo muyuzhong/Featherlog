@@ -9,6 +9,8 @@ export type Field = Common &
     | { kind: 'choice'; options: { value: string; label: string }[] }
     | { kind: 'boolean' }
     | { kind: 'text' }
+    /** A write-only string (an API key): stored encrypted, never read back (design §6.6). */
+    | { kind: 'secret' }
   );
 
 type JsonObject = { [key: string]: Json };
@@ -45,6 +47,7 @@ export function readFields(schema: Json): Field[] {
       case 'boolean':
         return [{ ...common, kind: 'boolean' }];
       case 'string': {
+        if (property.writeOnly === true) return [{ ...common, kind: 'secret' }];
         if (!Array.isArray(property.enum)) return [{ ...common, kind: 'text' }];
         const values = property.enum.filter((value): value is string => typeof value === 'string');
         return [{ ...common, kind: 'choice', options: values.map((value) => ({ value, label: labelFor(property, value) })) }];

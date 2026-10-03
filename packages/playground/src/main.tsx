@@ -1,6 +1,8 @@
 import type { MainContext, PluginManifest } from '@featherlog/contracts';
 import { createKernel, type MainPlugin } from '@featherlog/kernel';
 import questManifest from '@featherlog/plugin-quest/manifest.json';
+// The scribe's package lands with its main half; until then only its manifest (settings, tab) is shown.
+import scribeManifestJson from '../../../plugins/scribe/manifest.json';
 import { setup as questMain } from '@featherlog/plugin-quest/main';
 import { setup as questUi } from '@featherlog/plugin-quest/ui';
 import { applyTheme, setPaper, type Paper } from '@featherlog/shell/renderer';
@@ -23,10 +25,14 @@ import './playground.css';
  * preload per simulated window. The window UIs are the real ones (design §6).
  */
 const manifest = questManifest as PluginManifest;
+const scribeManifest = scribeManifestJson as PluginManifest;
 const mainPlugins: MainPlugin[] = [{ manifest, setup: questMain as (ctx: MainContext) => Promise<void> }];
-const uiPlugins: UiPlugin[] = [{ manifest, setup: questUi }];
+const uiPlugins: UiPlugin[] = [
+  { manifest, setup: questUi },
+  { manifest: scribeManifest, setup: () => {} },
+];
 
-const settings = createSettings([manifest]);
+const settings = createSettings([manifest, scribeManifest]);
 const { clock, nextDay } = createDevClock();
 const log = { debug: console.debug, info: console.info, warn: console.warn, error: console.error };
 const kernel = createKernel({
@@ -62,8 +68,8 @@ const menu = {
   },
 };
 const [collapsed, panel] = await Promise.all([
-  createRuntime(createFakePreload('collapsed', kernel, shell, settings, menu.open, [manifest]), uiPlugins),
-  createRuntime(createFakePreload('panel', kernel, shell, settings, menu.open, [manifest]), uiPlugins),
+  createRuntime(createFakePreload('collapsed', kernel, shell, settings, menu.open, [manifest, scribeManifest]), uiPlugins),
+  createRuntime(createFakePreload('panel', kernel, shell, settings, menu.open, [manifest, scribeManifest]), uiPlugins),
 ]);
 
 createRoot(document.getElementById('root')!).render(

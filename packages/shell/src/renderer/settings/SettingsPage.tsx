@@ -203,6 +203,105 @@ function SoundNotes({ runtime }: { runtime: WindowRuntime }) {
 // ---------------------------------------------------------------- schema fields
 
 function FieldRow({ runtime, scope, field, note }: { runtime: WindowRuntime; scope: string; field: Field; note?: string }) {
+  if (field.kind === 'secret') return <SecretRow runtime={runtime} scope={scope} field={field} />;
+  return <ValueRow runtime={runtime} scope={scope} field={field} {...(note !== undefined ? { note } : {})} />;
+}
+
+/**
+ * A write-only setting (design §6.6): the page can store or clear it, and knows
+ * whether one is set, but never sees it again once it is saved.
+ */
+function SecretRow({ runtime, scope, field }: { runtime: WindowRuntime; scope: string; field: Field }) {
+  const [present, setPresent] = useState<boolean | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    let alive = true;
+    runtime.preload.settings.hasSecret(scope, field.key).then(
+      (found) => alive && setPresent(found),
+      (cause: unknown) => {
+        console.error(cause);
+        if (alive) setPresent(false);
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [runtime, scope, field.key]);
+
+  const store = async (value: string) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await runtime.preload.settings.setSecret(scope, field.key, value);
+      setPresent(value !== '');
+      setEditing(false);
+      setDraft('');
+    } catch (cause) {
+      console.error(cause);
+      const code = typeof cause === 'object' && cause !== null && 'code' in cause ? cause.code : undefined;
+      setError(
+        code === 'shell/secrets-unavailable'
+          ? '这台电脑没有可用的密钥保管（如 KWallet、GNOME 钥匙环），为了安全不以明文保存'
+          : '没能存下，请再试一次',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className={styles.row}>
+      <span className={styles.label}>
+        <span className={styles.fieldTitle}>{field.title}</span>
+        {field.description && <span className={styles.desc}>{field.description}</span>}
+        {error && <span className={`${styles.hint} ${styles.warn}`}>{error}</span>}
+      </span>
+      <div className={styles.control}>
+        {present && !editing ? (
+          <span className={styles.secretSet}>
+            <span className={styles.secretDots} aria-label="已设置">●●●●●●</span>
+            <button className={styles.secretAction} disabled={busy} onClick={() => setEditing(true)}>
+              换一把
+            </button>
+            <button className={styles.secretAction} disabled={busy} onClick={() => void store('')}>
+              清除
+            </button>
+          </span>
+        ) : (
+          <span className={styles.secretSet}>
+            <input
+              className={styles.text}
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              aria-label={field.title}
+              placeholder={present === null ? '' : '粘贴到这里'}
+              value={draft}
+              disabled={busy}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && draft.trim()) void store(draft.trim());
+                if (event.key === 'Escape') {
+                  event.stopPropagation();
+                  setDraft('');
+                  setEditing(false);
+                }
+              }}
+            />
+            <button className={styles.secretAction} disabled={busy || !draft.trim()} onClick={() => void store(draft.trim())}>
+              存下
+            </button>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ValueRow({ runtime, scope, field, note }: { runtime: WindowRuntime; scope: string; field: Field; note?: string }) {
   const value = useSetting<Json>(runtime, scope, field.key);
   const [save, error] = useSave(runtime, scope, field.key);
   const hint = error ?? note;
@@ -260,6 +359,7 @@ function Control({ field, value, onChange }: { field: Field; value: Json | undef
     case 'text':
       return <TextInput label={field.title} value={typeof value === 'string' ? value : ''} onChange={onChange} />;
     case 'boolean':
+    case 'secret':
       return null;
   }
 }
