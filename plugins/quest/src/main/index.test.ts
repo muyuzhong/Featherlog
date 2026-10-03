@@ -49,7 +49,8 @@ async function fixture(options: {
   const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const kernel = createKernel({
     development: options.development ?? true, clock, log,
-    createServices: () => ({ clock, storage, settings, log }),
+    createServices: () => ({ clock, storage, settings, log,
+      secrets: { get: async () => undefined, onChange: () => () => {} } }),
   });
   const bus = kernel.createBus('shell');
   const messages: Envelope[] = [];

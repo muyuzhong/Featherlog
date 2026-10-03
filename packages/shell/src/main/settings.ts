@@ -54,7 +54,7 @@ export class Settings {
     for (const [scope, schema] of this.schemas) {
       const values: Record<string, Json> = Object.create(null);
       for (const [key, property] of Object.entries(schema)) {
-        if (record(property) && property.default !== undefined) {
+        if (record(property) && property.writeOnly !== true && property.default !== undefined) {
           this.validate(scope, key, property.default);
           values[key] = structuredClone(property.default) as Json;
         }
@@ -72,6 +72,8 @@ export class Settings {
         for (const [key, value] of Object.entries(values)) {
           // Preserve forward compatibility with settings removed from newer manifests.
           if (!Object.hasOwn(this.schemas.get(scope)!, key)) continue;
+          const property = this.schemas.get(scope)![key];
+          if (record(property) && property.writeOnly === true) continue;
           this.validate(scope, key, value);
           this.values[scope]![key] = structuredClone(value) as Json;
         }
@@ -82,7 +84,7 @@ export class Settings {
   private validate(scope: string, key: string, value: unknown): void {
     const schema = this.schemas.get(scope);
     const property = schema && Object.hasOwn(schema, key) ? schema[key] : undefined;
-    let valid = record(property) && isJson(value);
+    let valid = record(property) && property.writeOnly !== true && isJson(value);
     if (valid && record(property)) {
       switch (property.type) {
         case 'integer':
@@ -104,6 +106,12 @@ export class Settings {
       }
     }
     if (!valid) invalid(`Invalid setting ${scope}/${key}`, 'shell/invalid-setting');
+  }
+
+  isSecret(scope: string, key: string): boolean {
+    const schema = this.schemas.get(scope);
+    const property = schema && Object.hasOwn(schema, key) ? schema[key] : undefined;
+    return record(property) && property.type === 'string' && property.writeOnly === true;
   }
 
   all(): Record<string, Record<string, Json>> {

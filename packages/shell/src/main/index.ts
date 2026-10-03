@@ -6,6 +6,7 @@ import { createKernel } from '@featherlog/kernel';
 import { plugins } from './plugins';
 import { JsonFiles, pluginStorage } from './storage';
 import { loadSettings } from './settings';
+import { Secrets, registerSecretIpc } from './secrets';
 import { createLogs } from './log';
 import { createBusBridge } from './bridge';
 import { ElectronFloat, PlainFloat, selectDock } from './dock';
@@ -66,6 +67,7 @@ if (!app.requestSingleInstanceLock()) {
   const start = async () => {
     // This read must remain synchronous: compatibility switches precede Electron's ready event.
     const settings = loadSettings(userData, plugins.map(plugin => plugin.manifest), files, log, clock);
+    const secrets = new Secrets(userData, settings, files, log);
     const compatMode = process.env.FEATHERLOG_COMPAT_MODE === '1' ||
       settings.all().shell!.compatMode === true;
     if (compatMode) app.commandLine.appendSwitch('ozone-platform', 'x11');
@@ -78,7 +80,8 @@ if (!app.requestSingleInstanceLock()) {
     const kernel = createKernel({
       development: !app.isPackaged, clock, log,
       createServices: id => ({ clock, log: logs.logger(id),
-        storage: pluginStorage(userData, id, files), settings: settings.forPlugin(id) }),
+        storage: pluginStorage(userData, id, files), settings: settings.forPlugin(id),
+        secrets: secrets.forPlugin(id) }),
     });
     kernel.observe(message => {
       if (message.kind === 'event' && message.type.startsWith('kernel/')) {
@@ -123,6 +126,7 @@ if (!app.requestSingleInstanceLock()) {
         } };
       }
     });
+    registerSecretIpc(ipcMain, secrets, trusted);
     const offSettings = settings.onChange((scope, key, value) => {
       for (const peer of peers.keys()) {
         if (!peer.isDestroyed()) peer.send('settings:changed', scope, key, value);
@@ -155,7 +159,7 @@ if (!app.requestSingleInstanceLock()) {
       offSettings();
       shell.dispose();
       try { await windows.stop(); }
-      finally { await settings.flush(); }
+      finally { await Promise.all([settings.flush(), secrets.flush()]); }
     };
     await app.whenReady();
     if (quitting) return;

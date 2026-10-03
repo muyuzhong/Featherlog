@@ -14,6 +14,7 @@ function fixture() {
     set: async () => {}, delete: async () => {}, keys: async () => [] };
   const kernel = createKernel({ development: true, clock, log, createServices: () => ({
     clock, log, storage, settings: { get: () => undefined, onChange: () => () => {} },
+    secrets: { get: async () => undefined, onChange: () => () => {} },
   }) });
   const bus = kernel.createBus('shell');
   const open = vi.fn(async () => {});

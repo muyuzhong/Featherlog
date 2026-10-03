@@ -19,6 +19,13 @@ export interface FeatherlogPreload {
     all(): Promise<Record<string, Record<string, Json>>>;
     /** Validated against the scope's schema; rejects with code "shell/invalid-setting". */
     set(scope: string, key: string, value: Json): Promise<void>;
+    /**
+     * Write-only string fields; '' deletes. Other keys reject with "shell/invalid-setting";
+     * unavailable system encryption rejects with "shell/secrets-unavailable".
+     */
+    setSecret(scope: string, key: string, value: string): Promise<void>;
+    /** Reports presence without exposing a secret's value. */
+    hasSecret(scope: string, key: string): Promise<boolean>;
     onChange(listener: (scope: string, key: string, value: Json) => void): Dispose;
   };
   /** Collapsed window only. */

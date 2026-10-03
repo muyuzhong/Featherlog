@@ -28,7 +28,8 @@ function fixture(development = true) {
     get: async () => undefined, set: async () => {}, delete: async () => {}, keys: async () => [],
   };
   const kernel = createKernel({ development, clock, log, createServices: () => ({ clock, log,
-    storage, settings: { get: () => undefined, onChange: () => () => {} } }) });
+    storage, settings: { get: () => undefined, onChange: () => () => {} },
+    secrets: { get: async () => undefined, onChange: () => () => {} } }) });
   const bus = kernel.createBus('shell');
   const bridge = createBusBridge(kernel, log, development);
   const a = new Peer(1);
