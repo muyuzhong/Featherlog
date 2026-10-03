@@ -30,7 +30,10 @@
     "quest/counted",
     "quest/tracked",
     "quest/deleted",
-    "quest/period-rolled"
+    "quest/period-rolled",
+    "scribe/said",
+    "scribe/state-changed",
+    "scribe/epilogue-written"
   ],
   "handles": [
     "quest/list",
@@ -51,7 +54,12 @@
   "requests": [
     "shell/set-badge",
     "shell/notify",
-    "shell/open-panel"
+    "shell/open-panel",
+    "scribe/state",
+    "scribe/draft-quest",
+    "scribe/split-objective",
+    "scribe/lines",
+    "scribe/epilogue"
   ],
   "contributes": {
     "collapsedIcons": [
