@@ -1,0 +1,111 @@
+{
+  "id": "scribe",
+  "name": "翎",
+  "version": "0.1.0",
+  "description": "书记官翎：回应你的每一笔，帮你起草任务、拆小难关、写今日战报和尾声。模型与接口由你配置。",
+  "main": "src/main/index.ts",
+  "ui": "src/ui/index.tsx",
+  "emits": ["scribe/said", "scribe/state-changed", "scribe/recap-written", "scribe/epilogue-written"],
+  "listens": [
+    "kernel/ready",
+    "quest/created",
+    "quest/updated",
+    "quest/objective-completed",
+    "quest/objective-reopened",
+    "quest/chapter-completed",
+    "quest/completed",
+    "quest/uncompleted",
+    "quest/counted",
+    "quest/deleted",
+    "quest/period-rolled",
+    "scribe/said",
+    "scribe/state-changed",
+    "scribe/recap-written",
+    "scribe/epilogue-written"
+  ],
+  "handles": [
+    "scribe/state",
+    "scribe/consent",
+    "scribe/test",
+    "scribe/draft-quest",
+    "scribe/split-objective",
+    "scribe/board",
+    "scribe/recap",
+    "scribe/recaps",
+    "scribe/epilogue",
+    "scribe/lines"
+  ],
+  "requests": [
+    "quest/list",
+    "quest/get",
+    "scribe/state",
+    "scribe/consent",
+    "scribe/test",
+    "scribe/board",
+    "scribe/recap",
+    "scribe/recaps",
+    "scribe/lines",
+    "shell/open-panel"
+  ],
+  "contributes": {
+    "panelTabs": [{ "id": "scribe/notes", "title": "札记", "icon": "feather", "order": 10 }],
+    "settings": {
+      "title": "翎",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "请翎来执笔",
+            "description": "启用后，翎会回应你的进展、帮你起草任务、写今日战报。首次启用时会先说明会发送哪些内容。",
+            "default": false
+          },
+          "protocol": {
+            "type": "string",
+            "title": "接口协议",
+            "description": "大多数服务商和本地模型（Ollama 等）都兼容 OpenAI 的接口。",
+            "enum": ["openai", "anthropic"],
+            "oneOf": [
+              { "const": "openai", "title": "OpenAI 兼容" },
+              { "const": "anthropic", "title": "Anthropic" }
+            ]
+          },
+          "baseUrl": {
+            "type": "string",
+            "title": "接口地址",
+            "description": "例如 https://api.deepseek.com/v1。本机地址可以用 http://。"
+          },
+          "model": {
+            "type": "string",
+            "title": "模型",
+            "description": "原样传给接口的模型名。"
+          },
+          "apiKey": {
+            "type": "string",
+            "title": "API Key",
+            "description": "加密保存在本机，界面读不回来。本地模型可以不填。",
+            "writeOnly": true
+          },
+          "talkativeness": {
+            "type": "string",
+            "title": "话痨程度",
+            "enum": ["quiet", "normal", "chatty"],
+            "oneOf": [
+              { "const": "quiet", "title": "少" },
+              { "const": "normal", "title": "常" },
+              { "const": "chatty", "title": "多" }
+            ],
+            "default": "normal"
+          },
+          "recapTime": {
+            "type": "integer",
+            "title": "几点之后写今日战报",
+            "minimum": 0,
+            "maximum": 23,
+            "default": 22
+          }
+        }
+      }
+    }
+  }
+}
