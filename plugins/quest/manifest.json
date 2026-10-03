@@ -33,7 +33,10 @@
     "quest/period-rolled",
     "scribe/said",
     "scribe/state-changed",
-    "scribe/epilogue-written"
+    "scribe/epilogue-written",
+    "notes/created",
+    "notes/updated",
+    "notes/deleted"
   ],
   "handles": [
     "quest/period",
@@ -60,7 +63,12 @@
     "scribe/draft-quest",
     "scribe/split-objective",
     "scribe/lines",
-    "scribe/epilogue"
+    "scribe/epilogue",
+    "notes/list",
+    "notes/create",
+    "notes/update",
+    "notes/delete",
+    "notes/counts"
   ],
   "contributes": {
     "collapsedIcons": [
