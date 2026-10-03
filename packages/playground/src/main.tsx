@@ -9,7 +9,7 @@ import { createRoot } from 'react-dom/client';
 import { Desktop } from './Desktop';
 import { createDevClock, periodKey } from './host/clock';
 import { clearAll } from './host/persist';
-import { createFakePreload } from './host/preload';
+import { createFakePreload, secretsForPlugin } from './host/preload';
 import { seedJournal } from './host/seed';
 import { createSettings } from './host/settings';
 import { createHostShell } from './host/shell';
@@ -32,7 +32,8 @@ const kernel = createKernel({
   development: true,
   clock,
   log,
-  createServices: (pluginId) => ({ storage: createStorage(pluginId), settings: settings.forPlugin(pluginId), clock, log }),
+  createServices: (pluginId) => ({ storage: createStorage(pluginId), settings: settings.forPlugin(pluginId),
+    secrets: secretsForPlugin(pluginId), clock, log }),
 });
 const shell = createHostShell(kernel);
 const busLog = { entries: [] as import('@featherlog/contracts').Envelope[] };
@@ -58,8 +59,8 @@ const menu = {
   },
 };
 const [collapsed, panel] = await Promise.all([
-  createRuntime(createFakePreload('collapsed', kernel, shell, settings, menu.open), uiPlugins),
-  createRuntime(createFakePreload('panel', kernel, shell, settings, menu.open), uiPlugins),
+  createRuntime(createFakePreload('collapsed', kernel, shell, settings, menu.open, [manifest]), uiPlugins),
+  createRuntime(createFakePreload('panel', kernel, shell, settings, menu.open, [manifest]), uiPlugins),
 ]);
 
 createRoot(document.getElementById('root')!).render(

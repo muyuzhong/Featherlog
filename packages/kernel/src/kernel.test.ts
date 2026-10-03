@@ -27,6 +27,7 @@ function fixture(development = true, setupTimeoutMs?: number) {
   };
   const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const settingsDispose = vi.fn();
+  const secretsDispose = vi.fn();
   const services = new Map<string, ReturnType<typeof createServices>>();
   function createServices(id: string) {
     const values = new Map<string, Json>();
@@ -36,7 +37,9 @@ function fixture(development = true, setupTimeoutMs?: number) {
       async delete(key) { values.delete(key); },
       async keys() { return [...values.keys()]; },
     };
-    const result = { storage, clock, log, settings: { get: () => undefined, onChange: () => settingsDispose } };
+    const result = { storage, clock, log, settings: { get: () => undefined, onChange: () => settingsDispose },
+      secrets: { get: vi.fn(async (key: string) => key === 'token' ? `${id}-secret` : undefined),
+        onChange: vi.fn((_listener: (key: string) => void) => secretsDispose) } };
     services.set(id, result);
     return result;
   }
@@ -45,8 +48,64 @@ function fixture(development = true, setupTimeoutMs?: number) {
   const bus = kernel.createBus('shell');
   const messages: Envelope[] = [];
   kernel.observe(message => messages.push(message));
-  return { kernel, bus, messages, clock, log, services, timers, advance, settingsDispose };
+  return { kernel, bus, messages, clock, log, services, timers, advance, settingsDispose, secretsDispose };
 }
+
+it('exposes only the injected plugin secrets and cleans key-only listeners without bus traffic', async () => {
+  const { kernel, services, messages, secretsDispose, log } = fixture();
+  let alpha!: MainContext;
+  let beta!: MainContext;
+  const listener = vi.fn();
+  await kernel.load([plugin('alpha', ctx => { alpha = ctx; }), plugin('beta', ctx => { beta = ctx; })]);
+  messages.length = 0;
+  await expect(alpha.secrets.get('token')).resolves.toBe('alpha-secret');
+  await expect(beta.secrets.get('token')).resolves.toBe('beta-secret');
+  await expect(alpha.secrets.get('missing')).resolves.toBeUndefined();
+  const off = alpha.secrets.onChange(listener);
+  const callback = services.get('alpha')!.secrets.onChange.mock.calls[0]![0];
+  callback('token');
+  expect(listener.mock.calls).toEqual([['token']]);
+  expect(messages).toEqual([]);
+  off(); off();
+  expect(secretsDispose).toHaveBeenCalledOnce();
+  const broken = vi.fn(() => { throw new Error('listener'); });
+  alpha.secrets.onChange(broken);
+  const late = services.get('alpha')!.secrets.onChange.mock.calls[1]![0];
+  late('token');
+  expect(log.error).toHaveBeenCalledOnce();
+  kernel.unload('alpha');
+  expect(secretsDispose).toHaveBeenCalledTimes(2);
+  late('token');
+  expect(broken).toHaveBeenCalledOnce();
+  await expect(alpha.secrets.get('token')).rejects.toMatchObject({ code: 'disposed' });
+  expect(() => alpha.secrets.onChange(listener)).toThrow(expect.objectContaining({ code: 'disposed' }));
+  expect(services.get('alpha')!.secrets.get).toHaveBeenCalledTimes(2);
+});
+
+it('does not return a late secret after unloading the plugin', async () => {
+  const { kernel, services } = fixture();
+  let context!: MainContext;
+  await kernel.load([plugin('alpha', ctx => { context = ctx; })]);
+  let resolve!: (value: string) => void;
+  services.get('alpha')!.secrets.get.mockReturnValueOnce(new Promise<string>(done => { resolve = done; }));
+  const reading = context.secrets.get('token');
+  const rejected = expect(reading).rejects.toMatchObject({ code: 'disposed' });
+  kernel.unload('alpha');
+  resolve('private-key');
+  await rejected;
+});
+
+it('cleans secret subscriptions when plugin setup fails', async () => {
+  const { kernel, services, secretsDispose } = fixture();
+  const listener = vi.fn();
+  await kernel.load([plugin('alpha', ctx => {
+    ctx.secrets.onChange(listener);
+    throw new Error('setup failed');
+  })]);
+  expect(secretsDispose).toHaveBeenCalledOnce();
+  services.get('alpha')!.secrets.onChange.mock.calls[0]![0]('token');
+  expect(listener).not.toHaveBeenCalled();
+});
 
 const plugin = (id: string, setup: (ctx: MainContext) => void | Promise<void>) => ({
   manifest: { id, name: id, version: '1.2.3' }, setup,
@@ -441,7 +500,7 @@ describe('§5.3–5.4 lifecycle and §4.2 namespaces', () => {
   });
 
   it('cleans all resources in reverse registration order despite errors, cancels queued listeners and prevents reuse', async () => {
-    const { kernel, bus, messages, timers, advance, settingsDispose, log } = fixture();
+    const { kernel, bus, messages, timers, advance, settingsDispose, secretsDispose, log } = fixture();
     const order: number[] = [];
     const listener = vi.fn();
     let context!: MainContext;
@@ -452,6 +511,7 @@ describe('§5.3–5.4 lifecycle and §4.2 namespaces', () => {
       ctx.bus.handle('alpha/get', () => 1);
       ctx.clock.setTimeout(listener, 5);
       ctx.settings.onChange(listener);
+      ctx.secrets.onChange(listener);
       ctx.onDispose(() => { order.push(2); throw new Error('cleanup failed'); });
       ctx.onDispose(() => { order.push(3); });
     })]);
@@ -463,6 +523,7 @@ describe('§5.3–5.4 lifecycle and §4.2 namespaces', () => {
     expect(log.error).toHaveBeenCalledOnce();
     expect(listener).not.toHaveBeenCalled();
     expect(settingsDispose).toHaveBeenCalledOnce();
+    expect(secretsDispose).toHaveBeenCalledOnce();
     expect(timers.size).toBe(0);
     expect(messages.filter(m => m.type === 'kernel/plugin-unloaded')).toHaveLength(1);
     await expect(bus.request('alpha/get', null)).rejects.toMatchObject({ code: 'no-handler' });
@@ -782,7 +843,7 @@ describe('§5.3 batch validation and setup deadlines', () => {
   });
 
   it.each([undefined, 25])('times out setup at %s ms (default 10000), cleans up and keeps loading', async timeout => {
-    const { kernel, bus, advance, messages, timers, settingsDispose } = fixture(true, timeout);
+    const { kernel, bus, advance, messages, timers, settingsDispose, secretsDispose } = fixture(true, timeout);
     const gate = deferred();
     const cleanup = vi.fn();
     const listener = vi.fn();
@@ -798,6 +859,7 @@ describe('§5.3 batch validation and setup deadlines', () => {
         ctx.bus.handle('alpha/get', () => new Promise(() => {}));
         ctx.clock.setTimeout(listener, 20_000);
         ctx.settings.onChange(listener);
+        ctx.secrets.onChange(listener);
         outbound = ctx.bus.request('beta/get', null, { timeoutMs: 20_000 });
         void outbound.catch(() => {});
         await gate.promise;
@@ -820,6 +882,7 @@ describe('§5.3 batch validation and setup deadlines', () => {
     expect(next).toHaveBeenCalledOnce();
     expect(cleanup).toHaveBeenCalledOnce();
     expect(settingsDispose).toHaveBeenCalledOnce();
+    expect(secretsDispose).toHaveBeenCalledOnce();
     expect(timers.size).toBe(0);
     expect(messages.find(message => message.type === 'kernel/plugin-failed')?.payload).toEqual({
       pluginId: 'alpha', error: { code: 'timeout', message: 'Plugin alpha setup timed out' },

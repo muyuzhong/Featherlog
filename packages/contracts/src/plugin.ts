@@ -41,6 +41,12 @@ export interface PluginSettings {
   onChange(listener: (key: string, value: Json | undefined) => void): Dispose;
 }
 
+/** Read-only secrets for this plugin's main-process half, outside settings and the bus. */
+export interface PluginSecrets {
+  get(key: string): Promise<string | undefined>;
+  onChange(listener: (key: string) => void): Dispose;
+}
+
 /** Injected so that time-dependent logic (day rollover, streaks) is testable. */
 export interface Clock {
   now(): number;
@@ -63,6 +69,7 @@ export interface MainContext {
   readonly bus: Bus;
   readonly storage: PluginStorage;
   readonly settings: PluginSettings;
+  readonly secrets: PluginSecrets;
   readonly clock: Clock;
   readonly log: Logger;
   /** Runs when the plugin unloads, in reverse registration order. */

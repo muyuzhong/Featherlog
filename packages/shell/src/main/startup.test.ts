@@ -20,6 +20,7 @@ function fixture() {
   const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const kernel = createKernel({ development: true, clock, log, createServices: () => ({
     clock, log, storage, settings: { get: () => undefined, onChange: () => () => {} },
+    secrets: { get: async () => undefined, onChange: () => () => {} },
   }) });
   const messages: Envelope[] = [];
   kernel.observe(message => messages.push(message));

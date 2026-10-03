@@ -62,6 +62,33 @@ it('preserves setting rejection codes as cloneable data for contextBridge', asyn
   await expect(api.settings.set('shell', 'edge', 'left')).resolves.toBeUndefined();
 });
 
+it('writes and deletes secrets over dedicated IPC and exposes only their presence', async () => {
+  const api = await load('panel');
+  expect(Object.keys(api.settings).sort()).toEqual(['all', 'hasSecret', 'onChange', 'set', 'setSecret']);
+  mocks.invoke.mockResolvedValueOnce({ value: null });
+  await expect(api.settings.setSecret('scribe', 'apiKey', 'private-key')).resolves.toBeUndefined();
+  expect(mocks.invoke).toHaveBeenLastCalledWith('settings:set-secret', 'scribe', 'apiKey', 'private-key');
+  mocks.invoke.mockResolvedValueOnce({ value: true });
+  await expect(api.settings.hasSecret('scribe', 'apiKey')).resolves.toBe(true);
+  expect(mocks.invoke).toHaveBeenLastCalledWith('settings:has-secret', 'scribe', 'apiKey');
+  mocks.invoke.mockResolvedValueOnce({ value: null });
+  await expect(api.settings.setSecret('scribe', 'apiKey', '')).resolves.toBeUndefined();
+  mocks.invoke.mockResolvedValueOnce({ value: false });
+  await expect(api.settings.hasSecret('scribe', 'apiKey')).resolves.toBe(false);
+  expect(mocks.send).not.toHaveBeenCalled();
+});
+
+it.each(['shell/invalid-setting', 'shell/secrets-unavailable'])(
+  'preserves secret error %s across contextBridge without native Error fields', async code => {
+    const api = await load('panel');
+    const error = { code, message: 'Secret request failed' };
+    mocks.invoke.mockResolvedValueOnce({ error });
+    await expect(api.settings.setSecret('scribe', 'apiKey', 'private-key')).rejects.toEqual(error);
+    mocks.invoke.mockResolvedValueOnce({ error });
+    await expect(api.settings.hasSecret('scribe', 'apiKey')).rejects.toEqual(error);
+  },
+);
+
 it.each(['kwin', 'plain'])('reports %s float capabilities', async dock => {
   const api = await load('collapsed', dock);
   expect(api.platform.dock).toEqual({ anchored: false, keepAbove: dock === 'kwin', focusSafe: false });

@@ -29,6 +29,17 @@ const api: FeatherlogPreload = {
       // contextBridge strips Error properties too; a JSON rejection preserves the public code.
       if (result.error) throw result.error;
     },
+    async setSecret(scope, key, value) {
+      const result: { error?: { code: string; message: string } } =
+        await ipcRenderer.invoke('settings:set-secret', scope, key, value);
+      if (result.error) throw result.error;
+    },
+    async hasSecret(scope, key) {
+      const result: { value: boolean; error?: { code: string; message: string } } =
+        await ipcRenderer.invoke('settings:has-secret', scope, key);
+      if (result.error) throw result.error;
+      return result.value;
+    },
     onChange: listener => subscribe<[string, string, Json]>('settings:changed', listener),
   },
   dock: {

@@ -26,7 +26,7 @@ export interface KernelOptions {
   setupTimeoutMs?: number;
   clock: Clock;
   log: Logger;
-  createServices(pluginId: string): Pick<MainContext, 'storage' | 'settings' | 'clock' | 'log'>;
+  createServices(pluginId: string): Pick<MainContext, 'storage' | 'settings' | 'secrets' | 'clock' | 'log'>;
 }
 
 export type Kernel = ReturnType<typeof createKernel>;
@@ -329,6 +329,20 @@ export function createKernel(options: KernelOptions) {
               guard(scope);
               return track(scope, services.settings.onChange((key, value) => {
                 if (!scope.disposed) invoke(() => listener(key, value));
+              }));
+            },
+          },
+          secrets: {
+            get: async key => {
+              guard(scope);
+              const value = await services.secrets.get(key);
+              guard(scope);
+              return value;
+            },
+            onChange: listener => {
+              guard(scope);
+              return track(scope, services.secrets.onChange(key => {
+                if (!scope.disposed) invoke(() => listener(key));
               }));
             },
           },
