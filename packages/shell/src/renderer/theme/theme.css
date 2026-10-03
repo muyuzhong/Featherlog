@@ -25,6 +25,9 @@
   --fl-ink-wash: rgba(90, 58, 26, 0.08);
   --fl-rubric: #8a2b1d;
   --fl-rubric-wash: rgba(138, 43, 29, 0.09);
+  /* The scribe's own hand (design §14.6): a blue-black, never mistaken for the player's ink. */
+  --fl-ink-scribe: #27364f;
+  --fl-ink-scribe-faded: rgba(39, 54, 79, 0.55);
 
   /* Paper and binding */
   --fl-paper: #e9d19b;

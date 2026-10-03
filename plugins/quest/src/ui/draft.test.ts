@@ -1,6 +1,6 @@
 import type { Quest } from '@featherlog/contracts';
 import { describe, expect, it } from 'vitest';
-import { blankDraft, blankObjective, draftFromQuest, problem, toEdit, toInput, withKind, type Draft } from './draft';
+import { blankDraft, blankObjective, draftFromInput, draftFromQuest, problem, toEdit, toInput, withKind, withSplit, type Draft } from './draft';
 
 const derived = { chapterIndex: 0, objectiveIndex: 0, ratio: 0, chapterRatio: 0, streak: 0, dueToday: false, overdue: false };
 
@@ -177,5 +177,52 @@ describe('toEdit', () => {
     expect(toEdit(q, write(draft, { repeat: 'weekly', weekdays: [6, 0], quotaOn: false }))).toEqual({
       patch: { recurrence: { freq: 'weekly', weekdays: [0, 6] }, quota: null },
     });
+  });
+});
+
+describe('draftFromInput', () => {
+  it('turns a proposed quest into a sheet that writes back the same input', () => {
+    const input = {
+      kind: 'main' as const,
+      title: '背完 Redis 八股',
+      name: '内存之王',
+      story: '一切记在内存里。',
+      chapters: [
+        { title: '数据结构', objectives: [{ text: '跳表' }, { text: '背卡片', count: { target: 30, unit: '张' } }] },
+        { title: '持久化', objectives: [{ text: 'RDB 与 AOF' }] },
+      ],
+      deadline: '2026-10-31',
+    };
+    const draft = draftFromInput(input);
+    expect(problem(draft)).toBeNull();
+    expect(toInput(draft)).toEqual(input);
+  });
+
+  it('gives an empty proposal a line to write on, and a daily its rhythm', () => {
+    const side = draftFromInput({ kind: 'side', title: '交房租' });
+    expect(side.chapters).toHaveLength(1);
+    expect(side.chapters[0]!.objectives).toHaveLength(1);
+    expect(toInput(side)).toEqual({ kind: 'side', title: '交房租', chapters: [{ title: '', objectives: [] }] });
+    const daily = draftFromInput({ kind: 'daily', title: '跑步', recurrence: { freq: 'weekly', weekdays: [1, 3] }, quota: { target: 3, unit: '公里' } });
+    expect(toInput(daily)).toEqual({ kind: 'daily', title: '跑步', recurrence: { freq: 'weekly', weekdays: [1, 3] }, quota: { target: 3, unit: '公里' } });
+  });
+});
+
+describe('withSplit', () => {
+  it('replaces one objective with new undone steps and keeps every other id', () => {
+    const q = quest();
+    const draft = withSplit(draftFromQuest(q), 'o3', [{ text: '列出两者差异' }, { text: '写成两百字' }]);
+    expect(toEdit(q, draft).chapters).toEqual([
+      { id: 'c1', title: '数据结构', objectives: [{ id: 'o1', text: '跳表' }] },
+      {
+        id: 'c2',
+        title: '持久化',
+        objectives: [
+          { id: 'o2', text: '背卡片', count: { target: 30, unit: '张' } },
+          { text: '列出两者差异' },
+          { text: '写成两百字' },
+        ],
+      },
+    ]);
   });
 });

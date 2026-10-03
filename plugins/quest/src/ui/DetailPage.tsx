@@ -1,5 +1,8 @@
-import type { Quest } from '@featherlog/contracts';
-import { Fragment, useEffect, useRef } from 'react';
+import type { ObjectiveDraft, Quest, ScribeEpilogue, ScribeLine } from '@featherlog/contracts';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import { ScribeWords } from './ScribeBits';
+import { canAsk, scribeTrouble, useScribe, type ScribeLink } from './scribe-link';
+import scribeStyles from './scribe.module.css';
 import { InkCircle, Stamp, WaxSeal } from './ink';
 import { Objectives, currentChapter } from './Objectives';
 import { capital, cn, cnDate, dayNumber } from './numerals';
@@ -17,7 +20,20 @@ function useJustBecame(value: boolean) {
 }
 
 /** The right page: one quest, opened. */
-export function DetailPage({ quest, store, today, onEdit }: { quest: Quest; store: QuestStore; today: string; onEdit(): void }) {
+type Props = {
+  quest: Quest;
+  store: QuestStore;
+  today: string;
+  scribe: ScribeLink;
+  onEdit(): void;
+  /** 翎 proposed smaller steps for the current objective: open them on the editor's sheet. */
+  onSplit(objectiveId: string, steps: ObjectiveDraft[], note?: string): void;
+};
+
+export function DetailPage({ quest, store, today, scribe, onEdit, onSplit }: Props) {
+  const scribeView = useScribe(scribe);
+  const [splitting, setSplitting] = useState(false);
+  const [splitTrouble, setSplitTrouble] = useState<string>();
   const chapter = currentChapter(quest);
   const ci = Math.min(quest.derived.chapterIndex, quest.chapters.length - 1);
   const objectives = chapter?.objectives ?? [];
@@ -25,6 +41,21 @@ export function DetailPage({ quest, store, today, onEdit }: { quest: Quest; stor
   const justTracked = useJustBecame(quest.tracked);
   const justCompleted = useJustBecame(completed);
   const hiddenLater = quest.status === 'active' && objectives.filter((o) => !o.doneAt).length > 1;
+  const currentObjective = quest.status === 'active' ? objectives.find((o) => !o.doneAt) : undefined;
+  const split = async () => {
+    if (!currentObjective || splitting) return;
+    setSplitting(true);
+    setSplitTrouble(undefined);
+    try {
+      const { objectives: steps, note } = await scribe.split(quest.id, currentObjective.id);
+      onSplit(currentObjective.id, steps, note);
+    } catch (cause) {
+      console.error(cause);
+      setSplitTrouble(scribeTrouble(cause));
+    } finally {
+      setSplitting(false);
+    }
+  };
 
   let kicker = quest.kind === 'main' ? '主线' : '支线';
   if (quest.kind === 'main' && chapter) kicker += ` · 第${capital(ci + 1)}章 · ${chapter.title}`;
@@ -72,8 +103,15 @@ export function DetailPage({ quest, store, today, onEdit }: { quest: Quest; stor
             {quest.revealed ? '收起后续' : '揭开后续'}
           </button>
         )}
+        {currentObjective && canAsk(scribeView) && (
+          <button className={scribeStyles.split} disabled={splitting} onClick={() => void split()} title="这一步太大？请翎拆成几小步">
+            {splitting ? '翎在琢磨……' : '让翎拆小'}
+          </button>
+        )}
       </div>
       <Objectives quest={quest} store={store} />
+      {splitTrouble && <p className={scribeStyles.trouble}>{splitTrouble}</p>}
+      {scribeView.present && <ScribeMargin quest={quest} scribe={scribe} />}
 
       <Ledger quest={quest} today={today} />
       <div className={styles.pageTools}>
@@ -136,5 +174,47 @@ function Ledger({ quest, today }: { quest: Quest; today: string }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+/** 翎's recent notes about this quest, and its epilogue once the quest is done. */
+function ScribeMargin({ quest, scribe }: { quest: Quest; scribe: ScribeLink }) {
+  const { latest } = useScribe(scribe);
+  const [lines, setLines] = useState<ScribeLine[]>([]);
+  const [epilogue, setEpilogue] = useState<ScribeEpilogue | null>(null);
+  const completed = quest.status === 'completed';
+
+  useEffect(() => {
+    let alive = true;
+    scribe.lines(quest.id).then((found) => alive && setLines(found), () => {});
+    if (completed) scribe.epilogue(quest.id).then((found) => alive && setEpilogue(found), () => {});
+    const stop = scribe.onEpilogue((written) => written.questId === quest.id && setEpilogue(written));
+    return () => {
+      alive = false;
+      stop();
+    };
+  }, [scribe, quest.id, completed]);
+  // A fresh line about this quest joins the margin as it is written.
+  useEffect(() => {
+    if (latest?.questId === quest.id) setLines((list) => [latest, ...list.filter((l) => l.id !== latest.id)].slice(0, 2));
+  }, [latest, quest.id]);
+
+  if (!lines.length && !epilogue) return null;
+  return (
+    <>
+      {epilogue && (
+        <div className={scribeStyles.epilogue}>
+          <div className={scribeStyles.epilogueHead}>尾声</div>
+          <ScribeWords line={{ id: `epilogue-${quest.id}`, text: epilogue.text, topic: 'quest', questId: quest.id, at: epilogue.writtenAt, origin: 'model' }} />
+        </div>
+      )}
+      {!epilogue && lines.length > 0 && (
+        <div className={scribeStyles.margin}>
+          {[...lines].reverse().map((line) => (
+            <ScribeWords key={line.id} line={line} />
+          ))}
+        </div>
+      )}
+    </>
   );
 }

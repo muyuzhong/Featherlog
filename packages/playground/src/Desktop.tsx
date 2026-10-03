@@ -4,6 +4,7 @@ import { PAPERS, type Paper } from '@featherlog/shell/renderer';
 import { CollapsedApp, PanelApp, type WindowRuntime } from '@featherlog/shell/renderer/app';
 import { motion } from 'motion/react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import type { FakeScribe } from './host/scribe';
 import type { SettingsHost } from './host/settings';
 import { UPDATE_SCENARIOS, type HostShell, type UpdateScenario } from './host/shell';
 
@@ -15,6 +16,7 @@ type Props = {
   busLog: { entries: Envelope[] };
   kernel: Kernel;
   menu: { onOpen(listener: () => void): () => void };
+  scribe: FakeScribe;
   onNextDay(): void;
   onReset(): void;
 };
@@ -29,7 +31,7 @@ function useShellSetting<T extends Json>(settings: SettingsHost, key: string): T
  * A pretend desktop. Each simulated window clips its content to the size the
  * app asked for, like a real Electron window would.
  */
-export function Desktop({ shell, settings, collapsed, panel, busLog, kernel, menu, onNextDay, onReset }: Props) {
+export function Desktop({ shell, settings, collapsed, panel, busLog, kernel, menu, scribe, onNextDay, onReset }: Props) {
   const { panelOpen, dock, place, scenario } = useSyncExternalStore(shell.subscribe, shell.getSnapshot);
   const [bounds, setBounds] = useState(false);
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
@@ -110,6 +112,7 @@ export function Desktop({ shell, settings, collapsed, panel, busLog, kernel, men
         shell={shell}
         place={place}
         scenario={scenario}
+        scribe={scribe}
         settings={settings}
         busLog={busLog}
         kernel={kernel}
@@ -126,6 +129,7 @@ type DevProps = {
   shell: HostShell;
   place: 'left' | 'right';
   scenario: UpdateScenario;
+  scribe: FakeScribe;
   settings: SettingsHost;
   busLog: { entries: Envelope[] };
   kernel: Kernel;
@@ -135,7 +139,7 @@ type DevProps = {
   onReset(): void;
 };
 
-function DevTools({ shell, place, scenario, settings, busLog, kernel, bounds, onBounds, onNextDay, onReset }: DevProps) {
+function DevTools({ shell, place, scenario, scribe, settings, busLog, kernel, bounds, onBounds, onNextDay, onReset }: DevProps) {
   const paper = useShellSetting<Paper>(settings, 'paper');
   const [showLog, setShowLog] = useState(false);
   const [log, setLog] = useState<Envelope[]>([]);
@@ -159,6 +163,7 @@ function DevTools({ shell, place, scenario, settings, busLog, kernel, bounds, on
         <button onClick={() => shell.cycleUpdateScenario()} title="下一次检查更新时，假装的 GitHub 会怎么回答">
           更新：{UPDATE_SCENARIOS[scenario]}
         </button>
+        <ScribeToggle scribe={scribe} />
         <button onClick={onBounds}>{bounds ? '隐藏窗口边界' : '窗口边界'}</button>
         <button onClick={onNextDay}>翌日 →</button>
         <button onClick={() => setShowLog(!showLog)}>{showLog ? '收起总线' : '总线记录'}</button>
@@ -178,5 +183,20 @@ function DevTools({ shell, place, scenario, settings, busLog, kernel, bounds, on
         </ol>
       )}
     </div>
+  );
+}
+
+function ScribeToggle({ scribe }: { scribe: FakeScribe }) {
+  const [ready, setReady] = useState(scribe.ready);
+  return (
+    <button
+      onClick={() => {
+        scribe.toggle();
+        setReady(scribe.ready);
+      }}
+      title="假装的翎：可用，或还没配置接口"
+    >
+      翎：{ready ? '可用' : '未配置'}
+    </button>
   );
 }

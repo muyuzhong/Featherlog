@@ -118,3 +118,12 @@
   letter-spacing: 0.4em;
   color: var(--fl-rubric);
 }
+
+/* ---- the scribe at the foot of the note ---- */
+.scribeLine {
+  margin-top: 2px;
+}
+
+.ask {
+  margin-top: 8px;
+}

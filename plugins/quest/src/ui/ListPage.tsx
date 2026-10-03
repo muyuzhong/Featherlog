@@ -1,4 +1,6 @@
-import type { Quest, QuestKind } from '@featherlog/contracts';
+import type { Quest, QuestInput, QuestKind } from '@featherlog/contracts';
+import { AskScribe } from './ScribeBits';
+import { canAsk, useScribe, type ScribeLink } from './scribe-link';
 import { motion } from 'motion/react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { InkBox, InkRule, InkStrike, Quill } from './ink';
@@ -16,10 +18,13 @@ type Props = {
   onSelect(id: string): void;
   onCreate(kind: QuestKind): void;
   onEdit(id: string): void;
+  scribe: ScribeLink;
+  onPropose(draft: { input: QuestInput; note?: string }): void;
 };
 
 /** The left page: the journal's index of quests. */
-export function ListPage({ quests, selectedId, today, day, store, onSelect, onCreate, onEdit }: Props) {
+export function ListPage({ quests, selectedId, today, day, store, onSelect, onCreate, onEdit, scribe, onPropose }: Props) {
+  const scribeView = useScribe(scribe);
   const [showDone, setShowDone] = useState(false);
   const active = quests.filter((q) => q.status === 'active');
   const mains = active.filter((q) => q.kind === 'main');
@@ -41,6 +46,11 @@ export function ListPage({ quests, selectedId, today, day, store, onSelect, onCr
         </p>
       </header>
       <InkRule className={styles.headRule} />
+      {canAsk(scribeView) && (
+        <div className={styles.askRow}>
+          <AskScribe link={scribe} onDraft={onPropose} />
+        </div>
+      )}
 
       <Section title="主线" onAdd={() => onCreate('main')} aside={mains.length ? `${cnCount(mains.length)}卷` : undefined}>
         {mains.length ? mains.map(entry) : <p className={styles.empty}>尚无主线</p>}

@@ -12,6 +12,7 @@ import { clearAll } from './host/persist';
 import { createFakePreload } from './host/preload';
 import { seedJournal } from './host/seed';
 import { createSettings } from './host/settings';
+import { createFakeScribe } from './host/scribe';
 import { createHostShell } from './host/shell';
 import { createStorage } from './host/storage';
 import './playground.css';
@@ -47,6 +48,8 @@ settings.onChange((scope, key, value) => scope === 'shell' && key === 'paper' &&
 await kernel.load(mainPlugins);
 const dayStartHour = () => Number(settings.all().quest?.dayStartHour ?? 4);
 await seedJournal(shell.bus, (plus = 0) => periodKey(clock.now(), dayStartHour(), plus));
+// After seeding, so 翎 only answers what happens in the playground, not the seed's history.
+const scribe = createFakeScribe(kernel);
 
 // The dock's native context menu (design §6.4), drawn by the Desktop.
 const menuListeners = new Set<() => void>();
@@ -71,6 +74,7 @@ createRoot(document.getElementById('root')!).render(
     busLog={busLog}
     kernel={kernel}
     menu={menu}
+    scribe={scribe}
     onNextDay={() => {
       nextDay();
       // The quest plugin notices the new period on its next request (design §8.5).
