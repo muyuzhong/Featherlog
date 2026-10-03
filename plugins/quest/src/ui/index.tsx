@@ -6,7 +6,7 @@ import { TrackerNote } from './TrackerNote';
 
 /** Renderer entry of the quest plugin (manifest `ui`). */
 export function setup(ctx: UiContext): void {
-  const store = createQuestStore(ctx.bus);
+  const store = createQuestStore(ctx.bus, ctx.sound);
   ctx.onDispose(() => store.dispose());
 
   ctx.slots.provide('panel.tab', 'quest/journal', (el) => {

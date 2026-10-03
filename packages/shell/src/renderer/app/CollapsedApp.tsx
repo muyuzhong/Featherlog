@@ -47,7 +47,10 @@ export function CollapsedApp({ runtime }: { runtime: WindowRuntime }) {
         badges={shell.badges}
         unfold={unfold}
         draggable={!preload.platform.dock.anchored}
-        onOpen={(icon) => void shellBus.request('shell/open-panel', icon.opens ? { tab: icon.opens } : {}).catch(console.error)}
+        onOpen={(icon) => {
+          runtime.sound.play('page');
+          void shellBus.request('shell/open-panel', icon.opens ? { tab: icon.opens } : {}).catch(console.error);
+        }}
         onPreviewChange={(id) => setExpanded(id !== null)}
       />
     </div>

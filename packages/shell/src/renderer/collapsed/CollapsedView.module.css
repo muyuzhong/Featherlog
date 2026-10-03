@@ -77,6 +77,18 @@
   stroke-dasharray: 1.5 3;
 }
 
+.ringPulse {
+  fill: none;
+  stroke: var(--fl-rubric);
+  stroke-width: 1.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ringPulse {
+    display: none;
+  }
+}
+
 .ringInk {
   fill: none;
   stroke: var(--fl-rubric);

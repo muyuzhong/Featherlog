@@ -9,6 +9,8 @@ export const SHELL_DEFAULTS: Record<string, Json> = {
   paper: 'vellum',
   compatMode: false,
   autoUpdate: true,
+  sound: true,
+  volume: 6,
 };
 
 /** Settings for the shell and every plugin: schema defaults, overridden by saved values. */

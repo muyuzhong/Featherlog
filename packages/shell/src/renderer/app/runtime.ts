@@ -6,9 +6,11 @@ import type {
   PluginSettings,
   UiBus,
   UiContext,
+  UiSound,
 } from '@featherlog/contracts';
 import { createUiBus } from '../bus/ui-bus';
 import { createSlotRegistry, type SlotRegistry } from '../slots/registry';
+import { createSound } from '../sound/synth';
 
 /** A plugin's renderer half, as listed by the composition root (design §6.1). */
 export type UiPlugin = { manifest: PluginManifest; setup(ctx: UiContext): void | Promise<void> };
@@ -21,6 +23,8 @@ export interface WindowRuntime {
   /** The shell's own bus, sending as "shell". */
   readonly shellBus: UiBus;
   readonly manifests: PluginManifest[];
+  /** This window's sound player, shared by the shell and every plugin. */
+  readonly sound: UiSound;
   setting<T extends Json>(scope: string, key: string): T | undefined;
   onSettingChange(listener: (scope: string, key: string, value: Json) => void): Dispose;
   dispose(): void;
@@ -47,6 +51,13 @@ export async function createRuntime(preload: FeatherlogPreload, plugins: UiPlugi
     return () => settingListeners.delete(listener);
   };
 
+  // Defaults match the shell settings schema (design §6.6) for shells that predate them.
+  const sound = createSound({
+    enabled: () => settings.shell?.sound !== false,
+    volume: () => (typeof settings.shell?.volume === 'number' ? settings.shell.volume : 6),
+  });
+  disposers.push(sound.dispose);
+
   const shellBus = createUiBus(preload.bus, 'shell');
   disposers.push(shellBus.dispose);
 
@@ -64,6 +75,7 @@ export async function createRuntime(preload: FeatherlogPreload, plugins: UiPlugi
       bus,
       slots,
       settings: pluginSettings,
+      sound,
       log: prefixed(id),
       onDispose: (callback) => void own.push(callback),
     };
@@ -81,6 +93,7 @@ export async function createRuntime(preload: FeatherlogPreload, plugins: UiPlugi
     registry,
     shellBus,
     manifests: plugins.map((p) => p.manifest),
+    sound,
     setting: <T extends Json>(scope: string, key: string) => settings[scope]?.[key] as T | undefined,
     onSettingChange,
     dispose: () => disposers.reverse().forEach(run),

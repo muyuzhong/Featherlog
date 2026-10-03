@@ -69,12 +69,32 @@ export interface MainContext {
   onDispose(callback: Dispose): void;
 }
 
+/**
+ * The shell's shared sound vocabulary (design §10.1): every plugin sounds like
+ * the same journal. Play a cue right where the user acted, in that window.
+ *   ink    – a stroke of the pen: something done
+ *   tick   – a small step: a count goes up
+ *   unlock – something new comes into view: the next objective
+ *   erase  – a stroke taken back
+ *   page   – a page turns: the journal opens
+ *   seal   – wax pressed: a quest taken up
+ *   bell   – a chapter closes
+ *   stamp  – the vermilion seal: a quest done
+ */
+export type SoundCue = 'ink' | 'tick' | 'unlock' | 'erase' | 'page' | 'seal' | 'bell' | 'stamp';
+
+export interface UiSound {
+  /** Silent when the user has turned sound off; never throws. */
+  play(cue: SoundCue): void;
+}
+
 /** Everything a plugin's renderer half may touch, per window. */
 export interface UiContext {
   readonly pluginId: string;
   readonly bus: UiBus;
   readonly slots: SlotProvider;
   readonly settings: PluginSettings;
+  readonly sound: UiSound;
   readonly log: Logger;
   onDispose(callback: Dispose): void;
 }

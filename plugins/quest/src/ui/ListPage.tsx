@@ -1,4 +1,5 @@
 import type { Quest, QuestKind } from '@featherlog/contracts';
+import { motion } from 'motion/react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { InkBox, InkRule, InkStrike, Quill } from './ink';
 import { currentChapter } from './Objectives';
@@ -53,6 +54,7 @@ export function ListPage({ quests, selectedId, today, day, store, onSelect, onCr
         title="每日委托"
         onAdd={() => onCreate('daily')}
         aside={dailies.length ? `${cn(dailiesDone)} / ${cn(dailies.length)}` : undefined}
+        accomplished={dailies.length > 0 && dailiesDone === dailies.length}
       >
         <div className={styles.dailies}>
           {dailies.map((d) => (
@@ -86,16 +88,29 @@ export function ListPage({ quests, selectedId, today, day, store, onSelect, onCr
 type SectionProps = {
   title: string;
   aside?: string | undefined;
+  /** Everything in the section is done for now: the count gives way to a seal of 尽数完成. */
+  accomplished?: boolean;
   onAdd(): void;
   children: ReactNode;
 };
 
-function Section({ title, aside, onAdd, children }: SectionProps) {
+function Section({ title, aside, accomplished = false, onAdd, children }: SectionProps) {
   return (
     <section className={styles.section}>
       <h2 className={styles.sectionTitle}>
         <span>{title}</span>
-        {aside && <small>{aside}</small>}
+        {accomplished ? (
+          <motion.small
+            className={styles.accomplished}
+            initial={{ opacity: 0, scale: 1.3, rotate: -6 }}
+            animate={{ opacity: 1, scale: 1, rotate: -3 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 18 }}
+          >
+            尽数完成
+          </motion.small>
+        ) : (
+          aside && <small>{aside}</small>
+        )}
         <button className={styles.addQuest} onClick={onAdd} title={`新的${title}`}>
           添一笔
         </button>
