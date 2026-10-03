@@ -333,11 +333,14 @@ export async function setup(ctx: MainContext, options: {
     await persist(draft => { draft.epilogues[quest.id] = ending; draft.pending = draft.pending.filter(id => id !== quest.id); });
     if (!disposed && stamp === revision && enabled() && !night(ctx.clock.now())) ctx.bus.emit('scribe/epilogue-written', { epilogue: ending });
   };
-  const choose = (list: Quest[], key: string): ScribeBoard['items'] => {
+  const choose = (list: Quest[], key: string, upcoming = false): ScribeBoard['items'] => {
     const active = list.filter(quest => quest.status === 'active').sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
     const tracked = active.find(quest => quest.tracked && currentObjective(quest));
     const side = active.filter(quest => quest.id !== tracked?.id && quest.kind === 'side' && quest.deadline === key)[0];
-    const daily = active.filter(quest => quest.kind === 'daily' && quest.derived.dueToday && !quest.cycle?.done);
+    const weekday = new Date(`${key}T12:00:00`).getDay();
+    const daily = active.filter(quest => quest.kind === 'daily' && (upcoming
+      ? quest.recurrence?.freq === 'daily' || (quest.recurrence?.freq === 'weekly' && quest.recurrence.weekdays.includes(weekday))
+      : quest.derived.dueToday && !quest.cycle?.done));
     return [tracked, side, ...daily].filter((quest): quest is Quest => quest !== undefined).slice(0, 3)
       .map((quest, index) => ({ questId: quest.id,
         ...(currentObjective(quest) ? { objectiveId: currentObjective(quest)!.id } : {}), reason: builtin('board', index) }));
@@ -376,7 +379,11 @@ export async function setup(ctx: MainContext, options: {
     const work = (async () => {
       await gate();
       const facts = state.activity.filter(activity => activity.periodKey === key);
-      const next = choose(await quests(), key);
+      const list = await quests();
+      const tomorrow = new Date(`${key}T12:00:00`);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const next = choose(list, dateKey(tomorrow.getTime()), true).map(item => ({ reason: item.reason,
+        quest: context(list.find(quest => quest.id === item.questId)!) }));
       const source = { periodKey: key, progress: facts, suggested: next };
       const stamp = revision;
       const reply = await invoke(`写一页中文战报，只输出正文。只用这些本机进展，未记录的历史不要补写；明日建议是提议，不是事实：${JSON.stringify(source)}`, 1800);

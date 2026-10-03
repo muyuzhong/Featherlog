@@ -413,7 +413,7 @@ describe('Clock-driven stuck objectives, recaps and epilogues', () => {
   it('writes one recap after recapTime when locally opened, keeps reads local and excludes external/self history', async () => {
     const f = await fixture({ time: local('2026-10-03', 21, 59) });
     f.emit('quest/counted', { quest: quest(), previous: 0, current: 1 });
-    f.emit('quest/counted', { quest: quest({ title: '外部秘密' }), previous: 0, current: 1 }, 'external');
+    f.emit('quest/counted', { quest: quest({ id: 'external-q', title: '外部秘密', tracked: false }), previous: 0, current: 1 }, 'external');
     f.open(); await f.drain(); expect(f.model).not.toHaveBeenCalled();
     f.model.mockResolvedValueOnce({ text: '今日推进已记下，明日先沿眼前的目标走。' });
     f.setTime(local('2026-10-03', 22)); await f.drain();
@@ -587,4 +587,17 @@ it('does not generate boards or recaps for external or other-plugin requesters',
     await expect(bus.request('scribe/recap', { write: true })).rejects.toMatchObject({ code: 'scribe/invalid-input' });
   }
   expect(f.model).not.toHaveBeenCalled();
+});
+
+it('gives recap tomorrow suggestions real names and next-day recurrence instead of opaque IDs', async () => {
+  const f = await fixture({ quests: [quest(),
+    quest({ id: 'side', title: '明日限期', kind: 'side', tracked: false, deadline: '2026-10-04' }),
+    quest({ id: 'sunday', title: '周日晨课', kind: 'daily', tracked: false, chapters: [],
+      recurrence: { freq: 'weekly', weekdays: [0] }, cycle: { periodKey: '2026-10-03', current: 0, done: false } }),
+    quest({ id: 'saturday', title: '周六专用', kind: 'daily', tracked: false, chapters: [], recurrence: { freq: 'weekly', weekdays: [6] } }),
+  ] });
+  f.model.mockResolvedValueOnce({ text: '明日先推进《学习》，再记《周日晨课》。' });
+  expect((await f.request('scribe/recap', { write: true })).recap?.text).toContain('周日晨课');
+  const prompt = f.model.mock.calls[0]![0].messages[0]!.content;
+  expect(prompt).toContain('明日限期'); expect(prompt).not.toContain('周六专用');
 });
