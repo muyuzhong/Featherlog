@@ -38,7 +38,7 @@ async function fixture() {
 it('applies shell and plugin defaults without sharing mutable snapshots', async () => {
   const { settings } = await fixture();
   expect(settings.all()).toEqual({
-    shell: { paper: 'vellum', compatMode: false, autoUpdate: true },
+    shell: { paper: 'vellum', compatMode: false, autoUpdate: true, sound: true, volume: 6 },
     example: { hour: 4, scale: .5, label: 'label', enabled: true },
   });
   const snapshot = settings.all();
@@ -51,12 +51,46 @@ it.each([
   ['shell', 'verticalPosition', -1], ['shell', 'verticalPosition', 1.1],
   ['shell', 'autoUpdate', 'true'], ['shell', 'autoUpdate', 1],
   ['shell', 'paper', 'white'], ['shell', 'compatMode', 1],
+  ['shell', 'sound', 'true'], ['shell', 'sound', 1],
+  ['shell', 'volume', -1], ['shell', 'volume', 11], ['shell', 'volume', 5.5],
+  ['shell', 'volume', '6'], ['shell', 'volume', true],
   ['example', 'hour', 3.5], ['example', 'hour', 24], ['example', 'scale', null],
   ['example', 'label', 1], ['example', 'enabled', 'yes'], ['unknown', 'key', true],
   ['shell', '__proto__', 'x'], ['example', 'unknown', 1],
 ] as const)('rejects %s/%s = %s with its contract error code', async (scope, key, value) => {
   const { settings } = await fixture();
   await expect(settings.set(scope, key, value)).rejects.toMatchObject({ code: 'shell/invalid-setting' });
+});
+
+it.each([[false, 0], [true, 10], [false, 5]] as const)(
+  'persists and reloads sound=%s and volume=%s', async (sound, volume) => {
+    const { root, settings, manifests, files, log } = await fixture();
+    await Promise.all([
+      settings.set('shell', 'sound', sound), settings.set('shell', 'volume', volume),
+    ]);
+    expect(settings.all().shell).toMatchObject({ sound, volume });
+    const saved = JSON.parse(await readFile(join(root, 'settings.json'), 'utf8')) as Json;
+    expect(saved).toMatchObject({ shell: { sound, volume }, plugins: { example: { hour: 4 } } });
+    const clock = { now: () => 0, setTimeout: () => () => {} };
+    expect(loadSettings(root, manifests, files, log, clock).all()).toEqual(settings.all());
+    expect(log.warn).not.toHaveBeenCalled();
+  },
+);
+
+it('uses sound and volume defaults when an older settings file omits them', async () => {
+  const { root, manifests, files, log } = await fixture();
+  const path = join(root, 'settings.json');
+  const contents = JSON.stringify({ shell: { paper: 'aged', compatMode: true, autoUpdate: false },
+    plugins: { example: { hour: 12 } } });
+  await writeFile(path, contents);
+  const clock = { now: () => 0, setTimeout: () => () => {} };
+  const settings = loadSettings(root, manifests, files, log, clock);
+  expect(settings.all()).toEqual({
+    shell: { paper: 'aged', compatMode: true, autoUpdate: false, sound: true, volume: 6 },
+    example: { hour: 12, scale: .5, label: 'label', enabled: true },
+  });
+  expect(log.warn).not.toHaveBeenCalled();
+  expect(await readFile(path, 'utf8')).toBe(contents);
 });
 
 it('serializes writes, persists the required shape and notifies plugins and windows once', async () => {
@@ -103,7 +137,8 @@ it('ignores removed placement settings from existing files', async () => {
   const { root, manifests, files, log } = await fixture();
   const settings = new Settings(root, manifests, { shell: { edge: 'left', display: '42',
     verticalPosition: .2 }, plugins: {} }, files, log);
-  expect(settings.all().shell).toEqual({ paper: 'vellum', compatMode: false, autoUpdate: true });
+  expect(settings.all().shell).toEqual({ paper: 'vellum', compatMode: false, autoUpdate: true,
+    sound: true, volume: 6 });
 });
 
 it.each(['{broken', 'null', '{}', '{"shell":{},"plugins":[]}',

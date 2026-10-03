@@ -9,6 +9,8 @@ const shellSchema = {
   paper: { type: 'string', enum: ['vellum', 'golden', 'aged'], default: 'vellum' },
   compatMode: { type: 'boolean', default: false },
   autoUpdate: { type: 'boolean', default: true },
+  sound: { type: 'boolean', default: true },
+  volume: { type: 'integer', minimum: 0, maximum: 10, default: 6 },
 };
 
 type Listener = (scope: string, key: string, value: Json) => void;
