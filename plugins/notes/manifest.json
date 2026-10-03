@@ -1,0 +1,28 @@
+{
+  "id": "notes",
+  "name": "笔记",
+  "version": "0.1.0",
+  "description": "手记与随笔：在任务里记下做了什么、学到了什么，也可以随时写一写想法。",
+  "main": "src/main/index.ts",
+  "ui": "src/ui/index.tsx",
+  "emits": ["notes/created", "notes/updated", "notes/deleted"],
+  "listens": ["kernel/ready", "quest/deleted", "quest/updated", "quest/tracked", "notes/created", "notes/updated", "notes/deleted"],
+  "handles": ["notes/list", "notes/get", "notes/create", "notes/update", "notes/delete", "notes/counts"],
+  "requests": [
+    "quest/get",
+    "quest/list",
+    "notes/list",
+    "notes/get",
+    "notes/create",
+    "notes/update",
+    "notes/delete",
+    "notes/counts",
+    "shell/open-panel"
+  ],
+  "contributes": {
+    "collapsedIcons": [
+      { "id": "notes/quick", "title": "随时记一笔", "icon": "pen-line", "order": 1, "preview": true, "opens": "notes/essays" }
+    ],
+    "panelTabs": [{ "id": "notes/essays", "title": "随笔", "icon": "pen-line", "order": 5 }]
+  }
+}
