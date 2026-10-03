@@ -66,8 +66,12 @@ export function createFakeScribe(kernel: Kernel) {
   bus.handle('scribe/epilogue', ({ questId }) => ({ epilogue: epilogues.get(questId) ?? null }));
   bus.handle('scribe/lines', ({ questId, limit }) => ({ lines: lines.filter((l) => !questId || l.questId === questId).slice(0, limit ?? 20) }));
 
-  bus.on('quest/objective-completed', ({ quest }) => ready && say('objective', pick(LINES.objective), quest.id));
-  bus.on('quest/chapter-completed', ({ quest }) => ready && say('chapter', pick(LINES.chapter), quest.id));
+  bus.on('quest/objective-completed', ({ quest }) => {
+    if (ready) say('objective', pick(LINES.objective), quest.id);
+  });
+  bus.on('quest/chapter-completed', ({ quest }) => {
+    if (ready) say('chapter', pick(LINES.chapter), quest.id);
+  });
   bus.on('quest/completed', ({ quest }) => {
     if (!ready || quest.kind === 'daily') return;
     say('quest', pick(LINES.quest), quest.id);
