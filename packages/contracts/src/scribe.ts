@@ -15,7 +15,9 @@ export type ScribeTopic =
   | 'streak'
   | 'reopen'
   | 'board'
-  | 'greeting';
+  | 'greeting'
+  /** An objective that hasn't moved for days: 翎 offers to split it. */
+  | 'stall';
 
 /** One thing 翎 said: a margin note in the scribe's own ink. */
 export interface ScribeLine {

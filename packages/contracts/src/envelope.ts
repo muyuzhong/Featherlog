@@ -30,6 +30,12 @@ export interface Envelope<P = unknown> {
   replyTo?: string;
   /** Id of the message that caused this one. Used for tracing and undo. */
   causedBy?: string;
+  /**
+   * Set by the kernel on an event emitted while handling a request: the `source`
+   * of that request. Lets a listener tell whose action an event reports (e.g. the
+   * scribe answers the player's strokes, not its own) without seeing the request.
+   */
+  origin?: string;
 }
 
 /** Payload of a `kind: "response"` envelope. */
