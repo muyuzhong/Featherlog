@@ -551,3 +551,35 @@ button:focus-visible,
   overflow-y: auto;
   scrollbar-width: thin;
 }
+
+/* ------------------------------------------------------------ secrets */
+
+.secretSet {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.secretDots {
+  font-size: 8px;
+  letter-spacing: 0.35em;
+  color: var(--fl-ink-faded);
+}
+
+.secretAction {
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  font: 13.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  cursor: pointer;
+}
+
+.secretAction:hover:not(:disabled) {
+  color: var(--fl-rubric);
+}
+
+.secretAction:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

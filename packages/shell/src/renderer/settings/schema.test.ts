@@ -61,4 +61,10 @@ describe('readFields', () => {
     expect(readFields({ type: 'object' })).toEqual([]);
     expect(readFields([])).toEqual([]);
   });
+
+  it('reads a write-only string as a secret, never as plain text', () => {
+    expect(readFields({ type: 'object', properties: { apiKey: { type: 'string', title: 'API Key', writeOnly: true } } })).toEqual([
+      { key: 'apiKey', title: 'API Key', kind: 'secret' },
+    ]);
+  });
 });
