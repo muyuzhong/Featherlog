@@ -20,7 +20,9 @@ const tick = async () => {
 function fixture(development = true) {
   const log: Logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const timers = new Set<() => void>();
-  const clock = { now: () => 1, setTimeout: (callback: () => void) => {
+  const timeouts: number[] = [];
+  const clock = { now: () => 1, setTimeout: (callback: () => void, ms: number) => {
+    timeouts.push(ms);
     timers.add(callback);
     return () => { timers.delete(callback); };
   } };
@@ -36,10 +38,21 @@ function fixture(development = true) {
   const b = new Peer(2);
   bridge.register(a);
   bridge.register(b);
-  return { bridge, kernel, bus, a, b, log, timers };
+  return { bridge, kernel, bus, a, b, log, timers, timeouts };
 }
 
 describe('IPC bus bridge', () => {
+  it.each(['scribe/test', 'scribe/draft-quest', 'scribe/split-objective', 'scribe/board',
+    'scribe/recap', 'scribe/state', 'shell/state'] as const)('sets the host deadline for %s', async type => {
+    const { bridge, bus, a, timers, timeouts } = fixture();
+    bus.handle(type, () => new Promise<never>(() => {}));
+    bridge.receive(a, 'bus:send', { ...envelope('request'), type });
+    await tick();
+    expect(timeouts).toEqual([type === 'scribe/state' || type === 'shell/state' ? 5000 : 65_000]);
+    for (const timer of timers) timer();
+    expect(a.send).toHaveBeenCalledOnce();
+    expect(a.send.mock.calls[0]![1]).toMatchObject({ payload: { ok: false, error: { code: 'timeout' } } });
+  });
   it('delivers only subscribed events and supports unsubscribe', () => {
     const { bridge, bus, a, b } = fixture();
     bridge.receive(a, 'bus:subscribe', ['shell/view-changed']);

@@ -12,6 +12,8 @@ export interface Peer {
 
 const messageType = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const nonempty = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
+const modelRequests = new Set(['scribe/test', 'scribe/draft-quest', 'scribe/split-objective',
+  'scribe/board', 'scribe/recap']);
 
 export function validEnvelope(value: unknown): value is Envelope {
   return record(value) && value.v === 1 && ['event', 'request'].includes(String(value.kind)) &&
@@ -95,7 +97,9 @@ export function createBusBridge(kernel: Pick<Kernel, 'inject' | 'observe'>, log:
         pending.set(payload.id, peer);
         inFlight.add(payload.id);
       }
-      try { kernel.inject(payload); }
+      // A draft can take two 30-second model attempts; IPC must not cut the handler off at five seconds.
+      try { kernel.inject(payload, payload.kind === 'request' && modelRequests.has(payload.type)
+        ? { timeoutMs: 65_000 } : undefined); }
       catch (cause) {
         if (payload.kind === 'request') {
           pending.delete(payload.id);
