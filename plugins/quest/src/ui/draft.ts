@@ -107,6 +107,66 @@ export function draftFromQuest(quest: Quest): Draft {
   };
 }
 
+/** A proposed quest (e.g. drafted by the scribe from a sentence) as a sheet to revise before writing it down. */
+export function draftFromInput(input: QuestInput): Draft {
+  const blank = blankDraft(input.kind);
+  const objectiveRow = (o: ObjectiveDraft): ObjectiveRow => ({
+    key: rowKey(),
+    text: o.text,
+    ...(o.detail !== undefined ? { detail: o.detail } : {}),
+    counted: o.count !== undefined,
+    target: o.count ? String(o.count.target) : '',
+    unit: o.count?.unit ?? '',
+    done: false,
+  });
+  const chapters =
+    input.kind === 'daily'
+      ? []
+      : (input.chapters?.length ? input.chapters : [{ title: '', objectives: [] }]).map((c) => ({
+          key: rowKey(),
+          title: input.kind === 'side' ? '' : c.title,
+          objectives: c.objectives.length ? c.objectives.map(objectiveRow) : [blankObjective()],
+          done: false,
+        }));
+  const recurrence = input.recurrence;
+  return {
+    ...blank,
+    title: input.title,
+    name: input.name ?? '',
+    story: input.story ?? '',
+    chapters: input.kind === 'side' ? chapters.slice(0, 1) : chapters,
+    deadline: input.deadline ?? '',
+    repeat: recurrence?.freq ?? 'daily',
+    weekdays: recurrence?.freq === 'weekly' ? [...recurrence.weekdays] : blank.weekdays,
+    quotaOn: input.quota !== undefined,
+    quotaTarget: input.quota ? String(input.quota.target) : '',
+    quotaUnit: input.quota?.unit ?? '',
+  };
+}
+
+/** An existing quest's sheet with one objective replaced by smaller steps; the steps start undone. */
+export function withSplit(draft: Draft, objectiveId: string, steps: ObjectiveDraft[]): Draft {
+  return {
+    ...draft,
+    chapters: draft.chapters.map((c) => ({
+      ...c,
+      objectives: c.objectives.flatMap((o) =>
+        o.id === objectiveId
+          ? steps.map((step) => ({
+              key: rowKey(),
+              text: step.text,
+              ...(step.detail !== undefined ? { detail: step.detail } : {}),
+              counted: step.count !== undefined,
+              target: step.count ? String(step.count.target) : '',
+              unit: step.count?.unit ?? '',
+              done: false,
+            }))
+          : [o],
+      ),
+    })),
+  };
+}
+
 export type Problem = { field: string; message: string };
 
 const positiveInteger = (value: string) => /^\s*\d+\s*$/.test(value) && Number(value) > 0;

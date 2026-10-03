@@ -1,6 +1,8 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
-import type { QuestKind } from '@featherlog/contracts';
+import type { Json, PanelTabHost, QuestInput, QuestKind } from '@featherlog/contracts';
+import { draftFromInput, draftFromQuest, withSplit, type Draft } from './draft';
+import type { ScribeLink } from './scribe-link';
 import { DetailPage } from './DetailPage';
 import { Editor } from './Editor';
 import { InkRule, Stamp } from './ink';
@@ -12,7 +14,18 @@ import styles from './journal.module.css';
 const MOMENT_MS = { chapter: 2600, quest: 3600 };
 
 /** The panel tab: the quest journal as an open book. */
-export function Journal({ store }: { store: QuestStore }) {
+/** A draft handed over from another window ("shell/open-panel" params), if the params carry one. */
+function draftParams(params: Json | undefined): { input: QuestInput; note?: string } | null {
+  if (typeof params !== 'object' || params === null || Array.isArray(params)) return null;
+  const draft = params.draft;
+  if (typeof draft !== 'object' || draft === null || Array.isArray(draft)) return null;
+  if (typeof draft.title !== 'string' || !['main', 'side', 'daily'].includes(String(draft.kind))) return null;
+  return { input: draft as unknown as QuestInput, ...(typeof params.note === 'string' ? { note: params.note } : {}) };
+}
+
+type Props = { store: QuestStore; scribe: ScribeLink; host?: PanelTabHost };
+
+export function Journal({ store, scribe, host }: Props) {
   const { loaded, quests } = useQuests(store);
   const [selectedId, setSelectedId] = useState<string>();
   const [moment, setMoment] = useState<Moment | null>(null);
@@ -20,7 +33,23 @@ export function Journal({ store }: { store: QuestStore }) {
   const [writing, setWriting] = useState<{
     kind: QuestKind;
     questId?: string;
+    /** A proposal to start from, and what 翎 said about it. */
+    seed?: Draft;
+    note?: string;
   } | null>(null);
+  const propose = ({ input, note }: { input: QuestInput; note?: string }) =>
+    setWriting({ kind: input.kind, seed: draftFromInput(input), ...(note ? { note } : {}) });
+
+  // A draft asked for from the scroll arrives as the params that opened the journal.
+  useEffect(() => {
+    if (!host) return;
+    const take = (params: Json | undefined) => {
+      const draft = draftParams(params);
+      if (draft) propose(draft);
+    };
+    take(host.params);
+    return host.onParamsChange(take);
+  }, [host]);
 
   useEffect(() => store.onMoment(setMoment), [store]);
   useEffect(() => {
@@ -63,6 +92,8 @@ export function Journal({ store }: { store: QuestStore }) {
                 store={store}
                 onSelect={select}
                 onCreate={(kind) => setWriting({ kind })}
+                scribe={scribe}
+                onPropose={propose}
                 onEdit={edit}
               />
             )}
@@ -84,6 +115,8 @@ export function Journal({ store }: { store: QuestStore }) {
                     store={store}
                     quest={revising}
                     kind={writing.kind}
+                    seed={writing.seed}
+                    scribeNote={writing.note}
                     onDone={(saved) => {
                       // Dailies live on the left page only; there is no right page to turn to.
                       if (saved && saved.kind !== 'daily') setSelectedId(saved.id);
@@ -101,7 +134,21 @@ export function Journal({ store }: { store: QuestStore }) {
                     exit={{ opacity: 0, x: -8, filter: 'blur(2px)' }}
                     transition={{ duration: 0.28, ease: [0.22, 0.8, 0.32, 1] }}
                   >
-                    <DetailPage quest={selected} store={store} today={today} onEdit={() => edit(selected.id)} />
+                    <DetailPage
+                      quest={selected}
+                      store={store}
+                      today={today}
+                      scribe={scribe}
+                      onEdit={() => edit(selected.id)}
+                      onSplit={(objectiveId, steps, note) =>
+                        setWriting({
+                          kind: selected.kind,
+                          questId: selected.id,
+                          seed: withSplit(draftFromQuest(selected), objectiveId, steps),
+                          ...(note ? { note } : {}),
+                        })
+                      }
+                    />
                   </motion.div>
                 )
               )}

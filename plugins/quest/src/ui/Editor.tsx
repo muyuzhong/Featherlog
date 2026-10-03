@@ -18,6 +18,7 @@ import { InkBox, InkCheck } from './ink';
 import { capital } from './numerals';
 import type { QuestStore } from './store';
 import styles from './editor.module.css';
+import scribeStyles from './scribe.module.css';
 
 const KINDS: { kind: QuestKind; label: string }[] = [
   { kind: 'main', label: '主线' },
@@ -37,15 +38,20 @@ type Props = {
   kind: QuestKind;
   /** Saved (with the quest that was written) or put away. */
   onDone(saved?: { id: string; kind: QuestKind }): void;
+  /** A proposed sheet to start from (翎's draft or split) instead of the quest as it stands. */
+  seed?: Draft | undefined;
+  /** What 翎 said about its proposal, shown above the sheet in its hand. */
+  scribeNote?: string | undefined;
 };
 
 /**
  * The right page as a blank sheet: writing a new quest or revising one. It is
  * laid out like the quest page it produces, so what you write is where it will be read.
  */
-export function Editor({ store, quest, kind, onDone }: Props) {
-  const [draft, setDraft] = useState<Draft>(() => (quest ? draftFromQuest(quest) : blankDraft(kind)));
-  const initial = useRef(JSON.stringify(draft));
+export function Editor({ store, quest, kind, onDone, seed, scribeNote }: Props) {
+  // A proposal counts as a change: putting it away asks twice, like any unsaved sheet.
+  const [draft, setDraft] = useState<Draft>(() => seed ?? (quest ? draftFromQuest(quest) : blankDraft(kind)));
+  const initial = useRef(seed ? '' : JSON.stringify(draft));
   const [attempted, setAttempted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string>();
@@ -122,6 +128,16 @@ export function Editor({ store, quest, kind, onDone }: Props) {
   return (
     <div className={styles.editor} onKeyDown={onKey}>
       <div className={styles.sheet}>
+        {scribeNote && (
+          <div className={scribeStyles.draftNote}>
+            <p className={scribeStyles.words}>
+              {scribeNote}
+              <span className={`${scribeStyles.seal} ${scribeStyles.sealOn}`} aria-hidden>
+                翎
+              </span>
+            </p>
+          </div>
+        )}
         <div className={styles.kicker}>
           {quest ? (
             <span>修订 · {KIND_LABEL[quest.kind]}</span>

@@ -774,3 +774,8 @@ button.blank:hover {
   letter-spacing: 0.2em;
   color: var(--fl-rubric);
 }
+
+/* "对翎说……" under the index's heading. */
+.askRow {
+  margin: 4px 6px 2px;
+}

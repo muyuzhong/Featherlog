@@ -1,4 +1,6 @@
-import type { PreviewHost } from '@featherlog/contracts';
+import type { PreviewHost, QuestInput } from '@featherlog/contracts';
+import { AskScribe, ScribeWords } from './ScribeBits';
+import { canAsk, useScribe, type ScribeLink } from './scribe-link';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { InkBox, InkRule, Stamp } from './ink';
@@ -8,8 +10,21 @@ import { useQuests, type Moment, type QuestStore } from './store';
 import styles from './tracker.module.css';
 
 /** The collapsed-view preview: the tracked quest's current objective, and today's commissions. */
-export function TrackerNote({ store, host }: { store: QuestStore; host: PreviewHost }) {
+type Props = {
+  store: QuestStore;
+  host: PreviewHost;
+  scribe: ScribeLink;
+  /** 翎 drafted a quest from the note: it is revised on the journal's sheet. */
+  onDraft(draft: { input: QuestInput; note?: string }): void;
+};
+
+/** How long 翎's last word stays at the foot of the note. */
+const LINE_STAYS_MS = 15 * 60_000;
+
+export function TrackerNote({ store, host, scribe, onDraft }: Props) {
   const { loaded, quests } = useQuests(store);
+  const scribeView = useScribe(scribe);
+  const line = scribeView.latest && Date.now() - Date.parse(scribeView.latest.at) < LINE_STAYS_MS ? scribeView.latest : null;
   const root = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -122,6 +137,14 @@ export function TrackerNote({ store, host }: { store: QuestStore; host: PreviewH
           {dueToday > 0 && <em> · {cnCount(dueToday)}件今日限期</em>}
         </span>
       </div>
+      {(line || canAsk(scribeView)) && <InkRule className={styles.rule} />}
+      {line && <ScribeWords line={line} className={styles.scribeLine} />}
+      {canAsk(scribeView) && (
+        <div className={styles.ask}>
+          <AskScribe link={scribe} onDraft={onDraft} compact />
+        </div>
+      )}
     </div>
+
   );
 }
