@@ -504,3 +504,29 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* A main quest's chapter can be due on its own date (design §8.2). */
+.chapterDeadline {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 6px 0 2px 2px;
+  font: 13.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.chapterDeadline > span {
+  padding-top: 4px;
+  letter-spacing: 0.15em;
+}
+
+.chapterDeadline > div {
+  flex: 0 1 auto;
+}
+
+.lateHint {
+  padding-top: 5px;
+  font: 12.5px var(--fl-font-hand);
+  color: var(--fl-rubric);
+}

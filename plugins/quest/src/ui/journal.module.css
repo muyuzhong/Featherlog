@@ -779,3 +779,15 @@ button.blank:hover {
 .askRow {
   margin: 4px 6px 2px;
 }
+
+/* A chapter's own deadline, under its name on the route. */
+.nodeDue {
+  margin-top: -3px;
+  font: 11.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  white-space: nowrap;
+}
+
+.current .nodeDue {
+  color: var(--fl-rubric);
+}

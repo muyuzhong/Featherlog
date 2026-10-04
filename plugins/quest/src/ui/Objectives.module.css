@@ -226,3 +226,81 @@
     display: none;
   }
 }
+
+/* ---- counted objectives: one tick per unit ---- */
+.ticks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 6px;
+  max-width: 340px;
+}
+
+.ticks span {
+  width: 7px;
+  height: 12px;
+  border-radius: 2px 3px 2px 3px;
+  box-shadow: inset 0 0 0 1.1px rgba(138, 43, 29, 0.35);
+  transform: skewX(-8deg);
+}
+
+.ticks .tickDone {
+  background: var(--fl-rubric);
+  box-shadow: none;
+  opacity: 0.8;
+}
+
+.compact .ticks span {
+  width: 5px;
+  height: 9px;
+}
+
+.bar {
+  display: block;
+  width: 100%;
+  max-width: 340px;
+  height: 5px;
+  margin-top: 8px;
+  border-radius: 3px;
+  background: rgba(138, 43, 29, 0.12);
+  overflow: hidden;
+}
+
+.bar span {
+  display: block;
+  height: 100%;
+  background: var(--fl-rubric);
+  opacity: 0.75;
+  transition: width 0.5s var(--fl-ease-ink);
+}
+
+.setCount {
+  display: inline-flex;
+  align-items: baseline;
+  flex-shrink: 0;
+  gap: 4px;
+  margin: 0 4px 0 0;
+  padding: 0;
+  white-space: nowrap;
+  border: 0;
+  background: none;
+  font: 13px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  cursor: pointer;
+}
+
+button.setCount:hover {
+  color: var(--fl-rubric);
+}
+
+.setCount input {
+  width: 3em;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 1.5px dotted var(--fl-ink-ghost);
+  background: none;
+  text-align: center;
+  font: 14px var(--fl-font-hand);
+  color: var(--fl-ink);
+  outline: none;
+}

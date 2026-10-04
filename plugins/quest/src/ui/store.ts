@@ -83,6 +83,21 @@ export function createQuestStore(bus: UiBus, sound: UiSound = SILENT) {
     }
     if (after.derived.objectiveIndex >= 0) later('unlock');
   };
+  /** A tap of the nib; the stroke that reaches the target is written in full ink. */
+  const tally = (id: string, objectiveId: string | undefined, change: { delta: number } | { set: number }) => {
+    const before = find(id);
+    sound.play('tick');
+    return run(
+      bus.request('quest/count', { id, ...(objectiveId ? { objectiveId } : {}), ...change }).then(({ quest }) => {
+        const finished = objectiveId
+          ? quest.chapters.some((c) => c.objectives.some((o) => o.id === objectiveId && o.doneAt))
+          : quest.cycle?.done === true && before?.cycle?.done !== true;
+        if (!finished) return;
+        sound.play('ink');
+        consequence(before, quest);
+      }),
+    );
+  };
   const step = (id: string, cue: SoundCue, request: () => Promise<{ quest: Quest }>) => {
     const before = find(id);
     sound.play(cue);
@@ -107,20 +122,9 @@ export function createQuestStore(bus: UiBus, sound: UiSound = SILENT) {
         return run(bus.request('quest/reopen-objective', { id, objectiveId }));
       },
       /** A tap of the nib; the stroke that reaches the target is written in full ink. */
-      count: (id: string, objectiveId?: string) => {
-        const before = find(id);
-        sound.play('tick');
-        return run(
-          bus.request('quest/count', objectiveId ? { id, objectiveId, delta: 1 } : { id, delta: 1 }).then(({ quest }) => {
-            const finished = objectiveId
-              ? quest.chapters.some((c) => c.objectives.some((o) => o.id === objectiveId && o.doneAt))
-              : quest.cycle?.done === true && before?.cycle?.done !== true;
-            if (!finished) return;
-            sound.play('ink');
-            consequence(before, quest);
-          }),
-        );
-      },
+      count: (id: string, objectiveId?: string) => tally(id, objectiveId, { delta: 1 }),
+      /** Jump a counted objective to a number ("read up to chapter 7"). */
+      setCount: (id: string, objectiveId: string, value: number) => tally(id, objectiveId, { set: value }),
       complete: (id: string) => step(id, 'ink', () => bus.request('quest/complete', { id })),
       uncomplete: (id: string) => {
         sound.play('erase');

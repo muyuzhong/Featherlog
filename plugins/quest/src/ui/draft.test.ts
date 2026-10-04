@@ -226,3 +226,30 @@ describe('withSplit', () => {
     ]);
   });
 });
+
+describe('chapter deadlines (design §8.2)', () => {
+  it('writes a main chapter\'s deadline, never a side chapter\'s', () => {
+    const main = write(blankDraft('main'), { title: '架构师的养成计划' });
+    main.chapters[0]!.title = '人月神话';
+    main.chapters[0]!.deadline = '2026-10-31';
+    main.chapters[0]!.objectives[0]!.text = '读完《人月神话》';
+    expect(toInput(main).chapters).toEqual([{ title: '人月神话', deadline: '2026-10-31', objectives: [{ text: '读完《人月神话》' }] }]);
+    expect(toInput(withKind(main, 'side')).chapters).toEqual([{ title: '', objectives: [{ text: '读完《人月神话》' }] }]);
+  });
+
+  it('round-trips chapter deadlines and sends them only when they change', () => {
+    const q = quest({ chapters: [{ id: 'c1', title: '人月神话', deadline: '2026-10-31', objectives: [{ id: 'o1', text: '读完' }] }] });
+    const draft = draftFromQuest(q);
+    expect(draft.chapters[0]!.deadline).toBe('2026-10-31');
+    expect(toEdit(q, draft)).toEqual({});
+    draft.chapters[0]!.deadline = '2026-11-15';
+    expect(toEdit(q, draft).chapters).toEqual([{ id: 'c1', title: '人月神话', deadline: '2026-11-15', objectives: [{ id: 'o1', text: '读完' }] }]);
+    draft.chapters[0]!.deadline = '';
+    expect(toEdit(q, draft).chapters).toEqual([{ id: 'c1', title: '人月神话', objectives: [{ id: 'o1', text: '读完' }] }]);
+  });
+
+  it('takes chapter deadlines from a proposal', () => {
+    const draft = draftFromInput({ kind: 'main', title: '读书', chapters: [{ title: '人月神话', deadline: '2026-10-31', objectives: [{ text: '读完' }] }] });
+    expect(draft.chapters[0]!.deadline).toBe('2026-10-31');
+  });
+});
