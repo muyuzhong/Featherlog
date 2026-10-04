@@ -1,6 +1,9 @@
 import type { MainContext, PluginManifest } from '@featherlog/contracts';
 import { createKernel, type MainPlugin } from '@featherlog/kernel';
 import questManifest from '@featherlog/plugin-quest/manifest.json';
+import notesManifestJson from '@featherlog/plugin-notes/manifest.json';
+import { setup as notesMain } from '@featherlog/plugin-notes/main';
+import { setup as notesUi } from '@featherlog/plugin-notes/ui';
 import scribeManifestJson from '@featherlog/plugin-scribe/manifest.json';
 import { setup as scribeUi } from '@featherlog/plugin-scribe/ui';
 import { setup as questMain } from '@featherlog/plugin-quest/main';
@@ -26,13 +29,19 @@ import './playground.css';
  */
 const manifest = questManifest as PluginManifest;
 const scribeManifest = scribeManifestJson as PluginManifest;
-const mainPlugins: MainPlugin[] = [{ manifest, setup: questMain as (ctx: MainContext) => Promise<void> }];
+const notesManifest = notesManifestJson as PluginManifest;
+const mainPlugins: MainPlugin[] = [
+  { manifest, setup: questMain as (ctx: MainContext) => Promise<void> },
+  // The real notes plugin: 手记 and 随笔 are kept in the playground's storage like quests are.
+  { manifest: notesManifest, setup: notesMain },
+];
 const uiPlugins: UiPlugin[] = [
   { manifest, setup: questUi },
   { manifest: scribeManifest, setup: scribeUi },
+  { manifest: notesManifest, setup: notesUi },
 ];
 
-const settings = createSettings([manifest, scribeManifest]);
+const settings = createSettings([manifest, scribeManifest, notesManifest]);
 const { clock, nextDay } = createDevClock();
 const log = { debug: console.debug, info: console.info, warn: console.warn, error: console.error };
 const kernel = createKernel({
@@ -55,6 +64,22 @@ settings.onChange((scope, key, value) => scope === 'shell' && key === 'paper' &&
 await kernel.load(mainPlugins);
 const dayStartHour = () => Number(settings.all().quest?.dayStartHour ?? 4);
 await seedJournal(shell.bus, (plus = 0) => periodKey(clock.now(), dayStartHour(), plus));
+// A few notes to read, only into a fresh playground.
+if ((await shell.bus.request('notes/list', { limit: 1 })).notes.length === 0) {
+  const { quests } = await shell.bus.request('quest/list', {});
+  const memory = quests.find((q) => q.name === '内存之王');
+  const notes = [
+    { text: '今天在地铁上想到：任务日志最好的地方，是它不催我。' },
+    ...(memory
+      ? [
+          { text: 'RDB 是快照，AOF 是日志。\n快照恢复快、可能丢最后几分钟；日志更完整，但文件会越写越大，所以要重写。', questId: memory.id },
+          { text: '读到 everysec：每秒 fsync 一次，是性能和安全之间最常见的折中。', questId: memory.id },
+        ]
+      : []),
+    { text: '想写的随笔：\n· 为什么游戏的任务让人想做完\n· 羊皮纸的颜色到底该有多黄' },
+  ];
+  for (const input of notes) await shell.bus.request('notes/create', { input });
+}
 // After seeding, so 翎 only answers what happens in the playground, not the seed's history.
 const scribe = createFakeScribe(kernel);
 
@@ -68,8 +93,8 @@ const menu = {
   },
 };
 const [collapsed, panel] = await Promise.all([
-  createRuntime(createFakePreload('collapsed', kernel, shell, settings, menu.open, [manifest, scribeManifest]), uiPlugins),
-  createRuntime(createFakePreload('panel', kernel, shell, settings, menu.open, [manifest, scribeManifest]), uiPlugins),
+  createRuntime(createFakePreload('collapsed', kernel, shell, settings, menu.open, [manifest, scribeManifest, notesManifest]), uiPlugins),
+  createRuntime(createFakePreload('panel', kernel, shell, settings, menu.open, [manifest, scribeManifest, notesManifest]), uiPlugins),
 ]);
 
 createRoot(document.getElementById('root')!).render(

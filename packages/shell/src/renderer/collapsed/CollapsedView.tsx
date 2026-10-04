@@ -56,7 +56,9 @@ export function CollapsedView({ registry, icons, badges, unfold = 'left', dragga
             transition={{ duration: 0.42, ease: [0.22, 0.8, 0.32, 1] }}
           >
             <div className={`${styles.preview} fl-paper`} style={{ height: Math.min(height, PREVIEW_MAX_HEIGHT) }}>
+              {/* A fresh container per icon: the previous plugin's root unmounts a moment later. */}
               <SlotMount
+                key={previewId}
                 registry={registry}
                 kind="collapsed.preview"
                 id={previewId}

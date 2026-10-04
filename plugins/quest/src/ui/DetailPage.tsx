@@ -1,11 +1,13 @@
 import type { ObjectiveDraft, Quest, ScribeEpilogue, ScribeLine } from '@featherlog/contracts';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { ScribeWords } from './ScribeBits';
+import { useQuestNotes, type NotesLink } from './notes-link';
+import { QuestNotes } from './QuestNotes';
 import { canAsk, scribeTrouble, useScribe, type ScribeLink } from './scribe-link';
 import scribeStyles from './scribe.module.css';
 import { InkCircle, Stamp, WaxSeal } from './ink';
 import { Objectives, currentChapter } from './Objectives';
-import { capital, cn, cnDate, dayNumber } from './numerals';
+import { capital, cn, cnCount, cnDate, dayNumber } from './numerals';
 import type { QuestStore } from './store';
 import styles from './journal.module.css';
 
@@ -25,13 +27,15 @@ type Props = {
   store: QuestStore;
   today: string;
   scribe: ScribeLink;
+  notes: NotesLink;
   onEdit(): void;
   /** 翎 proposed smaller steps for the current objective: open them on the editor's sheet. */
   onSplit(objectiveId: string, steps: ObjectiveDraft[], note?: string): void;
 };
 
-export function DetailPage({ quest, store, today, scribe, onEdit, onSplit }: Props) {
+export function DetailPage({ quest, store, today, scribe, notes, onEdit, onSplit }: Props) {
   const scribeView = useScribe(scribe);
+  const questNotes = useQuestNotes(notes, quest.id);
   const [splitting, setSplitting] = useState(false);
   const [splitTrouble, setSplitTrouble] = useState<string>();
   const chapter = currentChapter(quest);
@@ -112,8 +116,9 @@ export function DetailPage({ quest, store, today, scribe, onEdit, onSplit }: Pro
       <Objectives quest={quest} store={store} />
       {splitTrouble && <p className={scribeStyles.trouble}>{splitTrouble}</p>}
       {scribeView.present && <ScribeMargin quest={quest} scribe={scribe} />}
+      {questNotes.present && <QuestNotes link={notes} questId={quest.id} notes={questNotes.notes} />}
 
-      <Ledger quest={quest} today={today} />
+      <Ledger quest={quest} today={today} notes={questNotes.present ? questNotes.notes.length : 0} />
       <div className={styles.pageTools}>
         <button onClick={onEdit}>修订</button>
       </div>
@@ -148,7 +153,7 @@ function ChapterRoute({ quest }: { quest: Quest }) {
   );
 }
 
-function Ledger({ quest, today }: { quest: Quest; today: string }) {
+function Ledger({ quest, today, notes }: { quest: Quest; today: string; notes: number }) {
   const chapter = currentChapter(quest);
   const objectives = chapter?.objectives ?? [];
   const done = objectives.filter((o) => o.doneAt).length;
@@ -161,6 +166,7 @@ function Ledger({ quest, today }: { quest: Quest; today: string }) {
     rows.push(['目标', `${cn(done)} / ${cn(objectives.length)}`]);
   }
   if (quest.deadline && quest.status === 'active') rows.push(['限期', cnDate(quest.deadline)]);
+  if (notes > 0) rows.push(['手记', `${cnCount(notes)}则`]);
   rows.push(['启程', `${cnDate(quest.createdAt)} · 第${cn(dayNumber(quest.createdAt, today))}日`]);
   if (quest.completedAt) rows.push(['功成', cnDate(quest.completedAt)]);
 
