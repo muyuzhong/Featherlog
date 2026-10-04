@@ -6,7 +6,7 @@ import { ScribeBook } from './ScribeBook';
 export function setup(ctx: UiContext): void {
   ctx.slots.provide('panel.tab', 'scribe/notes', (el) => {
     const root = createRoot(el);
-    root.render(<ScribeBook bus={ctx.bus} sound={ctx.sound} />);
+    root.render(<ScribeBook bus={ctx.bus} sound={ctx.sound} settings={ctx.settings} />);
     return () => root.unmount();
   });
 }
