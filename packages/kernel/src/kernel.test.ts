@@ -222,6 +222,128 @@ describe('§4.3 events', () => {
   });
 });
 
+describe('§4.1 event origins', () => {
+  it.each([false, true])('sets the request source on events before and after await (injected=%s)', async injected => {
+    const { kernel, bus, messages } = fixture();
+    const gate = deferred();
+    bus.handle('alpha/get', async (_, request) => {
+      bus.emit('alpha/changed', 'before', { causedBy: request.id });
+      await gate.promise;
+      bus.emit('alpha/changed', 'after', { causedBy: request.id });
+      return null;
+    });
+    const request = injected ? incoming('request') : undefined;
+    const result = request ? kernel.inject(request) : bus.request('alpha/get', null);
+    await flush();
+    gate.resolve(null);
+    await result;
+    await flush();
+    const events = messages.filter(message => message.kind === 'event');
+    expect(events.map(message => message.origin)).toEqual([injected ? 'external:window' : 'shell', injected ? 'external:window' : 'shell']);
+    expect(events.map(message => message.payload)).toEqual(['before', 'after']);
+    for (const event of events) {
+      expect(Object.isFrozen(event)).toBe(true);
+      expect(event.source).toBe('shell');
+      expect(event.causedBy).toBe(messages[0]?.id);
+    }
+    for (const message of messages.filter(message => message.kind !== 'event')) expect(message).not.toHaveProperty('origin');
+  });
+
+  it('attributes a nested request to its immediate requester and preserves the outer origin', async () => {
+    const { kernel, bus, messages } = fixture();
+    let alpha!: Bus;
+    let beta!: Bus;
+    await kernel.load([
+      plugin('alpha', ctx => {
+        alpha = ctx.bus;
+        alpha.handle('alpha/get', async (_, request) => {
+          alpha.emit('alpha/changed', 'outer-before', { causedBy: request.id });
+          await alpha.request('beta/get', null, { causedBy: request.id });
+          alpha.emit('alpha/changed', 'outer-after', { causedBy: request.id });
+          return null;
+        });
+      }),
+      plugin('beta', ctx => {
+        beta = ctx.bus;
+        beta.handle('beta/get', async (_, request) => {
+          await Promise.resolve();
+          beta.emit('beta/changed', 'inner', { causedBy: request.id });
+          return null;
+        });
+      }),
+    ]);
+    messages.length = 0;
+    await bus.request('alpha/get', null);
+    const events = messages.filter(message => message.kind === 'event');
+    expect(events.map(({ payload, origin }) => ({ payload, origin }))).toEqual([
+      { payload: 'outer-before', origin: 'shell' }, { payload: 'inner', origin: 'alpha' },
+      { payload: 'outer-after', origin: 'shell' },
+    ]);
+  });
+
+  it('keeps concurrent callers separate and does not attribute unrelated emissions', async () => {
+    const { kernel, bus, messages } = fixture();
+    const first = deferred();
+    const second = deferred();
+    const requests: Envelope[] = [];
+    bus.handle('alpha/get', async (payload, request) => {
+      requests.push(request);
+      await (payload === 1 ? first : second).promise;
+      bus.emit('alpha/changed', payload, { causedBy: request.id });
+      return null;
+    });
+    const a = kernel.createBus('first').request('alpha/get', 1);
+    const b = kernel.createBus('second').request('alpha/get', 2);
+    await flush();
+    bus.emit('alpha/changed', 'unattributed');
+    bus.emit('alpha/changed', 'unknown', { causedBy: 'unknown' });
+    kernel.createBus('unrelated').emit('alpha/changed', 'borrowed', { causedBy: requests[0]!.id });
+    second.resolve(null); await b;
+    first.resolve(null); await a;
+    bus.emit('alpha/changed', 'finished', { causedBy: requests[0]!.id });
+    const events = messages.filter(message => message.kind === 'event');
+    expect(events.filter(message => message.origin).map(({ payload, origin }) => ({ payload, origin })))
+      .toEqual([{ payload: 2, origin: 'second' }, { payload: 1, origin: 'first' }]);
+    for (const event of events.filter(message => typeof message.payload === 'string')) expect(event).not.toHaveProperty('origin');
+  });
+
+  it.each(['success', 'failure', 'timeout', 'disposed'] as const)('clears origin association on %s', async mode => {
+    const { kernel, bus, messages, advance } = fixture();
+    const gate = deferred();
+    let request!: Envelope;
+    let target!: Bus;
+    await kernel.load([plugin('alpha', ctx => {
+      target = ctx.bus;
+      target.handle('alpha/get', async (_, message) => {
+        request = message;
+        target.emit('alpha/changed', 'in-handler', { causedBy: message.id });
+        await gate.promise;
+        return null;
+      });
+    })]);
+    messages.length = 0;
+    const result = bus.request('alpha/get', null).catch((error: unknown) => error);
+    await flush();
+    expect(messages.find(message => message.kind === 'event')?.origin).toBe('shell');
+    if (mode === 'failure') gate.reject(new Error('failed'));
+    else if (mode === 'timeout') advance(5000);
+    else if (mode === 'disposed') kernel.unload('alpha');
+    else gate.resolve(null);
+    await result;
+    if (mode !== 'disposed') {
+      target.emit('alpha/changed', 'after', { causedBy: request.id });
+      expect(messages.at(-1)).not.toHaveProperty('origin');
+    }
+    if (mode === 'timeout' || mode === 'disposed') gate.resolve(null);
+    await flush();
+    if (mode === 'disposed') {
+      await kernel.load([plugin('alpha', ctx => { target = ctx.bus; })]);
+      target.emit('alpha/changed', 'reloaded', { causedBy: request.id });
+      expect(messages.at(-1)).not.toHaveProperty('origin');
+    }
+  });
+});
+
 describe('§4.3 requests', () => {
   it.each([false, true])('does not arm a timer for an immediate result (async=%s)', async asynchronous => {
     const { bus, clock } = fixture();
@@ -302,6 +424,17 @@ describe('§4.3 requests', () => {
     work.resolve('late');
     await flush();
     expect(messages.filter(m => m.kind === 'response')).toHaveLength(1);
+    expect(timers.size).toBe(0);
+  });
+  it.each([0, -1, NaN, Infinity, 120_001, Number.MAX_VALUE])('normalizes a local deadline of %s', async timeoutMs => {
+    const { bus, advance, timers } = fixture();
+    bus.handle('alpha/get', () => new Promise<never>(() => {}));
+    const result = expect(bus.request('alpha/get', null, { timeoutMs })).rejects.toMatchObject({ code: 'timeout' });
+    await flush();
+    const expected = Number.isFinite(timeoutMs) && timeoutMs > 0 ? 120_000 : 5000;
+    expect([...timers.values()]).toEqual([1000 + expected]);
+    advance(expected - 1); expect(timers.size).toBe(1);
+    advance(1); await result;
     expect(timers.size).toBe(0);
   });
 

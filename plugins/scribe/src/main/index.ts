@@ -58,7 +58,7 @@ function load(value: Json | undefined): State {
     const line = record(entry);
     text(line.id, 'id', Infinity, true); text(line.text, '批注', 40, true); timestamp(line.at);
     if (line.questId !== undefined) text(line.questId, 'questId', Infinity, true);
-    if (typeof line.topic !== 'string' || !['objective', 'chapter', 'quest', 'streak', 'reopen', 'board', 'greeting'].includes(line.topic) ||
+    if (typeof line.topic !== 'string' || !['objective', 'chapter', 'quest', 'streak', 'reopen', 'board', 'greeting', 'stall'].includes(line.topic) ||
       (line.origin !== 'model' && line.origin !== 'builtin')) throw failure('scribe/unusable-reply', '批注记录无法使用。');
   }
   for (const [key, entry] of Object.entries(record(data.usage))) {
@@ -141,10 +141,7 @@ function code(cause: unknown): ScribeErrorCode {
   return 'scribe/unavailable';
 }
 
-export async function setup(ctx: MainContext, options: {
-  client?: ModelClient;
-  isLocalAction?: (envelope: Envelope) => boolean;
-} = {}): Promise<void> {
+export async function setup(ctx: MainContext): Promise<void> {
   let state = load(await ctx.storage.get('state'));
   let disposed = false;
   let revision = 0;
@@ -160,9 +157,9 @@ export async function setup(ctx: MainContext, options: {
   const recapCalls = new Map<string, Promise<ScribeRecap>>();
   const openai = openAIClient(ctx.clock);
   const anthropic = anthropicClient(ctx.clock);
-  const client: ModelClient = options.client ?? (request =>
-    request.config.protocol === 'openai' ? openai(request) : anthropic(request));
-  const local = options.isLocalAction ?? (() => false);
+  const client: ModelClient = request =>
+    request.config.protocol === 'openai' ? openai(request) : anthropic(request);
+  const local = (message: Envelope) => message.origin === 'quest';
   const persist = (change: (draft: State) => void) => {
     const result = writes.then(async () => {
       if (disposed) return;
@@ -450,7 +447,7 @@ export async function setup(ctx: MainContext, options: {
             if (progress.proposed || ctx.clock.now() - progress.at < 5 * 86_400_000) continue;
             const quest = list.find(item => item.id === id);
             if (!quest) continue;
-            await say('greeting', quest, ctx.clock.now());
+            await say('stall', quest, ctx.clock.now());
             if (!disposed) await persist(draft => { if (draft.progress[id]) draft.progress[id]!.proposed = true; });
           }
         }
@@ -537,8 +534,9 @@ export async function setup(ctx: MainContext, options: {
     await changed(); await checkTime();
   }); });
   ctx.bus.on('shell/view-changed', (payload, envelope) => {
+    if (payload.view !== 'panel') { panelOpen = false; schedule(); return; }
     if (!local(envelope)) return;
-    panelOpen = payload.view === 'panel';
+    panelOpen = true;
     queue(checkTime);
   });
   const react = (topic: ScribeTopic, quest: Quest, at: number) => {

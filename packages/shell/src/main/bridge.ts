@@ -12,8 +12,6 @@ export interface Peer {
 
 const messageType = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const nonempty = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
-const modelRequests = new Set(['scribe/test', 'scribe/draft-quest', 'scribe/split-objective',
-  'scribe/board', 'scribe/recap']);
 
 export function validEnvelope(value: unknown): value is Envelope {
   return record(value) && value.v === 1 && ['event', 'request'].includes(String(value.kind)) &&
@@ -97,9 +95,15 @@ export function createBusBridge(kernel: Pick<Kernel, 'inject' | 'observe'>, log:
         pending.set(payload.id, peer);
         inFlight.add(payload.id);
       }
-      // A draft can take two 30-second model attempts; IPC must not cut the handler off at five seconds.
-      try { kernel.inject(payload, payload.kind === 'request' && modelRequests.has(payload.type)
-        ? { timeoutMs: 65_000 } : undefined); }
+      const timeoutMs = payload.timeoutMs;
+      const message = { ...payload };
+      // Windows cannot claim a kernel-generated origin or put invalid metadata on the bus.
+      delete message.origin;
+      delete message.timeoutMs;
+      if (message.kind === 'request' && typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0) {
+        message.timeoutMs = Math.min(timeoutMs, 120_000);
+      }
+      try { kernel.inject(message, message.timeoutMs === undefined ? undefined : { timeoutMs: message.timeoutMs }); }
       catch (cause) {
         if (payload.kind === 'request') {
           pending.delete(payload.id);

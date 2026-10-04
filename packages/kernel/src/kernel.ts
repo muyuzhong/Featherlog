@@ -53,6 +53,7 @@ function failure(code: KernelErrorCode, message: string): ResponsePayload {
 export function createKernel(options: KernelOptions) {
   const listeners = new Map<string, Set<Subscription>>();
   const responders = new Map<string, Responder>();
+  const activeRequests = new Map<string, { source: string; scope: Scope }>();
   const observers = new Set<Subscription>();
   const plugins = new Map<string, Scope>();
   const copy = <T>(value: T): T => snapshot(value, options.development ?? false);
@@ -105,7 +106,7 @@ export function createKernel(options: KernelOptions) {
     type: string,
     payload: T,
     source: string,
-    metadata: Pick<Envelope, 'causedBy' | 'replyTo'> = {},
+    metadata: Pick<Envelope, 'causedBy' | 'replyTo' | 'origin'> = {},
   ): Envelope<T> => {
     const message: Envelope<T> = {
       v: 1,
@@ -118,6 +119,7 @@ export function createKernel(options: KernelOptions) {
     };
     if (metadata.causedBy !== undefined) message.causedBy = metadata.causedBy;
     if (metadata.replyTo !== undefined) message.replyTo = metadata.replyTo;
+    if (metadata.origin !== undefined) message.origin = metadata.origin;
     return Object.freeze(message);
   };
   const emit = (message: Envelope) => {
@@ -129,7 +131,9 @@ export function createKernel(options: KernelOptions) {
     });
     publish(message);
   };
-  const dispatch = (message: Envelope, sender?: Scope, timeoutMs = 5000): Promise<unknown> => {
+  const dispatch = (message: Envelope, sender?: Scope, requestedTimeoutMs?: number): Promise<unknown> => {
+    const timeoutMs = typeof requestedTimeoutMs === 'number' && Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs > 0
+      ? Math.min(requestedTimeoutMs, 120_000) : 5000;
     const responder = responders.get(message.type);
     const deadline = options.clock.now() + timeoutMs;
     return new Promise((resolve, reject) => {
@@ -142,6 +146,7 @@ export function createKernel(options: KernelOptions) {
           replyTo: message.id,
         });
         settled = true;
+        activeRequests.delete(message.id);
         sender?.pending.delete(cancel);
         responder?.scope.pending.delete(cancel);
         cancelTimer();
@@ -181,6 +186,7 @@ export function createKernel(options: KernelOptions) {
           return;
         }
         try {
+          activeRequests.set(message.id, { source: message.source, scope: responder.scope });
           const result = responder.call(message.payload, message);
           const succeeded = (data: unknown) => {
             if (settled) return;
@@ -233,7 +239,12 @@ export function createKernel(options: KernelOptions) {
           if (options.development) assertJson(payload);
           return;
         }
-        emit(envelope('event', type, copy(payload), scope.id, config));
+        // Explicit causality survives await and concurrent handlers without platform-specific async hooks.
+        const parent = config?.causedBy === undefined ? undefined : activeRequests.get(config.causedBy);
+        emit(envelope('event', type, copy(payload), scope.id, {
+          ...(config?.causedBy === undefined ? {} : { causedBy: config.causedBy }),
+          ...(parent?.scope === scope ? { origin: parent.source } : {}),
+        }));
       },
       on(type, listener) {
         guard(scope);

@@ -42,16 +42,47 @@ function fixture(development = true) {
 }
 
 describe('IPC bus bridge', () => {
-  it.each(['scribe/test', 'scribe/draft-quest', 'scribe/split-objective', 'scribe/board',
-    'scribe/recap', 'scribe/state', 'shell/state'] as const)('sets the host deadline for %s', async type => {
+  it.each([
+    [undefined, 5000], [65_000, 65_000], [0.5, 0.5], [120_000, 120_000], [120_001, 120_000],
+    [Number.MAX_VALUE, 120_000], [0, 5000], [-1, 5000], [NaN, 5000], [Infinity, 5000],
+    [-Infinity, 5000], ['65000', 5000], [null, 5000], [true, 5000], [{}, 5000],
+  ])('uses the declared request deadline %j, normalized to %i ms', async (timeoutMs, expected) => {
     const { bridge, bus, a, timers, timeouts } = fixture();
-    bus.handle(type, () => new Promise<never>(() => {}));
-    bridge.receive(a, 'bus:send', { ...envelope('request'), type });
+    bus.handle('shell/state', () => new Promise<never>(() => {}));
+    bridge.receive(a, 'bus:send', { ...envelope('request'), timeoutMs });
     await tick();
-    expect(timeouts).toEqual([type === 'scribe/state' || type === 'shell/state' ? 5000 : 65_000]);
+    expect(timeouts).toEqual([expected]);
     for (const timer of timers) timer();
     expect(a.send).toHaveBeenCalledOnce();
     expect(a.send.mock.calls[0]![1]).toMatchObject({ payload: { ok: false, error: { code: 'timeout' } } });
+  });
+  it('forwards a request deadline without knowing the plugin or extending undeclared model requests', () => {
+    const inject = vi.fn();
+    const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const bridge = createBusBridge({ inject, observe: () => () => {} }, log, true);
+    const peer = new Peer(1);
+    bridge.register(peer);
+    bridge.receive(peer, 'bus:send', { ...envelope('request'), type: 'another-plugin/slow', timeoutMs: 65_000 });
+    expect(inject.mock.calls[0]?.[1]).toEqual({ timeoutMs: 65_000 });
+    bridge.receive(peer, 'bus:send', { ...envelope('request'), type: 'scribe/draft-quest' });
+    expect(inject.mock.calls[1]?.[1]).toBeUndefined();
+    bridge.receive(peer, 'bus:send', { ...envelope('event'), timeoutMs: 65_000 });
+    expect(inject.mock.calls[2]?.[1]).toBeUndefined();
+    expect(inject.mock.calls[2]?.[0]).not.toHaveProperty('timeoutMs');
+    bridge.receive(peer, 'bus:send', { ...envelope('request'), timeoutMs: Infinity, origin: 'quest' });
+    expect(inject.mock.calls[3]?.[0]).not.toHaveProperty('timeoutMs');
+    expect(inject.mock.calls[3]?.[0]).not.toHaveProperty('origin');
+    bridge.dispose();
+  });
+  it('does not trust an origin supplied by a window', async () => {
+    const { bridge, bus, a } = fixture();
+    const listener = vi.fn();
+    bus.on('shell/view-changed', listener);
+    bridge.receive(a, 'bus:send', { ...envelope('event'), type: 'shell/view-changed',
+      payload: { view: 'panel' }, origin: 'quest' });
+    await tick();
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener.mock.calls[0]![1]).not.toHaveProperty('origin');
   });
   it('delivers only subscribed events and supports unsubscribe', () => {
     const { bridge, bus, a, b } = fixture();
