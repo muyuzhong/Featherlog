@@ -34,12 +34,13 @@ export function expectedAssets(version) {
   ].sort();
 }
 
-export function releaseTask(command, { version, tag, repo, id, previousTag }, run = gh) {
+export function releaseTask(command, { version, tag, repo, id, mergedTags = [] }, run = gh) {
   if (tag !== versionTag(version)) throw new Error(`Tag ${tag} does not match v${version}`);
   if (!['prepare', 'check', 'verify', 'publish'].includes(command)) throw new Error('Unknown release task');
   const api = endpoint => JSON.parse(run('api', '--paginate', '--slurp', endpoint)).flat();
+  const releases = api(`repos/${repo}/releases`);
   const find = () => {
-    const matches = api(`repos/${repo}/releases`).filter(release => release.tag_name === tag);
+    const matches = releases.filter(release => release.tag_name === tag);
     if (matches.length > 1) throw new Error(`Multiple releases for ${tag}; resolve them manually`);
     if (matches[0] && !matches[0].draft) throw new Error(`${tag} is already published`);
     return matches[0];
@@ -77,6 +78,11 @@ export function releaseTask(command, { version, tag, repo, id, previousTag }, ru
   }
   if (command === 'publish') {
     if (release.prerelease) throw new Error(`${tag} is a prerelease`);
+    // Failed version tags remain in history, but must not hide unreleased changes in the notes.
+    const publishedTags = new Set(releases.filter(item => item.draft === false && item.prerelease === false)
+      .map(item => item.tag_name));
+    const previousTag = mergedTags.find(candidate => candidate !== tag &&
+      /^v\d+\.\d+\.\d+$/.test(candidate) && publishedTags.has(candidate));
     const notes = JSON.parse(run('api', '-X', 'POST', `repos/${repo}/releases/generate-notes`,
       '-f', `tag_name=${tag}`, '-f', 'configuration_file_path=.github/release.yml',
       ...(previousTag ? ['-f', `previous_tag_name=${previousTag}`] : [])));
@@ -98,9 +104,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const id = releaseTask(process.argv[2], {
     version, tag: process.env.RELEASE_TAG ?? process.env.GITHUB_REF_NAME, repo: process.env.GITHUB_REPOSITORY,
     id: process.env.RELEASE_ID,
-    previousTag: process.argv[2] === 'publish'
+    mergedTags: process.argv[2] === 'publish'
       ? execFileSync('git', ['tag', '--merged', 'HEAD', '--sort=-version:refname'], { encoding: 'utf8' })
-        .split('\n').find(tag => /^v\d+\.\d+\.\d+$/.test(tag) && tag !== versionTag(version)) : undefined,
+        .split('\n') : undefined,
   });
   if (process.argv[2] === 'prepare' && process.env.GITHUB_OUTPUT) {
     appendFileSync(process.env.GITHUB_OUTPUT, `release_id=${id}\n`);

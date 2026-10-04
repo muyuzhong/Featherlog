@@ -115,16 +115,36 @@ function verify(items = assets, command = 'verify') {
 }
 
 it('publishes only the validated draft ID with complete assets and makes it latest', () => {
-  const gh = vi.fn().mockReturnValueOnce(JSON.stringify([[draft]]))
+  const gh = vi.fn().mockReturnValueOnce(JSON.stringify([[draft,
+    { tag_name: 'v0.1.0', draft: false, prerelease: false },
+  ]]))
     .mockReturnValueOnce(JSON.stringify([assets.slice(0, 7), assets.slice(7)]))
     .mockReturnValueOnce(JSON.stringify({ body: '## Features\n\n* Reviewed PR #7' }))
     .mockReturnValueOnce(JSON.stringify({ ...draft, draft: false }));
-  expect(releaseTask('publish', { ...options, previousTag: 'v0.1.0' }, gh)).toBe('42');
+  expect(releaseTask('publish', { ...options, mergedTags: ['v0.1.1', 'v0.1.0'] }, gh)).toBe('42');
   expect(gh.mock.calls[2]).toEqual(['api', '-X', 'POST', 'repos/owner/repo/releases/generate-notes',
     '-f', 'tag_name=v0.1.1', '-f', 'configuration_file_path=.github/release.yml',
     '-f', 'previous_tag_name=v0.1.0']);
   expect(gh.mock.calls[3]).toEqual(['api', '-X', 'PATCH', 'repos/owner/repo/releases/42',
     '-F', 'draft=false', '-f', 'make_latest=true', '-f', 'body=## Features\n\n* Reviewed PR #7']);
+});
+
+it.each(['missing', 'draft', 'prerelease'])('skips the previous %s release when generating notes', status => {
+  const current = { ...draft, tag_name: 'v0.3.2' };
+  const previous = { tag_name: 'v0.3.0', draft: false, prerelease: false };
+  const failed = { tag_name: 'v0.3.1', draft: status === 'draft', prerelease: status === 'prerelease' };
+  const gh = vi.fn().mockReturnValueOnce(JSON.stringify([
+    [current, { ...previous, tag_name: 'v0.2.0' }, { ...previous, tag_name: 'v0.4.0' }],
+    [...(status === 'missing' ? [] : [failed]), previous],
+  ])).mockReturnValueOnce(JSON.stringify([expectedAssets('0.3.2').map(name => ({
+    name, state: 'uploaded', size: 100,
+  }))])).mockReturnValueOnce(JSON.stringify({ body: 'All changes since v0.3.0' }))
+    .mockReturnValueOnce('{}');
+  expect(releaseTask('publish', { ...options, version: '0.3.2', tag: 'v0.3.2',
+    mergedTags: ['v0.3.2', 'v0.3.1', 'v0.3.0', 'v0.2.0'],
+  }, gh)).toBe('42');
+  expect(gh.mock.calls[2]).toContain('previous_tag_name=v0.3.0');
+  expect(gh.mock.calls.filter(args => args[3] === 'repos/owner/repo/releases')).toHaveLength(1);
 });
 
 it('does not publish a changed draft, a prerelease or incomplete assets', () => {
@@ -151,8 +171,8 @@ it('propagates a publication API failure instead of reporting success', () => {
 it('generates categorized notes without a previous tag for a first release and keeps failed notes in draft', () => {
   const first = vi.fn().mockReturnValueOnce(JSON.stringify([[draft]])).mockReturnValueOnce(JSON.stringify([assets]))
     .mockReturnValueOnce(JSON.stringify({ body: 'First release' })).mockReturnValueOnce('{}');
-  expect(releaseTask('publish', options, first)).toBe('42');
-  expect(first.mock.calls[2]).not.toContain('previous_tag_name=undefined');
+  expect(releaseTask('publish', { ...options, mergedTags: ['v0.1.1', 'v0.1.0'] }, first)).toBe('42');
+  expect(first.mock.calls[2]!.some(arg => String(arg).startsWith('previous_tag_name='))).toBe(false);
   expect(first.mock.calls[2]).toContain('configuration_file_path=.github/release.yml');
   for (const body of ['', null]) {
     const invalid = vi.fn().mockReturnValueOnce(JSON.stringify([[draft]])).mockReturnValueOnce(JSON.stringify([assets]))
