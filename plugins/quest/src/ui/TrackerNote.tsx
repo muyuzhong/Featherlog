@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { InkBox, InkRule, Stamp } from './ink';
 import { Objectives, currentChapter } from './Objectives';
-import { capital, cn, cnCount } from './numerals';
+import { capital, cn, cnCount, cnDate } from './numerals';
 import { useQuests, type Moment, type QuestStore } from './store';
 import styles from './tracker.module.css';
 
@@ -76,6 +76,7 @@ export function TrackerNote({ store, host, scribe, onDraft }: Props) {
                 {tracked.kind === 'main' && chapter && (
                   <span>
                     第{capital(tracked.derived.chapterIndex + 1)}章 · {chapter.title}
+                    {tracked.derived.chapterDeadline && ` · ${cnDate(tracked.derived.chapterDeadline).replace('日', '')}前`}
                   </span>
                 )}
               </motion.div>

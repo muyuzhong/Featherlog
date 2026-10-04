@@ -19,7 +19,15 @@ export type ObjectiveRow = {
   done: boolean;
 };
 
-export type ChapterRow = { key: string; id?: string; title: string; objectives: ObjectiveRow[]; done: boolean };
+export type ChapterRow = {
+  key: string;
+  id?: string;
+  title: string;
+  /** Main quests only: this chapter's own deadline, or ''. */
+  deadline: string;
+  objectives: ObjectiveRow[];
+  done: boolean;
+};
 
 export type Draft = {
   kind: QuestKind;
@@ -42,7 +50,7 @@ let serial = 0;
 export const rowKey = () => `row-${++serial}`;
 
 export const blankObjective = (): ObjectiveRow => ({ key: rowKey(), text: '', counted: false, target: '', unit: '', done: false });
-export const blankChapter = (): ChapterRow => ({ key: rowKey(), title: '', objectives: [blankObjective()], done: false });
+export const blankChapter = (): ChapterRow => ({ key: rowKey(), title: '', deadline: '', objectives: [blankObjective()], done: false });
 
 export function blankDraft(kind: QuestKind): Draft {
   return {
@@ -86,6 +94,7 @@ export function draftFromQuest(quest: Quest): Draft {
       key: rowKey(),
       id: chapter.id,
       title: chapter.title,
+      deadline: chapter.deadline ?? '',
       done: chapter.doneAt !== undefined,
       objectives: chapter.objectives.map((o) => ({
         key: rowKey(),
@@ -125,6 +134,7 @@ export function draftFromInput(input: QuestInput): Draft {
       : (input.chapters?.length ? input.chapters : [{ title: '', objectives: [] }]).map((c) => ({
           key: rowKey(),
           title: input.kind === 'side' ? '' : c.title,
+          deadline: input.kind === 'main' ? (c.deadline ?? '') : '',
           objectives: c.objectives.length ? c.objectives.map(objectiveRow) : [blankObjective()],
           done: false,
         }));
@@ -196,6 +206,8 @@ export function problem(draft: Draft): Problem | null {
     if (draft.quotaOn && !positiveInteger(draft.quotaTarget)) return { field: 'quota', message: '配额要写一个正整数' };
   }
   if (draft.deadline && !/^\d{4}-\d{2}-\d{2}$/.test(draft.deadline)) return { field: 'deadline', message: '限期的日期不对' };
+  const badChapter = draft.chapters.find((c) => c.deadline && !/^\d{4}-\d{2}-\d{2}$/.test(c.deadline));
+  if (badChapter) return { field: `chapter:${badChapter.key}`, message: '本章限期的日期不对' };
   return null;
 }
 
@@ -218,6 +230,8 @@ export function chapterDrafts(draft: Draft): ChapterDraft[] {
   return draft.chapters.map((c) => ({
     ...(c.id ? { id: c.id } : {}),
     title: draft.kind === 'side' ? '' : c.title.trim(),
+    // A side quest's single chapter has no deadline of its own: the quest's serves (design §8.2).
+    ...(draft.kind === 'main' && c.deadline ? { deadline: c.deadline } : {}),
     objectives: writtenObjectives(c).map(objectiveDraft),
   }));
 }
@@ -278,6 +292,7 @@ export function toEdit(quest: Quest, draft: Draft): { patch?: QuestPatch; chapte
   const before = quest.chapters.map((c) => ({
     id: c.id,
     title: c.title,
+    ...(c.deadline !== undefined ? { deadline: c.deadline } : {}),
     objectives: c.objectives.map((o) => ({
       id: o.id,
       text: o.text,

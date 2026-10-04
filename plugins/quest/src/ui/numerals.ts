@@ -34,3 +34,8 @@ export function localToday(dayStartHour = 4): string {
 export function dayNumber(since: string, today: string): number {
   return Math.round((Date.parse(today.slice(0, 10)) - Date.parse(since.slice(0, 10))) / 86_400_000) + 1;
 }
+
+/** How a deadline reads against today: past, today, or the date it is due by. */
+export function dueState(deadline: string, today: string): 'overdue' | 'today' | 'ahead' {
+  return deadline < today ? 'overdue' : deadline === today ? 'today' : 'ahead';
+}

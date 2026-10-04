@@ -7,7 +7,7 @@ import { canAsk, scribeTrouble, useScribe, type ScribeLink } from './scribe-link
 import scribeStyles from './scribe.module.css';
 import { InkCircle, Stamp, WaxSeal } from './ink';
 import { Objectives, currentChapter } from './Objectives';
-import { capital, cn, cnCount, cnDate, dayNumber } from './numerals';
+import { capital, cn, cnCount, cnDate, dayNumber, dueState } from './numerals';
 import type { QuestStore } from './store';
 import styles from './journal.module.css';
 
@@ -63,6 +63,12 @@ export function DetailPage({ quest, store, today, scribe, notes, onEdit, onSplit
 
   let kicker = quest.kind === 'main' ? '主线' : '支线';
   if (quest.kind === 'main' && chapter) kicker += ` · 第${capital(ci + 1)}章 · ${chapter.title}`;
+  // A main quest's chapter may be due on its own date (design §8.2).
+  const chapterDue = quest.status === 'active' ? quest.derived.chapterDeadline : undefined;
+  if (quest.kind === 'main' && chapterDue) {
+    const state = dueState(chapterDue, today);
+    kicker += state === 'overdue' ? ' · 本章已逾期' : state === 'today' ? ' · 本章今日限期' : ` · 本章${cnDate(chapterDue)}前`;
+  }
   if (quest.kind === 'side' && quest.derived.overdue) kicker += ' · 已逾期';
   else if (quest.kind === 'side' && quest.derived.dueToday && quest.deadline) kicker += ' · 今日限期';
 
@@ -145,6 +151,7 @@ function ChapterRoute({ quest }: { quest: Quest }) {
                 <b>{capital(i + 1)}</b>
               </span>
               <span className={styles.nodeTitle}>{state === 'locked' && !quest.revealed ? '？' : c.title}</span>
+              {c.deadline && state !== 'done' && <span className={styles.nodeDue}>{cnDate(c.deadline).replace('日', '')}前</span>}
             </div>
           </Fragment>
         );
@@ -161,6 +168,7 @@ function Ledger({ quest, today, notes }: { quest: Quest; today: string; notes: n
   const rows: [string, string][] = [];
   if (quest.kind === 'main') {
     rows.push(['本章', `${cn(done)} / ${cn(objectives.length)}`]);
+    if (quest.derived.chapterDeadline && quest.status === 'active') rows.push(['本章限期', cnDate(quest.derived.chapterDeadline)]);
     rows.push(['全线', `${cn(chaptersDone)} / ${cn(quest.chapters.length)} 章`]);
   } else if (objectives.length) {
     rows.push(['目标', `${cn(done)} / ${cn(objectives.length)}`]);

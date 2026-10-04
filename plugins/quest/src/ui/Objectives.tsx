@@ -96,10 +96,19 @@ export function Objectives({ quest, store, compact = false }: Props) {
               <span className={styles.body}>
                 <span className={styles.text}>{current.text}</span>
                 {current.detail && <span className={styles.detail}>{current.detail}</span>}
+                {current.count && <Ticks current={current.count.current} target={current.count.target} />}
                 <span className={styles.hint}>{current.count ? '轻点添一笔' : '轻点落笔'}</span>
               </span>
               {current.count && <Count {...current.count} />}
             </button>
+            {current.count && !compact && (
+              <SetCount
+                current={current.count.current}
+                target={current.count.target}
+                unit={current.count.unit}
+                onSet={(value) => store.actions.setCount(quest.id, current.id, value)}
+              />
+            )}
           </motion.li>
         )}
       </AnimatePresence>
@@ -157,6 +166,63 @@ function Count({ current, target, unit }: { current: number; target: number; uni
           </motion.span>
         ))}
       </AnimatePresence>
+    </span>
+  );
+}
+
+/** One tick per unit (a book's chapters, say), filled as they are done; a plain bar past forty. */
+function Ticks({ current, target }: { current: number; target: number }) {
+  const done = Math.min(current, target);
+  if (target > 40) {
+    return (
+      <span className={styles.bar} aria-hidden>
+        <span style={{ width: `${(done / target) * 100}%` }} />
+      </span>
+    );
+  }
+  return (
+    <span className={styles.ticks} aria-hidden>
+      {Array.from({ length: target }, (_, i) => (
+        <span key={i} className={i < done ? styles.tickDone : ''} />
+      ))}
+    </span>
+  );
+}
+
+/** "记到第几": set the count outright instead of tapping up to it. */
+function SetCount({ current, target, unit, onSet }: { current: number; target: number; unit?: string; onSet(value: number): void }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const commit = () => {
+    const value = Number(editing);
+    if (editing !== null && Number.isInteger(value) && value >= 0 && value <= target && value !== current) onSet(value);
+    setEditing(null);
+  };
+  if (editing === null) {
+    return (
+      <button className={styles.setCount} onClick={() => setEditing(String(current))}>
+        记到第几{unit ?? ''}
+      </button>
+    );
+  }
+  return (
+    <span className={styles.setCount}>
+      记到第
+      <input
+        autoFocus
+        inputMode="numeric"
+        value={editing}
+        aria-label="记到第几"
+        onChange={(event) => setEditing(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') commit();
+          if (event.key === 'Escape') {
+            event.stopPropagation();
+            setEditing(null);
+          }
+        }}
+      />
+      {unit ?? ''}（共 {target}）
     </span>
   );
 }

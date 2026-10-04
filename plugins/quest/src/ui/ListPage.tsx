@@ -5,7 +5,7 @@ import { motion } from 'motion/react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { InkBox, InkRule, InkStrike, Quill } from './ink';
 import { currentChapter } from './Objectives';
-import { capital, cn, cnCount, cnDate } from './numerals';
+import { capital, cn, cnCount, cnDate, dueState } from './numerals';
 import type { QuestStore } from './store';
 import styles from './journal.module.css';
 
@@ -35,7 +35,7 @@ export function ListPage({ quests, selectedId, today, day, store, onSelect, onCr
     .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''));
   const dailiesDone = dailies.filter((d) => d.cycle?.done).length;
 
-  const entry = (q: Quest) => <Entry key={q.id} quest={q} selected={q.id === selectedId} onSelect={() => onSelect(q.id)} />;
+  const entry = (q: Quest) => <Entry key={q.id} quest={q} selected={q.id === selectedId} today={today} onSelect={() => onSelect(q.id)} />;
 
   return (
     <div className={styles.listPage}>
@@ -130,7 +130,7 @@ function Section({ title, aside, accomplished = false, onAdd, children }: Sectio
   );
 }
 
-function Entry({ quest, selected, onSelect }: { quest: Quest; selected: boolean; onSelect(): void }) {
+function Entry({ quest, selected, today, onSelect }: { quest: Quest; selected: boolean; today: string; onSelect(): void }) {
   const chapter = currentChapter(quest);
   const objectives = chapter?.objectives ?? [];
   const done = objectives.filter((o) => o.doneAt).length;
@@ -138,6 +138,11 @@ function Entry({ quest, selected, onSelect }: { quest: Quest; selected: boolean;
   let sub = quest.name ? quest.title : '';
   let meta: ReactNode = objectives.length ? `${cn(done)} / ${cn(objectives.length)}` : '';
   if (quest.kind === 'main' && chapter) sub = `第${capital(quest.derived.chapterIndex + 1)}章 · ${chapter.title}`;
+  if (quest.kind === 'main' && quest.derived.chapterDeadline) {
+    const state = dueState(quest.derived.chapterDeadline, today);
+    if (state === 'overdue') meta = <em>本章逾期</em>;
+    else if (state === 'today') meta = <em>本章今日限期</em>;
+  }
   if (quest.kind === 'side') {
     if (quest.derived.overdue) meta = <em>已逾期</em>;
     else if (quest.derived.dueToday && quest.deadline) meta = <em>今日限期</em>;

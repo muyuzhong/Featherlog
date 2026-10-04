@@ -224,12 +224,25 @@ export function Editor({ store, quest, kind, onDone, seed, scribeNote }: Props) 
                     </button>
                   )}
                 </div>
+                <div className={styles.chapterDeadline}>
+                  <span>本章限期</span>
+                  <DateField
+                    value={chapter.deadline}
+                    label={`第${capital(ci + 1)}章限期`}
+                    emptyText="不设"
+                    onChange={(deadline) => changeChapter(chapter.key, (c) => ({ ...c, deadline }))}
+                  />
+                  {chapter.deadline && draft.deadline && chapter.deadline > draft.deadline && (
+                    <small className={styles.lateHint}>晚于整条主线的限期</small>
+                  )}
+                </div>
                 <ObjectiveList
                   chapter={chapter}
                   issueField={issue?.field}
                   focusRef={focusRef}
                   onFocusNext={(key) => (focusNext.current = key)}
                   onChange={(update) => changeChapter(chapter.key, update)}
+                  firstHint={ci === 0 ? '比如：读完《人月神话》，再点"计数"写共 16 章' : undefined}
                 />
               </div>
             ))}
@@ -376,10 +389,12 @@ type ListProps = {
   focusRef(key: string): (el: HTMLInputElement | null) => void;
   onFocusNext(key: string): void;
   onChange(update: (chapter: ChapterRow) => ChapterRow): void;
+  /** A placeholder for the first, empty line: how a book reads as one counted objective. */
+  firstHint?: string | undefined;
 };
 
 /** One chapter's objectives. Enter starts the next line; Backspace on an empty line takes it away. */
-function ObjectiveList({ chapter, issueField, focusRef, onFocusNext, onChange }: ListProps) {
+function ObjectiveList({ chapter, issueField, focusRef, onFocusNext, onChange, firstHint }: ListProps) {
   const set = (key: string, patch: Partial<ObjectiveRow>) =>
     onChange((c) => ({ ...c, objectives: c.objectives.map((o) => (o.key === key ? { ...o, ...patch } : o)) }));
   const insertAfter = (index: number) => {
@@ -402,7 +417,7 @@ function ObjectiveList({ chapter, issueField, focusRef, onFocusNext, onChange }:
             ref={focusRef(o.key)}
             className={styles.objectiveText}
             value={o.text}
-            placeholder={i === 0 ? '写下一个目标' : '下一个目标'}
+            placeholder={i === 0 ? (firstHint ?? '写下一个目标') : '下一个目标'}
             aria-label={`目标 ${i + 1}`}
             onChange={(e) => set(o.key, { text: e.target.value })}
             onKeyDown={(e) => {
