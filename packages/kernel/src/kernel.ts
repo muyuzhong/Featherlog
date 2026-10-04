@@ -400,10 +400,10 @@ export function createKernel(options: KernelOptions) {
     observe(callback: (message: Envelope) => void): Dispose {
       return subscribe(observers, (_, message) => callback(message));
     },
-    inject(message: Envelope): void {
+    inject(message: Envelope, config?: Pick<RequestOptions, 'timeoutMs'>): void {
       const received = Object.freeze({ ...message, payload: copy(message.payload) });
       if (received.kind === 'event') emit(received);
-      else if (received.kind === 'request') void dispatch(received).catch(() => {});
+      else if (received.kind === 'request') void dispatch(received, undefined, config?.timeoutMs).catch(() => {});
       else publish(received);
     },
     load,
