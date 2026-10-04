@@ -30,7 +30,7 @@ it('creates one draft and reuses it on rerun', () => {
   const gh = vi.fn((...args: string[]) => {
     if (args[1] === '--paginate') return JSON.stringify([created ? [draft] : []]);
     expect(args).toEqual(['api', '-X', 'POST', 'repos/owner/repo/releases',
-      '-f', 'tag_name=v0.1.1', '-f', 'target_commitish=v0.1.1', '-f', 'name=v0.1.1', '-F', 'draft=true',
+      '-f', 'tag_name=v0.1.1', '-f', 'name=v0.1.1', '-F', 'draft=true',
       '-F', 'generate_release_notes=true']);
     created = true;
     return JSON.stringify(draft);
@@ -46,6 +46,32 @@ it('returns the creation response ID even while the release list remains stale',
   expect(releaseTask('prepare', options, gh)).toBe('398129844');
   expect(gh.mock.calls.filter(args => args.includes('--paginate'))).toHaveLength(1);
   expect(gh).toHaveBeenCalledTimes(2);
+});
+
+it.each(['prepare', 'publish'])('%s uses an existing tag without an invalid target_commitish', command => {
+  const gh = vi.fn((...args: string[]) => {
+    const endpoint = args[3]!;
+    if (args[1] === '--paginate') {
+      return JSON.stringify([endpoint.endsWith('/assets') ? assets : command === 'prepare' ? [] : [draft]]);
+    }
+    if (args.includes('POST')) {
+      const target = args.find(arg => arg.startsWith('target_commitish='))?.split('=')[1];
+      // GitHub validates this field as a branch or SHA, even when tag_name already exists.
+      if (target !== undefined && target !== 'main' && !/^[a-f0-9]{40}$/.test(target)) {
+        throw new Error('HTTP 422 Validation Failed: field=target_commitish');
+      }
+      expect(args).toContain(`tag_name=${options.tag}`);
+      if (endpoint === 'repos/owner/repo/releases') return JSON.stringify(draft);
+      if (endpoint === 'repos/owner/repo/releases/generate-notes') {
+        return JSON.stringify({ body: 'Existing tag release notes' });
+      }
+    }
+    if (args.includes('PATCH') && endpoint === 'repos/owner/repo/releases/42') return '{}';
+    throw new Error(`Unexpected API request: ${args.join(' ')}`);
+  });
+  expect(releaseTask(command, options, gh)).toBe('42');
+  expect(gh.mock.calls.filter(args => args.includes('POST')).every(args =>
+    args.every(arg => !arg.startsWith('target_commitish=')))).toBe(true);
 });
 
 it('propagates creation errors without another list query or creation attempt', () => {
@@ -95,7 +121,7 @@ it('publishes only the validated draft ID with complete assets and makes it late
     .mockReturnValueOnce(JSON.stringify({ ...draft, draft: false }));
   expect(releaseTask('publish', { ...options, previousTag: 'v0.1.0' }, gh)).toBe('42');
   expect(gh.mock.calls[2]).toEqual(['api', '-X', 'POST', 'repos/owner/repo/releases/generate-notes',
-    '-f', 'tag_name=v0.1.1', '-f', 'target_commitish=v0.1.1', '-f', 'configuration_file_path=.github/release.yml',
+    '-f', 'tag_name=v0.1.1', '-f', 'configuration_file_path=.github/release.yml',
     '-f', 'previous_tag_name=v0.1.0']);
   expect(gh.mock.calls[3]).toEqual(['api', '-X', 'PATCH', 'repos/owner/repo/releases/42',
     '-F', 'draft=false', '-f', 'make_latest=true', '-f', 'body=## Features\n\n* Reviewed PR #7']);
