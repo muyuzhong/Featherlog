@@ -23,6 +23,7 @@
     "@chinese-fonts/xiaolai": "^3.0.0",
     "@featherlog/contracts": "workspace:*",
     "@featherlog/kernel": "workspace:*",
+    "@featherlog/plugin-notes": "workspace:*",
     "@featherlog/plugin-quest": "workspace:*",
     "@featherlog/plugin-scribe": "workspace:*",
     "@fontsource/ma-shan-zheng": "^5.3.1",

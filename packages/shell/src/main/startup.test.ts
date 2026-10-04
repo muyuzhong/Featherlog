@@ -81,7 +81,7 @@ it('reports setup timeouts and cleans the timed-out plugin', async () => {
 it('shows a visible error for unsupported quest data without replacing or deleting it', async () => {
   const { kernel, messages, storage } = fixture();
   vi.spyOn(storage, 'get').mockResolvedValue({ schemaVersion: 3 });
-  await loadPlugins(kernel, plugins, '0.1.2', '/tmp/Featherlog');
+  await loadPlugins(kernel, plugins.filter(plugin => plugin.manifest.id === 'quest'), '0.1.2', '/tmp/Featherlog');
   expect(dialog.showErrorBox).toHaveBeenCalledExactlyOnceWith('羽记部分功能启动失败',
     expect.stringContaining('任务面板（quest）无法加载\nquest/invalid-input: Unsupported quest schemaVersion'));
   expect(messages.find(message => message.type === 'kernel/ready')?.payload)
