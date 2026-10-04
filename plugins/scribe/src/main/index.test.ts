@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createKernel } from '@featherlog/kernel';
 import type {
-  Clock, Envelope, EventPayload, Json, PluginSettings, PluginStorage, Quest, QuestEvents,
+  Clock, Envelope, EventPayload, Json, Note, NotesRequests, PluginSettings, PluginStorage, Quest, QuestEvents,
   RequestPayload, ResponseData, ScribeRequests,
 } from '@featherlog/contracts';
 import { setup } from './index';
@@ -20,6 +20,7 @@ function quest(patch: Partial<Quest> = {}): Quest {
 async function fixture(options: {
   time?: number; enabled?: boolean; consent?: boolean; settings?: Record<string, Json>;
   key?: string | null; data?: Map<string, Json>; quests?: Quest[]; noQuest?: boolean;
+  notes?: Note[]; noNotes?: boolean;
   client?: ModelClient;
 } = {}) {
   let time = options.time ?? local();
@@ -31,7 +32,8 @@ async function fixture(options: {
     timers.set(callback, time + ms); return () => { timers.delete(callback); };
   } };
   const values: Record<string, Json> = { enabled: options.enabled ?? true, protocol: 'openai',
-    baseUrl: 'https://model.example/v1', model: 'model-a', talkativeness: 'normal', recapTime: 22, ...options.settings };
+    baseUrl: 'https://model.example/v1', model: 'model-a', talkativeness: 'normal', recapTime: 22,
+    readNotes: false, ...options.settings };
   const settingListeners = new Set<(key: string, value: Json | undefined) => void>();
   const secretListeners = new Set<(key: string) => void>();
   const settings: PluginSettings = { get<T extends Json>(name: string) { return values[name] as T | undefined; },
@@ -46,9 +48,14 @@ async function fixture(options: {
   vi.spyOn(modelAdapters, 'openAIClient').mockReturnValue(model);
   vi.spyOn(modelAdapters, 'anthropicClient').mockReturnValue(model);
   const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  const secretGet = vi.fn(async () => key);
   const kernel = createKernel({ clock, log, development: true, createServices: () => ({ clock, log, storage, settings,
-    secrets: { get: async () => key, onChange(listener) { secretListeners.add(listener); return () => { secretListeners.delete(listener); }; } } }) });
+    secrets: { get: secretGet, onChange(listener) { secretListeners.add(listener); return () => { secretListeners.delete(listener); }; } } }) });
   const user = kernel.createBus('quest');
+  const notesList = vi.fn<(payload: RequestPayload<'notes/list'>) => NotesRequests['notes/list']['res'] | Promise<NotesRequests['notes/list']['res']>>(
+    payload => ({ notes: (options.notes ?? []).filter(note => note.questId === payload.questId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, payload.limit), more: false }));
+  if (!options.noNotes) kernel.createBus('notes').handle('notes/list', payload => notesList(payload));
   const messages: Envelope[] = [];
   kernel.observe(message => messages.push(message));
   if (!options.noQuest) {
@@ -78,7 +85,7 @@ async function fixture(options: {
       source: 'quest', id: crypto.randomUUID(), time,
       ...(actor ? { origin: actor === 'user' ? 'quest' : actor } : {}) });
   };
-  return { kernel, request, model, log, timers, messages, data, storage, failed, drain, emit,
+  return { kernel, request, model, notesList, secretGet, log, timers, messages, data, storage, failed, drain, emit,
     lines: async () => (await request('scribe/lines', {})).lines,
     setQuests(value: Quest[]) { list = value; },
     setHour(value: number) { hour = value; },
@@ -99,6 +106,10 @@ async function fixture(options: {
   };
 }
 const draftReply = (input: unknown = { kind: 'side', title: '整理桌面' }): ModelReply => ({ text: JSON.stringify({ input, note: '由你落笔。' }) });
+const handnote = (id: string, questId: string | null = 'q1', body = '读到这里，留一笔。', offset = 0): Note => ({
+  id, text: body, ...(questId === null ? {} : { questId }),
+  createdAt: new Date(local() + offset).toISOString(), updatedAt: new Date(local() + offset).toISOString(),
+});
 
 describe('privacy, configuration and requests', () => {
   it('exposes safe state, does not send secrets through the bus or local journal', async () => {
@@ -156,6 +167,190 @@ describe('privacy, configuration and requests', () => {
     await expect(f.request('scribe/lines', { limit: 0 })).rejects.toMatchObject({ code: 'scribe/invalid-input' });
     await expect(f.request('scribe/recaps', { limit: 101 })).rejects.toMatchObject({ code: 'scribe/invalid-input' });
     await expect(f.request('scribe/epilogue', { questId: '' })).rejects.toMatchObject({ code: 'scribe/invalid-input' });
+  });
+});
+
+describe('handnote privacy and bounded writing context', () => {
+  it.each([false, true])('keeps drafts, splits, boards, reactions and local history free of notes when readNotes=%s', async readNotes => {
+    const f = await fixture({ settings: { readNotes }, notes: [handnote('private')] });
+    await f.request('scribe/test', {});
+    f.model.mockResolvedValueOnce(draftReply()); await f.request('scribe/draft-quest', { text: '整理' });
+    f.model.mockResolvedValueOnce({ text: JSON.stringify({ objectives: [{ text: '一' }, { text: '二' }] }) });
+    await f.request('scribe/split-objective', { questId: 'q1', objectiveId: 'o1' });
+    await f.request('scribe/board', {});
+    f.emit('quest/objective-completed', { quest: quest(), chapterId: 'ch1', objectiveId: 'o1' }); await f.drain();
+    for (const type of ['scribe/lines', 'scribe/recap', 'scribe/recaps'] as const) await f.request(type, {});
+    await f.request('scribe/epilogue', { questId: 'q1' });
+    if (!readNotes) {
+      await f.request('scribe/recap', { write: true });
+      f.emit('quest/completed', { quest: quest({ status: 'completed' }) }); await f.drain();
+    }
+    expect(f.notesList).not.toHaveBeenCalled();
+    expect(f.messages.filter(message => message.kind === 'request' && message.type.startsWith('notes/'))).toEqual([]);
+    expect(JSON.stringify(f.model.mock.calls)).not.toContain('读到这里');
+  });
+  it('requires expanded consent before any model call and announces the new disclosure', async () => {
+    const f = await fixture();
+    f.change('readNotes', true); await f.drain();
+    expect(await f.request('scribe/state', {})).toMatchObject({ consented: false });
+    expect(f.messages.filter(message => message.type === 'scribe/state-changed').at(-1)?.payload)
+      .toMatchObject({ state: { consented: false } });
+    expect(await f.request('scribe/test', {})).toMatchObject({ code: 'scribe/no-consent',
+      message: expect.stringContaining('手记也会发送给所配置的接口') });
+    await expect(f.request('scribe/draft-quest', { text: '整理' })).rejects.toMatchObject({ code: 'scribe/no-consent' });
+    await expect(f.request('scribe/split-objective', { questId: 'q1', objectiveId: 'o1' })).rejects.toMatchObject({ code: 'scribe/no-consent' });
+    await expect(f.request('scribe/recap', { write: true })).rejects.toMatchObject({ code: 'scribe/no-consent' });
+    expect((await f.request('scribe/board', {})).origin).toBe('builtin');
+    f.emit('quest/objective-completed', { quest: quest(), chapterId: 'ch1', objectiveId: 'o1' }); await f.drain();
+    expect((await f.lines())[0]).toMatchObject({ origin: 'builtin' });
+    expect(f.notesList).not.toHaveBeenCalled(); expect(f.model).not.toHaveBeenCalled();
+    expect(await f.request('scribe/consent', { granted: true })).toMatchObject({ consented: true });
+    await f.request('scribe/recap', { write: true }); expect(f.notesList).toHaveBeenCalledOnce();
+    f.change('readNotes', false); await f.drain();
+    expect(await f.request('scribe/state', {})).toMatchObject({ consented: true });
+    await f.request('scribe/recap', { write: true, periodKey: '2026-10-02' });
+    expect(f.notesList).toHaveBeenCalledOnce();
+    expect(f.model.mock.calls.at(-1)![0].messages[0]!.content).not.toContain('handnotes');
+    f.change('readNotes', true); await f.drain();
+    expect(await f.request('scribe/state', {})).toMatchObject({ consented: true });
+    f.change('baseUrl', 'https://other.example/v1'); await f.drain();
+    expect(await f.request('scribe/state', {})).toMatchObject({ consented: false });
+  });
+  it('treats old stored consent as task-only and persists expanded consent across restart', async () => {
+    const seed = await fixture(); seed.kernel.unload('scribe');
+    const old = structuredClone(seed.data.get('state')) as Record<string, Json>;
+    delete old.consentNotes; seed.data.set('state', old);
+    const tasksOnly = await fixture({ data: seed.data, consent: false });
+    expect(await tasksOnly.request('scribe/state', {})).toMatchObject({ consented: true }); tasksOnly.kernel.unload('scribe');
+    const expanded = await fixture({ data: seed.data, consent: false, settings: { readNotes: true } });
+    expect(await expanded.request('scribe/state', {})).toMatchObject({ consented: false });
+    expect(expanded.notesList).not.toHaveBeenCalled(); expect(expanded.model).not.toHaveBeenCalled();
+    await expanded.request('scribe/consent', { granted: true }); expanded.kernel.unload('scribe');
+    const restored = await fixture({ data: seed.data, consent: false, settings: { readNotes: true } });
+    expect(await restored.request('scribe/state', {})).toMatchObject({ consented: true });
+    await restored.request('scribe/consent', { granted: false });
+    restored.change('readNotes', false); await restored.drain();
+    await restored.request('scribe/consent', { granted: true });
+    restored.change('readNotes', true); await restored.drain();
+    expect(await restored.request('scribe/state', {})).toMatchObject({ consented: false });
+  });
+  it.each(['off', 'revoke', 'endpoint'] as const)('rejects a stale expanded agreement on %s while configuration is being read', async action => {
+    const f = await fixture(); f.change('readNotes', true); await f.drain();
+    let resolve!: (key: string | undefined) => void;
+    f.secretGet.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    const pending = expect(f.request('scribe/consent', { granted: true })).rejects.toMatchObject({ code: 'scribe/unavailable' });
+    await vi.waitFor(() => expect(resolve).toBeDefined());
+    if (action === 'off') f.change('readNotes', false);
+    if (action === 'revoke') expect(await f.request('scribe/consent', { granted: false })).toMatchObject({ consented: false });
+    if (action === 'endpoint') f.change('baseUrl', 'https://other.example/v1');
+    resolve('private-key'); await pending; await f.drain();
+    if (action === 'off') { f.change('readNotes', true); await f.drain(); }
+    expect(await f.request('scribe/state', {})).toMatchObject({ consented: false });
+    expect(f.notesList).not.toHaveBeenCalled(); expect(f.model).not.toHaveBeenCalled();
+  });
+  it.each(['no-consent', 'disabled', 'not-configured'] as const)('never reads notes through the %s gate', async gate => {
+    const f = await fixture({ consent: gate !== 'no-consent', enabled: gate !== 'disabled',
+      settings: { readNotes: true, ...(gate === 'not-configured' ? { model: '' } : {}) }, notes: [handnote('n1')] });
+    await expect(f.request('scribe/recap', { write: true })).rejects.toMatchObject({
+      code: gate === 'no-consent' ? 'scribe/no-consent' : 'scribe/not-configured',
+    });
+    f.emit('quest/completed', { quest: quest({ status: 'completed' }) }); await f.drain();
+    expect(f.notesList).not.toHaveBeenCalled(); expect(f.model).not.toHaveBeenCalled();
+  });
+  it('adds only live recap progress and rule-selected suggestions, once per quest and at most five newest notes', async () => {
+    const q2 = quest({ id: 'q2', title: '另一卷', tracked: false });
+    const f = await fixture({ settings: { readNotes: true }, quests: [quest(), q2,
+      quest({ id: 'unrelated', tracked: false }), quest({ id: 'deleted', tracked: false })], notes: [
+      ...Array.from({ length: 6 }, (_, i) => handnote(`n${i}`, 'q1', `手记${i}`, i)),
+      handnote('q2-note', 'q2', '另一卷的真实手记'), handnote('other', 'unrelated', '无关秘密'),
+      handnote('essay', null, '随笔秘密'), handnote('orphan', 'deleted', '已删除任务的秘密'),
+    ] });
+    f.emit('quest/counted', { quest: quest(), previous: 0, current: 1 });
+    f.emit('quest/counted', { quest: q2, previous: 0, current: 1 });
+    f.emit('quest/counted', { quest: quest({ id: 'deleted', tracked: false }), previous: 0, current: 1 }); await f.drain();
+    f.setQuests([quest(), q2, quest({ id: 'unrelated', tracked: false })]);
+    await f.request('scribe/recap', { write: true });
+    expect(f.notesList.mock.calls.map(([payload]) => payload)).toEqual([{ questId: 'q1', limit: 5 }, { questId: 'q2', limit: 5 }]);
+    const prompt = f.model.mock.calls[0]![0].messages[0]!.content;
+    for (const snippet of ['手记5', '手记4', '手记3', '手记2', '手记1', '另一卷的真实手记']) expect(prompt).toContain(snippet);
+    for (const secret of ['手记0', '无关秘密', '随笔秘密', '已删除任务的秘密']) expect(prompt).not.toContain(secret);
+    await f.request('scribe/recap', { write: true }); await f.request('scribe/recaps', {});
+    expect(f.notesList).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify([...f.data])).not.toContain('另一卷的真实手记');
+    expect(f.model.mock.calls[0]![0].prefix).toBe(PERSONA);
+  });
+  it.each(['main', 'side'] as const)('adds only the completed %s quest notes to its ending and bounds even overbroad replies', async kind => {
+    const q = quest({ kind });
+    const f = await fixture({ settings: { readNotes: true }, quests: [q, quest({ id: 'q2', tracked: false })] });
+    const body = '羽'.repeat(299) + '🪶' + '截断后的秘密';
+    f.notesList.mockReturnValueOnce({ notes: [
+      handnote('essay', null, '随笔秘密'), handnote('other', 'q2', '别的任务秘密'),
+      ...Array.from({ length: 6 }, (_, i) => handnote(`n${i}`, 'q1', i === 0 ? body : `手记${i}`)),
+    ], more: true });
+    f.emit('quest/completed', { quest: { ...q, status: 'completed' } }); await f.drain();
+    expect(f.notesList).toHaveBeenCalledExactlyOnceWith({ questId: 'q1', limit: 5 });
+    const endingCall = f.model.mock.calls.find(([request]) => request.maxTokens === 600)![0];
+    const prompt = endingCall.messages[0]!.content;
+    expect(prompt).toContain('羽'.repeat(299) + '🪶'); expect(prompt).toContain('手记4');
+    for (const secret of ['截断后的秘密', '手记5', '随笔秘密', '别的任务秘密']) expect(prompt).not.toContain(secret);
+    expect(f.model.mock.calls[0]![0].messages[0]!.content).not.toContain('handnotes');
+    expect(endingCall.prefix).toBe(PERSONA);
+    f.emit('quest/completed', { quest: { ...q, status: 'completed' } }); await f.drain();
+    await f.request('scribe/epilogue', { questId: 'q1' }); expect(f.notesList).toHaveBeenCalledOnce();
+    expect(JSON.stringify([...f.data])).not.toContain('截断后的秘密');
+  });
+  it('waits for the injected Clock before reading notes for an automatic recap or a deferred ending', async () => {
+    const f = await fixture({ time: local('2026-10-03', 21), settings: { readNotes: true }, notes: [handnote('n')] });
+    f.open(); await f.drain(); expect(f.notesList).not.toHaveBeenCalled();
+    f.setTime(local('2026-10-03', 22)); await f.drain(); expect(f.notesList).toHaveBeenCalledOnce();
+    f.open('user', 'collapsed');
+    f.setTime(local('2026-10-03', 23));
+    f.emit('quest/completed', { quest: quest({ status: 'completed' }) }); await f.drain();
+    expect(f.notesList).toHaveBeenCalledOnce();
+    f.setTime(local('2026-10-04', 7)); await f.drain(); expect(f.notesList).toHaveBeenCalledTimes(2);
+    expect((await f.request('scribe/epilogue', { questId: 'q1' })).epilogue).not.toBeNull();
+  });
+  it.each(['off', 'revoke', 'endpoint'] as const)('discards pending note reads on %s before sending or reading the next quest', async action => {
+    const f = await fixture({ settings: { readNotes: true }, quests: [quest(), quest({ id: 'side', kind: 'side', tracked: false, deadline: '2026-10-04' })] });
+    let resolve!: (value: NotesRequests['notes/list']['res']) => void;
+    f.notesList.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    const pending = expect(f.request('scribe/recap', { write: true })).rejects.toMatchObject({ code: 'scribe/unavailable' });
+    await vi.waitFor(() => expect(f.notesList).toHaveBeenCalledOnce());
+    if (action === 'off') f.change('readNotes', false);
+    if (action === 'revoke') await f.request('scribe/consent', { granted: false });
+    if (action === 'endpoint') f.change('baseUrl', 'https://other.example/v1');
+    resolve({ notes: [handnote('private', 'q1', '待定的手记秘密')], more: false });
+    await pending; await f.drain();
+    expect(f.model).not.toHaveBeenCalled(); expect(f.notesList).toHaveBeenCalledOnce();
+    expect((await f.request('scribe/recap', {})).recap).toBeNull();
+  });
+  it('discards an ending whose note read was invalidated by disabling readNotes', async () => {
+    const f = await fixture({ settings: { readNotes: true } });
+    let resolve!: (value: NotesRequests['notes/list']['res']) => void;
+    f.notesList.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    f.emit('quest/completed', { quest: quest({ status: 'completed' }) });
+    await vi.waitFor(() => expect(f.notesList).toHaveBeenCalledOnce());
+    f.change('readNotes', false); resolve({ notes: [handnote('private')], more: false }); await f.drain();
+    expect(f.model).toHaveBeenCalledOnce(); // Only the task-completed reaction preceded the note read.
+    expect((await f.request('scribe/epilogue', { questId: 'q1' })).epilogue).toBeNull();
+  });
+  it('aborts in-flight model calls containing notes when the switch is disabled', async () => {
+    const f = await fixture({ settings: { readNotes: true }, notes: [handnote('n')] });
+    f.model.mockImplementationOnce(() => new Promise<ModelReply>(() => {}));
+    const pending = expect(f.request('scribe/recap', { write: true })).rejects.toMatchObject({ code: 'scribe/unavailable' });
+    await vi.waitFor(() => expect(f.model).toHaveBeenCalledOnce());
+    const signal = f.model.mock.calls[0]![0].signal;
+    f.change('readNotes', false); await pending; await f.drain();
+    expect(signal.aborted).toBe(true); expect((await f.request('scribe/recap', {})).recap).toBeNull();
+  });
+  it('preserves auth pause on a privacy toggle and handles missing note responders without leaking their errors', async () => {
+    const f = await fixture({ settings: { readNotes: true }, noNotes: true });
+    await expect(f.request('scribe/recap', { write: true })).rejects.toMatchObject({ code: 'scribe/unavailable' });
+    f.emit('quest/completed', { quest: quest({ status: 'completed' }) }); await f.drain();
+    expect((await f.request('scribe/epilogue', { questId: 'q1' })).epilogue?.text).toContain('鹅毛笔');
+    f.model.mockRejectedValueOnce(failure('scribe/auth-failed', 'auth')); await f.request('scribe/test', {});
+    f.change('readNotes', false); await f.drain();
+    expect(await f.request('scribe/test', {})).toMatchObject({ code: 'scribe/auth-failed' });
   });
 });
 
@@ -518,6 +713,7 @@ describe('storage round trips and startup safeguards', () => {
     expect((await f.lines()).filter(line => line.topic === 'streak')).toHaveLength(1);
   });
   const corruptions: [string, (data: Record<string, Json>) => void][] = [
+    ['notes consent', data => { data.consentNotes = 'yes'; }],
     ['line topic', data => { data.lines = [{ id: 'x', text: '批注。', at: new Date(local()).toISOString(), topic: 'alien', origin: 'builtin' }]; }],
     ['line timestamp', data => { data.lines = [{ id: 'x', text: '批注。', at: 'not a time', topic: 'quest', origin: 'builtin' }]; }],
     ['usage count', data => { data.usage = { '2026-10': { month: '2026-10', calls: -1, inputTokens: 0, outputTokens: 0, unreported: 0 } }; }],
