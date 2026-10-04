@@ -18,7 +18,7 @@ type Props = {
   onPreviewChange?(iconId: string | null): void;
 };
 
-const LEAVE_DELAY_MS = 260;
+const LEAVE_DELAY_MS = 400;
 const PREVIEW_MAX_HEIGHT = 560;
 
 /** The collapsed view: a small floating hanging scroll that unrolls a preview on hover. */
@@ -27,24 +27,61 @@ export function CollapsedView({ registry, icons, badges, unfold = 'left', dragga
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [height, setHeight] = useState(240);
   const leaveTimer = useRef<number>(undefined);
+  const root = useRef<HTMLDivElement>(null);
+  const hovering = useRef(false);
 
   useEffect(() => onPreviewChange?.(previewId), [previewId, onPreviewChange]);
 
+  // A note being written in stays open: the pointer drifting off it (or the window
+  // resizing under it) must not fold it away mid-sentence. Focus leaving closes it.
+  const writing = () => {
+    const active = document.activeElement;
+    return !!active && !!root.current?.contains(active) && (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement);
+  };
   const open = (icon: CollapsedIconContribution) => {
     window.clearTimeout(leaveTimer.current);
-    if (icon.preview) setPreviewId(icon.id);
+    if (icon.preview && !(writing() && previewId)) setPreviewId(icon.id);
+  };
+  const close = () => {
+    window.clearTimeout(leaveTimer.current);
+    leaveTimer.current = window.setTimeout(() => {
+      if (!writing()) setPreviewId(null);
+    }, LEAVE_DELAY_MS);
   };
   const leave = () => {
-    window.clearTimeout(leaveTimer.current);
-    leaveTimer.current = window.setTimeout(() => setPreviewId(null), LEAVE_DELAY_MS);
+    hovering.current = false;
+    close();
   };
-  const stay = () => window.clearTimeout(leaveTimer.current);
+  const stay = () => {
+    hovering.current = true;
+    window.clearTimeout(leaveTimer.current);
+  };
+  // Clicking away (inside the window, or another window taking focus) ends the writing.
+  useEffect(() => {
+    const blurred = () => !hovering.current && close();
+    window.addEventListener('blur', blurred);
+    return () => window.removeEventListener('blur', blurred);
+  });
 
   const progress = ordered.map((icon) => badges[icon.id]).find((b): b is Extract<Badge, { kind: 'progress' }> => b?.kind === 'progress');
   const pulse = useProgressPulse(progress?.value);
 
   return (
-    <div className={`${styles.root} ${unfold === 'right' ? styles.unfoldRight : ''}`} onMouseLeave={leave} onMouseEnter={stay}>
+    <div
+      ref={root}
+      className={`${styles.root} ${unfold === 'right' ? styles.unfoldRight : ''}`}
+      onMouseLeave={leave}
+      onMouseEnter={stay}
+      onBlur={(event) => {
+        if (!hovering.current && !event.currentTarget.contains(event.relatedTarget as Node | null)) close();
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || !previewId) return;
+        (document.activeElement as HTMLElement | null)?.blur();
+        window.clearTimeout(leaveTimer.current);
+        setPreviewId(null);
+      }}
+    >
       <AnimatePresence>
         {previewId && (
           <motion.div
