@@ -1,4 +1,4 @@
-import type { Quest, ScribeBoard, ScribeRecap, ScribeState, UiBus, UiSound } from '@featherlog/contracts';
+import type { PluginSettings, Quest, ScribeBoard, ScribeRecap, ScribeState, UiBus, UiSound } from '@featherlog/contracts';
 import { useCallback, useEffect, useState } from 'react';
 import styles from './scribe-book.module.css';
 
@@ -24,10 +24,18 @@ function trouble(cause: unknown): string {
   return '没能办到，过会儿再试';
 }
 
-type Props = { bus: UiBus; sound: UiSound };
+type Props = { bus: UiBus; sound: UiSound; settings: PluginSettings };
+
+/** The scribe's own `readNotes` setting (design §15.4), kept current. */
+function useReadNotes(settings: PluginSettings): boolean {
+  const [on, setOn] = useState(() => settings.get<boolean>('readNotes') === true);
+  useEffect(() => settings.onChange((key, value) => key === 'readNotes' && setOn(value === true)), [settings]);
+  return on;
+}
 
 /** The 札记 tab (design §14.6): where 翎 stands, today's first moves, and the recaps. */
-export function ScribeBook({ bus, sound }: Props) {
+export function ScribeBook({ bus, sound, settings }: Props) {
+  const readNotes = useReadNotes(settings);
   const [state, setState] = useState<ScribeState | null>(null);
   const [board, setBoard] = useState<ScribeBoard | null>(null);
   const [quests, setQuests] = useState<Quest[]>([]);
@@ -64,7 +72,7 @@ export function ScribeBook({ bus, sound }: Props) {
             <h1>翎的札记</h1>
             <p>替你执笔的那支翎羽，在这里落款</p>
           </header>
-          <Standing bus={bus} sound={sound} state={state} />
+          <Standing bus={bus} sound={sound} state={state} readNotes={readNotes} />
           {state?.enabled && (
             <Board
               board={board}
@@ -91,7 +99,7 @@ function openSettings(bus: UiBus) {
 }
 
 /** Where 翎 stands, and the one thing that would move it forward. */
-function Standing({ bus, sound, state }: { bus: UiBus; sound: UiSound; state: ScribeState | null }) {
+function Standing({ bus, sound, state, readNotes }: { bus: UiBus; sound: UiSound; state: ScribeState | null; readNotes: boolean }) {
   const [busy, setBusy] = useState(false);
   const [test, setTest] = useState<string>();
   const consent = async (granted: boolean) => {
@@ -144,9 +152,13 @@ function Standing({ bus, sound, state }: { bus: UiBus; sound: UiSound; state: Sc
           <li>任务的标题、任务名、简报、章节与目标</li>
           <li>最近的进展：完成了哪些目标、连续了几天</li>
           <li>你对翎说的话</li>
+          {readNotes && <li>写战报和尾声时，相关任务最近的手记（每个任务至多五则）</li>}
         </ul>
         <p>
-          不会发送随笔；手记只有在设置里打开"让翎读我的手记"后才会发送。翎说过的话、战报和尾声只存在这台电脑上。随时可以在这里撤回同意。
+          {readNotes
+            ? '你打开了"让翎读我的手记"，所以手记也会发送给所配置的接口；随笔永远不会发送。'
+            : '不会发送随笔；手记只有在设置里打开"让翎读我的手记"后才会发送。'}
+          翎说过的话、战报和尾声只存在这台电脑上。随时可以在这里撤回同意。
         </p>
         <div className={styles.actions}>
           <button className={styles.inkButton} disabled={busy} onClick={() => void consent(true)}>
