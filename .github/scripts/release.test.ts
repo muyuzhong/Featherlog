@@ -234,13 +234,14 @@ it.each([403, 422, 500])('propagates API or atomic tag-claim errors (HTTP %s) wi
   expect(lookup).toHaveBeenCalledOnce();
 });
 
-it('redrafts a published release after downstream failure, preserving ID and uploaded assets', () => {
-  const run = vi.fn().mockReturnValueOnce(JSON.stringify([[{ ...draft, draft: false }]])).mockReturnValueOnce('{}');
-  expect(releaseTask('redraft', options, run)).toBe('42');
-  expect(run.mock.calls[1]).toEqual(['api', '-X', 'PATCH', 'repos/owner/repo/releases/42', '-F', 'draft=true']);
-  expect(run.mock.calls.some(args => args.includes('DELETE'))).toBe(false);
-  const stillDraft = vi.fn(() => JSON.stringify([[draft]]));
-  expect(releaseTask('redraft', options, stillDraft)).toBe('42'); expect(stillDraft).toHaveBeenCalledOnce();
-  const changed = vi.fn(() => JSON.stringify([[{ ...draft, id: 99, draft: false }]]));
-  expect(() => releaseTask('redraft', options, changed)).toThrow('Draft changed'); expect(changed).toHaveBeenCalledOnce();
+it.each(['prepare', 'check', 'verify', 'publish'])('%s refuses to mutate an already published release', command => {
+  const run = vi.fn(() => JSON.stringify([[{ ...draft, draft: false }]]));
+  expect(() => releaseTask(command, options, run)).toThrow('already published');
+  expect(run).toHaveBeenCalledExactlyOnceWith('api', '--paginate', '--slurp', 'repos/owner/repo/releases');
+});
+
+it('rejects the removed redraft command before any API call', () => {
+  const run = vi.fn();
+  expect(() => releaseTask('redraft', options, run)).toThrow('Unknown release task');
+  expect(run).not.toHaveBeenCalled();
 });

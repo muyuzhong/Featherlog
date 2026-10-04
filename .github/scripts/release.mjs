@@ -36,12 +36,12 @@ export function expectedAssets(version) {
 
 export function releaseTask(command, { version, tag, repo, id, previousTag }, run = gh) {
   if (tag !== versionTag(version)) throw new Error(`Tag ${tag} does not match v${version}`);
-  if (!['prepare', 'check', 'verify', 'publish', 'redraft'].includes(command)) throw new Error('Unknown release task');
+  if (!['prepare', 'check', 'verify', 'publish'].includes(command)) throw new Error('Unknown release task');
   const api = endpoint => JSON.parse(run('api', '--paginate', '--slurp', endpoint)).flat();
   const find = () => {
     const matches = api(`repos/${repo}/releases`).filter(release => release.tag_name === tag);
     if (matches.length > 1) throw new Error(`Multiple releases for ${tag}; resolve them manually`);
-    if (matches[0] && !matches[0].draft && command !== 'redraft') throw new Error(`${tag} is already published`);
+    if (matches[0] && !matches[0].draft) throw new Error(`${tag} is already published`);
     return matches[0];
   };
   let release = find();
@@ -82,9 +82,6 @@ export function releaseTask(command, { version, tag, repo, id, previousTag }, ru
     if (typeof notes.body !== 'string' || !notes.body.trim()) throw new Error('Generated release notes are empty');
     run('api', '-X', 'PATCH', `repos/${repo}/releases/${release.id}`,
       '-F', 'draft=false', '-f', 'make_latest=true', '-f', `body=${notes.body}`);
-  }
-  if (command === 'redraft' && !release.draft) {
-    run('api', '-X', 'PATCH', `repos/${repo}/releases/${release.id}`, '-F', 'draft=true');
   }
   return String(release.id);
 }

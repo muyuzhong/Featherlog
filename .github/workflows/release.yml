@@ -136,20 +136,6 @@ jobs:
         run: node .github/scripts/aur-pr.mjs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  retain-draft:
-    needs: [prepare, release, verify, aur]
-    if: ${{ always() && needs.prepare.outputs.release_id != '' && (needs.release.result != 'success' || needs.verify.result != 'success' || needs.aur.result != 'success') }}
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ env.RELEASE_TAG }}
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          package-manager-cache: false
-      - name: Keep failed releases in draft
-        run: node .github/scripts/release.mjs redraft
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
+      - name: Report the AUR failure
+        if: ${{ failure() }}
+        run: echo '::error::AUR recipe update or PR creation failed. The published release and its downloads remain available.'
