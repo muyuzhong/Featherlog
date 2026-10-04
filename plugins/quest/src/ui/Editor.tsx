@@ -14,6 +14,7 @@ import {
   type Draft,
   type ObjectiveRow,
 } from './draft';
+import { DateField } from './DateField';
 import { InkBox, InkCheck } from './ink';
 import { capital } from './numerals';
 import type { QuestStore } from './store';
@@ -324,14 +325,7 @@ export function Editor({ store, quest, kind, onDone, seed, scribeNote }: Props) 
         {draft.kind !== 'daily' && (
           <div className={`${styles.field} ${styles.deadline} ${wrong('deadline')}`}>
             <span className={styles.fieldLabel}>限期</span>
-            <input type="date" value={draft.deadline} aria-label="限期" onChange={(e) => change({ deadline: e.target.value })} />
-            {draft.deadline ? (
-              <button className={styles.quiet} onClick={() => change({ deadline: '' })}>
-                不设限期
-              </button>
-            ) : (
-              <span className={styles.quietText}>不设限期</span>
-            )}
+            <DateField value={draft.deadline} label="限期" onChange={(deadline) => change({ deadline })} />
           </div>
         )}
       </div>

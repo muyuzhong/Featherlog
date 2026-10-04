@@ -1,0 +1,158 @@
+.field {
+  flex: 1;
+  min-width: 0;
+}
+
+.value {
+  padding: 2px 2px 3px;
+  border: 0;
+  border-bottom: 1.5px dotted var(--fl-ink-ghost);
+  background: none;
+  font: 15.5px var(--fl-font-hand);
+  color: var(--fl-ink);
+  cursor: pointer;
+}
+
+.value:hover {
+  border-bottom-color: var(--fl-ink-faded);
+}
+
+.empty {
+  color: var(--fl-ink-ghost);
+}
+
+/* The calendar unfolds in the page, so no scroll container can clip it. */
+.calendar {
+  overflow: hidden;
+}
+
+.inner {
+  width: 300px;
+  margin: 10px 0 4px;
+  padding: 12px 14px 10px;
+  border-radius: 8px 14px 10px 12px;
+  background: rgba(90, 58, 26, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(90, 58, 26, 0.12);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font: 16px var(--fl-font-display);
+  letter-spacing: 0.12em;
+  color: var(--fl-ink);
+}
+
+.head button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  font: 20px/1 var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+  cursor: pointer;
+}
+
+.head button:hover {
+  background: var(--fl-ink-wash);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.weekday {
+  padding: 4px 0;
+  text-align: center;
+  font: 13px var(--fl-font-display);
+  color: var(--fl-rubric);
+  opacity: 0.75;
+}
+
+.day {
+  position: relative;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  font: 15px var(--fl-font-hand);
+  color: var(--fl-ink);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.day:hover {
+  background: var(--fl-ink-wash);
+}
+
+.outside {
+  color: var(--fl-ink-ghost);
+}
+
+.past {
+  color: var(--fl-ink-faded);
+}
+
+/* Today: a dashed ring, like a place pencilled in. */
+.today::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  border: 1.2px dashed var(--fl-ink-faded);
+}
+
+/* The chosen day: circled in vermilion. */
+.chosen {
+  color: var(--fl-rubric);
+  font-weight: bold;
+}
+
+.chosen::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 48% 52% 46% 54% / 54% 46% 52% 48%;
+  border: 1.8px solid rgba(138, 43, 29, 0.75);
+  transform: rotate(-8deg);
+}
+
+.quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dotted var(--fl-ink-ghost);
+}
+
+.quick button {
+  padding: 2px 2px;
+  border: 0;
+  background: none;
+  font: 13.5px var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+  cursor: pointer;
+}
+
+.quick button:hover {
+  color: var(--fl-rubric);
+}
+
+.quick .clear {
+  margin-left: auto;
+  color: var(--fl-ink-faded);
+}
+
+.day:focus-visible,
+.quick button:focus-visible,
+.head button:focus-visible,
+.value:focus-visible {
+  outline: 1.5px dashed var(--fl-rubric);
+  outline-offset: 1px;
+}

@@ -410,39 +410,12 @@
 }
 
 .deadline {
+  align-items: flex-start;
   margin-top: 16px;
 }
 
-.deadline input {
-  padding: 2px 0;
-  font-size: 15.5px;
-  color: var(--fl-ink);
-  border-bottom: 1.5px dotted var(--fl-ink-ghost);
-  color-scheme: light;
-}
-
-.deadline input:invalid,
-.deadline input[value=''] {
-  color: var(--fl-ink-ghost);
-}
-
-.deadline input::-webkit-calendar-picker-indicator {
-  opacity: 0.35;
-  cursor: pointer;
-}
-
-.quiet {
-  font: 13.5px var(--fl-font-hand);
-  color: var(--fl-ink-faded);
-}
-
-.quiet:hover {
-  color: var(--fl-rubric);
-}
-
-.quietText {
-  font: 13.5px var(--fl-font-hand);
-  color: var(--fl-ink-ghost);
+.deadline .fieldLabel {
+  padding-top: 3px;
 }
 
 /* A field the draft can't be saved with. */
