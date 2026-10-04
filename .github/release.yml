@@ -1,0 +1,16 @@
+changelog:
+  exclude:
+    labels: [duplicate, invalid, wontfix]
+  categories:
+    - title: 新功能
+      labels: [enhancement]
+    - title: 修复
+      labels: [bug, accessibility]
+    - title: 性能
+      labels: [perf]
+    - title: 文档
+      labels: [documentation, docs]
+    - title: 构建与测试
+      labels: [ci, test, chore, dependencies]
+    - title: 其他改进
+      labels: ['*']
