@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { expectedAssets, releaseTask } from './release.mjs';
+import { claimTag, expectedAssets, releaseTask, versionTag } from './release.mjs';
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -30,7 +30,7 @@ it('creates one draft and reuses it on rerun', () => {
   const gh = vi.fn((...args: string[]) => {
     if (args[1] === '--paginate') return JSON.stringify([created ? [draft] : []]);
     expect(args).toEqual(['api', '-X', 'POST', 'repos/owner/repo/releases',
-      '-f', 'tag_name=v0.1.1', '-f', 'name=v0.1.1', '-F', 'draft=true',
+      '-f', 'tag_name=v0.1.1', '-f', 'target_commitish=v0.1.1', '-f', 'name=v0.1.1', '-F', 'draft=true',
       '-F', 'generate_release_notes=true']);
     created = true;
     return JSON.stringify(draft);
@@ -91,10 +91,14 @@ function verify(items = assets, command = 'verify') {
 it('publishes only the validated draft ID with complete assets and makes it latest', () => {
   const gh = vi.fn().mockReturnValueOnce(JSON.stringify([[draft]]))
     .mockReturnValueOnce(JSON.stringify([assets.slice(0, 7), assets.slice(7)]))
+    .mockReturnValueOnce(JSON.stringify({ body: '## Features\n\n* Reviewed PR #7' }))
     .mockReturnValueOnce(JSON.stringify({ ...draft, draft: false }));
-  expect(releaseTask('publish', options, gh)).toBe('42');
-  expect(gh.mock.calls[2]).toEqual(['api', '-X', 'PATCH', 'repos/owner/repo/releases/42',
-    '-F', 'draft=false', '-f', 'make_latest=true']);
+  expect(releaseTask('publish', { ...options, previousTag: 'v0.1.0' }, gh)).toBe('42');
+  expect(gh.mock.calls[2]).toEqual(['api', '-X', 'POST', 'repos/owner/repo/releases/generate-notes',
+    '-f', 'tag_name=v0.1.1', '-f', 'target_commitish=v0.1.1', '-f', 'configuration_file_path=.github/release.yml',
+    '-f', 'previous_tag_name=v0.1.0']);
+  expect(gh.mock.calls[3]).toEqual(['api', '-X', 'PATCH', 'repos/owner/repo/releases/42',
+    '-F', 'draft=false', '-f', 'make_latest=true', '-f', 'body=## Features\n\n* Reviewed PR #7']);
 });
 
 it('does not publish a changed draft, a prerelease or incomplete assets', () => {
@@ -116,6 +120,20 @@ it('propagates a publication API failure instead of reporting success', () => {
       throw new Error('HTTP 403');
     });
   expect(() => releaseTask('publish', options, gh)).toThrow('HTTP 403');
+});
+
+it('generates categorized notes without a previous tag for a first release and keeps failed notes in draft', () => {
+  const first = vi.fn().mockReturnValueOnce(JSON.stringify([[draft]])).mockReturnValueOnce(JSON.stringify([assets]))
+    .mockReturnValueOnce(JSON.stringify({ body: 'First release' })).mockReturnValueOnce('{}');
+  expect(releaseTask('publish', options, first)).toBe('42');
+  expect(first.mock.calls[2]).not.toContain('previous_tag_name=undefined');
+  expect(first.mock.calls[2]).toContain('configuration_file_path=.github/release.yml');
+  for (const body of ['', null]) {
+    const invalid = vi.fn().mockReturnValueOnce(JSON.stringify([[draft]])).mockReturnValueOnce(JSON.stringify([assets]))
+      .mockReturnValueOnce(JSON.stringify({ body }));
+    expect(() => releaseTask('publish', options, invalid)).toThrow('empty');
+    expect(invalid.mock.calls.some(args => args.includes('PATCH'))).toBe(false);
+  }
 });
 
 it('accepts exactly the 10 expected, fully uploaded assets across API pages', () => {
@@ -181,4 +199,48 @@ it('the installed publisher reuses a draft and cannot create one without a CI ta
   expect(await GitHubPublisher.prototype.getOrCreateRelease.call(publisher)).toEqual(draft);
   expect(await GitHubPublisher.prototype.getOrCreateRelease.call(publisher)).toBeNull();
   expect(publisher.createRelease).not.toHaveBeenCalled();
+});
+
+it.each(['', 'v1.2.3', '1.2', '01.2.3', '1.2.3-beta', '1.2.3\nref=other'])('rejects unsafe or non-stable version %j before networking', version => {
+  const run = vi.fn();
+  expect(() => versionTag(version)).toThrow('stable');
+  expect(() => claimTag({ version, repo: options.repo, sha: 'a'.repeat(40) }, run)).toThrow('stable');
+  expect(run).not.toHaveBeenCalled();
+});
+
+it('claims a missing version at the pushed SHA, ignoring similarly prefixed tags', () => {
+  const run = vi.fn().mockReturnValueOnce(JSON.stringify([[{ ref: 'refs/tags/v0.1.10' }], []])).mockReturnValueOnce('{}');
+  expect(claimTag({ version: options.version, repo: options.repo, sha: 'a'.repeat(40) }, run)).toBe(options.tag);
+  expect(run.mock.calls).toEqual([
+    ['api', '--paginate', '--slurp', 'repos/owner/repo/git/matching-refs/tags/v0.1.1'],
+    ['api', '-X', 'POST', 'repos/owner/repo/git/refs', '-f', 'ref=refs/tags/v0.1.1', '-f', `sha=${'a'.repeat(40)}`],
+  ]);
+});
+
+it('skips an existing tag regardless of release status and refuses missing SHAs', () => {
+  const run = vi.fn(() => JSON.stringify([[], [{ ref: 'refs/tags/v0.1.1' }]]));
+  expect(claimTag({ version: options.version, repo: options.repo, sha: 'a'.repeat(40) }, run)).toBe('');
+  expect(run).toHaveBeenCalledOnce();
+  expect(() => claimTag({ version: options.version, repo: options.repo, sha: 'main' }, run)).toThrow('SHA');
+  expect(run).toHaveBeenCalledOnce();
+});
+
+it.each([403, 422, 500])('propagates API or atomic tag-claim errors (HTTP %s) without retrying or running a release', status => {
+  const run = vi.fn().mockReturnValueOnce('[[]]').mockImplementationOnce(() => { throw new Error(`HTTP ${status}`); });
+  expect(() => claimTag({ version: options.version, repo: options.repo, sha: 'a'.repeat(40) }, run)).toThrow(`HTTP ${status}`);
+  expect(run).toHaveBeenCalledTimes(2);
+  const lookup = vi.fn(() => { throw new Error('HTTP 403'); });
+  expect(() => claimTag({ version: options.version, repo: options.repo, sha: 'a'.repeat(40) }, lookup)).toThrow('HTTP 403');
+  expect(lookup).toHaveBeenCalledOnce();
+});
+
+it('redrafts a published release after downstream failure, preserving ID and uploaded assets', () => {
+  const run = vi.fn().mockReturnValueOnce(JSON.stringify([[{ ...draft, draft: false }]])).mockReturnValueOnce('{}');
+  expect(releaseTask('redraft', options, run)).toBe('42');
+  expect(run.mock.calls[1]).toEqual(['api', '-X', 'PATCH', 'repos/owner/repo/releases/42', '-F', 'draft=true']);
+  expect(run.mock.calls.some(args => args.includes('DELETE'))).toBe(false);
+  const stillDraft = vi.fn(() => JSON.stringify([[draft]]));
+  expect(releaseTask('redraft', options, stillDraft)).toBe('42'); expect(stillDraft).toHaveBeenCalledOnce();
+  const changed = vi.fn(() => JSON.stringify([[{ ...draft, id: 99, draft: false }]]));
+  expect(() => releaseTask('redraft', options, changed)).toThrow('Draft changed'); expect(changed).toHaveBeenCalledOnce();
 });

@@ -2,13 +2,20 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
 permissions:
   contents: write
+  pull-requests: write
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 env:
   electron_config_cache: ${{ github.workspace }}/.electron-cache
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 jobs:
   prepare:
     runs-on: ubuntu-22.04
@@ -16,19 +23,20 @@ jobs:
       release_id: ${{ steps.draft.outputs.release_id }}
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           package-manager-cache: false
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
       - name: Verify version and prepare the draft
         id: draft
         run: node .github/scripts/release.mjs prepare
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: pnpm/action-setup@v6
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
   release:
     needs: prepare
     strategy:
@@ -44,6 +52,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -71,12 +81,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Smoke test the packaged AppImage
+        if: ${{ runner.os == 'Linux' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2
+          node .github/scripts/smoke.mjs packages/shell/dist/Featherlog-*-x86_64.AppImage
   verify:
     needs: [prepare, release]
     if: ${{ always() && needs.prepare.result == 'success' }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -89,6 +108,48 @@ jobs:
       - name: Publish the verified release
         if: ${{ needs.release.result == 'success' }}
         run: node .github/scripts/release.mjs publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
+  aur:
+    needs: [prepare, release, verify]
+    if: ${{ needs.release.result == 'success' && needs.verify.result == 'success' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Regenerate the AUR recipe in Arch Linux
+        run: |
+          docker run --rm -v "$PWD:/workspace" -w /workspace \
+            -e HOST_UID="$(id -u)" -e RELEASE_TAG archlinux:base-devel bash -euc '
+              pacman -Syu --noconfirm --needed curl git
+              useradd -m -u "$HOST_UID" builder
+              su builder -c '\''bash packaging/aur/update.test.sh && bash packaging/aur/update.sh "${RELEASE_TAG#v}"'\''
+            '
+      - name: Propose the AUR update
+        run: node .github/scripts/aur-pr.mjs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  retain-draft:
+    needs: [prepare, release, verify, aur]
+    if: ${{ always() && needs.prepare.outputs.release_id != '' && (needs.release.result != 'success' || needs.verify.result != 'success' || needs.aur.result != 'success') }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Keep failed releases in draft
+        run: node .github/scripts/release.mjs redraft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_ID: ${{ needs.prepare.outputs.release_id }}

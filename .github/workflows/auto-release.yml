@@ -1,0 +1,30 @@
+name: Auto release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  version:
+    runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Claim the new version tag
+        id: tag
+        run: node .github/scripts/release.mjs tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  release:
+    needs: version
+    if: ${{ needs.version.outputs.tag != '' }}
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.version.outputs.tag }}
+    secrets: inherit
