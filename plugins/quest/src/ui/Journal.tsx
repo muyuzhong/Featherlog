@@ -45,7 +45,12 @@ export function Journal({ store, scribe, host }: Props) {
     if (!host) return;
     const take = (params: Json | undefined) => {
       const draft = draftParams(params);
-      if (draft) propose(draft);
+      if (draft) return propose(draft);
+      // Another tab (翎's board) can open the journal on a quest.
+      if (typeof params === 'object' && params !== null && !Array.isArray(params) && typeof params.questId === 'string') {
+        setWriting(null);
+        setSelectedId(params.questId);
+      }
     };
     take(host.params);
     return host.onParamsChange(take);

@@ -1,0 +1,316 @@
+.book,
+.book * {
+  box-sizing: border-box;
+}
+
+/* The same open book as the journal: two pages and a fold. */
+.book {
+  position: absolute;
+  inset: 2px 26px 22px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  max-width: 1240px;
+  max-height: 780px;
+  margin: 0 auto;
+}
+
+.pageWrap {
+  min-width: 0;
+  min-height: 0;
+  filter: drop-shadow(0 14px 20px rgba(8, 4, 1, 0.5)) drop-shadow(0 2px 3px rgba(8, 4, 1, 0.45));
+}
+
+.pageWrap:first-child {
+  margin-right: -8px;
+}
+
+.pageWrap:nth-child(2) {
+  margin-left: -8px;
+}
+
+.page {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.left {
+  padding: 44px 54px 30px 50px;
+}
+
+.right {
+  padding: 40px 50px 30px 60px;
+  background-position: 0 0, 377px 211px;
+}
+
+.gutter {
+  position: absolute;
+  top: 1%;
+  bottom: 1%;
+  left: 50%;
+  width: 90px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, rgba(70, 40, 14, 0.1) 30%, rgba(50, 26, 8, 0.34) 47%, rgba(30, 14, 4, 0.5) 50%, rgba(50, 26, 8, 0.34) 53%, rgba(70, 40, 14, 0.1) 70%, transparent 100%);
+  mix-blend-mode: multiply;
+}
+
+.head {
+  text-align: center;
+}
+
+.head h1 {
+  margin: 0;
+  font: 32px/1.2 var(--fl-font-title);
+  font-weight: normal;
+  letter-spacing: 0.4em;
+  padding-left: 0.4em;
+  color: var(--fl-ink-scribe);
+}
+
+.head p {
+  margin: 8px 0 22px;
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+/* ---- standing ---- */
+.card {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 8px 14px 10px 12px;
+  background: rgba(39, 54, 79, 0.05);
+}
+
+.say {
+  margin: 0;
+  font: 15.5px/1.8 var(--fl-font-hand);
+  color: var(--fl-ink-scribe);
+}
+
+.endpoint {
+  display: block;
+  font-size: 13px;
+  color: var(--fl-ink-scribe-faded);
+  word-break: break-all;
+}
+
+.notice h2 {
+  margin: 0;
+  font: 18px var(--fl-font-display);
+  letter-spacing: 0.3em;
+  color: var(--fl-ink-scribe);
+}
+
+.notice p,
+.notice li {
+  margin: 0;
+  font: 14.5px/1.8 var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+}
+
+.notice b {
+  font-weight: normal;
+  color: var(--fl-ink-scribe);
+  word-break: break-all;
+}
+
+.notice ul {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.inkButton {
+  justify-self: start;
+  padding: 5px 16px 6px;
+  border: 0;
+  border-radius: 40% 46% 42% 48% / 60% 52% 58% 50%;
+  background: none;
+  box-shadow: inset 0 0 0 1.4px rgba(39, 54, 79, 0.55);
+  font: 15px var(--fl-font-hand);
+  letter-spacing: 0.1em;
+  color: var(--fl-ink-scribe);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.inkButton:hover:not(:disabled) {
+  background: rgba(39, 54, 79, 0.08);
+}
+
+.inkButton:disabled,
+.quietButton:disabled,
+.withdraw:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.quietButton,
+.withdraw {
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  font: 13.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  cursor: pointer;
+}
+
+.withdraw {
+  justify-self: end;
+}
+
+.quietButton:hover,
+.withdraw:hover {
+  color: var(--fl-rubric);
+}
+
+.test {
+  font: 13.5px var(--fl-font-hand);
+  color: var(--fl-ink-scribe);
+}
+
+.usage {
+  margin: 0;
+  font: 13px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.quiet {
+  margin: 0;
+  font: 14.5px/1.8 var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.warn {
+  color: var(--fl-rubric);
+}
+
+/* ---- board ---- */
+.section {
+  margin-top: 24px;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 22px 0 8px;
+  font: 15px var(--fl-font-display);
+  font-weight: normal;
+  color: var(--fl-rubric);
+  letter-spacing: 0.4em;
+}
+
+.sectionTitle::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(138, 43, 29, 0.28), transparent);
+  transform: translateY(-4px);
+}
+
+.board {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  counter-reset: move;
+}
+
+.board li {
+  counter-increment: move;
+}
+
+.board button {
+  position: relative;
+  width: 100%;
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px 8px 34px;
+  border: 0;
+  border-radius: 8px 14px 10px 12px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.25s;
+}
+
+.board button::before {
+  content: counter(move, cjk-ideographic);
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  font: 16px var(--fl-font-display);
+  color: var(--fl-rubric);
+}
+
+.board button:hover {
+  background: var(--fl-ink-wash);
+}
+
+.boardName {
+  font: 17px var(--fl-font-display);
+  letter-spacing: 0.08em;
+  color: var(--fl-ink);
+}
+
+.boardObjective {
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+}
+
+.boardReason {
+  font: 14px/1.7 var(--fl-font-hand);
+  color: var(--fl-ink-scribe);
+}
+
+/* ---- recaps ---- */
+.recapTitle {
+  margin: 0 0 12px;
+  font: 26px var(--fl-font-title);
+  font-weight: normal;
+  letter-spacing: 0.3em;
+  color: var(--fl-ink-scribe);
+}
+
+.recapText {
+  margin: 0;
+  font: 16px/2 var(--fl-font-hand);
+  color: var(--fl-ink-scribe);
+  text-indent: 2em;
+  white-space: pre-wrap;
+}
+
+.recapEmpty {
+  display: grid;
+  gap: 12px;
+}
+
+.past {
+  display: grid;
+  gap: 14px;
+}
+
+.past h3 {
+  margin: 0 0 4px;
+  font: 14px var(--fl-font-display);
+  letter-spacing: 0.2em;
+  color: var(--fl-ink-soft);
+}
+
+.past p {
+  margin: 0;
+  font: 14.5px/1.85 var(--fl-font-hand);
+  color: var(--fl-ink-scribe);
+  white-space: pre-wrap;
+}

@@ -15,7 +15,8 @@
     "@featherlog/shell": "workspace:*",
     "motion": "^13.4.4",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "@featherlog/plugin-scribe": "workspace:*"
   },
   "devDependencies": {
     "@featherlog/contracts": "workspace:*",

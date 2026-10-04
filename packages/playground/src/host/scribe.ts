@@ -1,4 +1,4 @@
-import type { ObjectiveDraft, QuestInput, ScribeEpilogue, ScribeLine, ScribeState } from '@featherlog/contracts';
+import type { ObjectiveDraft, QuestInput, ScribeBoard, ScribeEpilogue, ScribeLine, ScribeRecap, ScribeState } from '@featherlog/contracts';
 import type { Kernel } from '@featherlog/kernel';
 
 /*
@@ -17,11 +17,14 @@ const pick = <T,>(list: readonly T[]) => list[Math.floor(Math.random() * list.le
 export function createFakeScribe(kernel: Kernel) {
   const bus = kernel.createBus('scribe');
   let ready = true;
+  // Starts unconsented, so the playground shows the notice of design §14.5 first.
+  let consented = false;
   const lines: ScribeLine[] = [];
+  const recaps: ScribeRecap[] = [];
   const epilogues = new Map<string, ScribeEpilogue>();
   const state = (): ScribeState => ({
     enabled: true,
-    consented: true,
+    consented,
     configured: ready,
     endpoint: 'https://api.example.com/v1',
     usage: { month: new Date().toISOString().slice(0, 7), calls: lines.length, inputTokens: 0, outputTokens: 0, unreported: 0 },
@@ -35,10 +38,14 @@ export function createFakeScribe(kernel: Kernel) {
   const notReady = () => Object.assign(new Error('Not configured'), { code: 'scribe/not-configured' });
 
   bus.handle('scribe/state', () => state());
-  bus.handle('scribe/consent', () => state());
+  bus.handle('scribe/consent', ({ granted }) => {
+    consented = granted;
+    bus.emit('scribe/state-changed', { state: state() });
+    return state();
+  });
   bus.handle('scribe/test', () => (ready ? { ok: true as const, model: 'demo-model', ms: 420 } : { ok: false as const, code: 'scribe/not-configured' as const, message: '未配置' }));
   bus.handle('scribe/draft-quest', async ({ text }) => {
-    if (!ready) throw notReady();
+    if (!ready || !consented) throw notReady();
     await new Promise((resolve) => setTimeout(resolve, 1200));
     const goal = text.replace(/^(这个月|这周|今天)?(把|要)?/, '').trim() || text;
     const input: QuestInput = {
@@ -55,25 +62,62 @@ export function createFakeScribe(kernel: Kernel) {
     return { input, note: '按你说的，我分了三章。哪里不合适，直接改。' };
   });
   bus.handle('scribe/split-objective', async () => {
-    if (!ready) throw notReady();
+    if (!ready || !consented) throw notReady();
     await new Promise((resolve) => setTimeout(resolve, 900));
     const objectives: ObjectiveDraft[] = [{ text: '先花十分钟读懂题意' }, { text: '写下第一版，哪怕很粗' }, { text: '对照着改一遍' }];
     return { objectives, note: '这一步太大了，拆成三小步，先从最容易的开始。' };
   });
-  bus.handle('scribe/board', () => ({ periodKey: new Date().toISOString().slice(0, 10), items: [], origin: 'builtin' as const }));
-  bus.handle('scribe/recap', () => ({ recap: null }));
-  bus.handle('scribe/recaps', () => ({ recaps: [] }));
+  const periodKey = () => new Date().toISOString().slice(0, 10);
+  bus.handle('scribe/board', async (): Promise<ScribeBoard> => {
+    const { quests } = await bus.request('quest/list', {});
+    const active = quests.filter((q) => q.status === 'active');
+    const tracked = active.find((q) => q.tracked);
+    const due = active.filter((q) => q.kind === 'side' && q.derived.dueToday && q.id !== tracked?.id);
+    const daily = active.find((q) => q.kind === 'daily' && !q.cycle?.done);
+    const items: ScribeBoard['items'] = [];
+    if (tracked) {
+      const objective = tracked.chapters[tracked.derived.chapterIndex]?.objectives[tracked.derived.objectiveIndex];
+      items.push({ questId: tracked.id, ...(objective ? { objectiveId: objective.id } : {}), reason: '正追着的这条线，趁热往前推一步。' });
+    }
+    for (const q of due.slice(0, 1)) items.push({ questId: q.id, reason: '今天到期，先了了它，心里轻松。' });
+    if (daily) items.push({ questId: daily.id, reason: '每日的小事，十分钟就够。' });
+    return { periodKey: periodKey(), items: items.slice(0, 3), origin: ready && consented ? 'model' : 'builtin' };
+  });
+  bus.handle('scribe/recap', async ({ write }) => {
+    const existing = recaps.find((r) => r.periodKey === periodKey()) ?? null;
+    if (existing || !write) return { recap: existing };
+    if (!ready || !consented) throw notReady();
+    await new Promise((resolve) => setTimeout(resolve, 1400));
+    const recap: ScribeRecap = {
+      periodKey: periodKey(),
+      text: '今天你在「内存之王」里又往前走了一步，持久化这一章只剩最后几道坎。每日委托完成了一半，晨跑和冥想都没落下。明天先把 AOF 重写动手试一遍，趁记忆还热。',
+      writtenAt: new Date().toISOString(),
+    };
+    recaps.unshift(recap);
+    bus.emit('scribe/recap-written', { recap });
+    return { recap };
+  });
+  bus.handle('scribe/recaps', () => ({
+    recaps: [
+      ...recaps,
+      {
+        periodKey: '2026-10-02',
+        text: '昨天把复制的三种拓扑读完了，笔记写得工整。断了一天晨跑，不碍事，今天接着来。',
+        writtenAt: '2026-10-02T14:00:00.000Z',
+      },
+    ],
+  }));
   bus.handle('scribe/epilogue', ({ questId }) => ({ epilogue: epilogues.get(questId) ?? null }));
   bus.handle('scribe/lines', ({ questId, limit }) => ({ lines: lines.filter((l) => !questId || l.questId === questId).slice(0, limit ?? 20) }));
 
   bus.on('quest/objective-completed', ({ quest }) => {
-    if (ready) say('objective', pick(LINES.objective), quest.id);
+    if (ready && consented) say('objective', pick(LINES.objective), quest.id);
   });
   bus.on('quest/chapter-completed', ({ quest }) => {
-    if (ready) say('chapter', pick(LINES.chapter), quest.id);
+    if (ready && consented) say('chapter', pick(LINES.chapter), quest.id);
   });
   bus.on('quest/completed', ({ quest }) => {
-    if (!ready || quest.kind === 'daily') return;
+    if (!ready || !consented || quest.kind === 'daily') return;
     say('quest', pick(LINES.quest), quest.id);
     const epilogue: ScribeEpilogue = {
       questId: quest.id,

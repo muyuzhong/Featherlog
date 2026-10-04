@@ -36,7 +36,7 @@ export function createUiBus(transport: BusTransport, source: string): UiBus & { 
   const listeners = new Map<string, Set<(payload: unknown, envelope: Envelope) => unknown>>();
   const pending = new Map<string, Pending>();
 
-  const envelope = (kind: Envelope['kind'], type: string, payload: unknown, causedBy?: string): Envelope => ({
+  const envelope = (kind: Envelope['kind'], type: string, payload: unknown, causedBy?: string, timeoutMs?: number): Envelope => ({
     v: 1,
     kind,
     type,
@@ -45,6 +45,8 @@ export function createUiBus(transport: BusTransport, source: string): UiBus & { 
     time: Date.now(),
     payload,
     ...(causedBy === undefined ? {} : { causedBy }),
+    // The kernel in the main process enforces the timeout, so it travels with the request.
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
   });
 
   const stopDelivery = transport.onDeliver((message) => {
@@ -92,7 +94,7 @@ export function createUiBus(transport: BusTransport, source: string): UiBus & { 
     },
 
     request<K extends RequestType>(type: K, payload: unknown, options?: { timeoutMs?: number; causedBy?: string }) {
-      const message = envelope('request', type, payload, options?.causedBy);
+      const message = envelope('request', type, payload, options?.causedBy, options?.timeoutMs);
       return new Promise((resolve, reject) => {
         const timer = window.setTimeout(() => {
           pending.delete(message.id);

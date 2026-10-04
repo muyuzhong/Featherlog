@@ -31,6 +31,12 @@ export interface Envelope<P = unknown> {
   /** Id of the message that caused this one. Used for tracing and undo. */
   causedBy?: string;
   /**
+   * Requests only: how long the requester will wait, in ms. Lets a request that
+   * arrives from a window (design §6.3) outlive the 5 s default, e.g. a model call;
+   * the kernel caps it (design §4.3).
+   */
+  timeoutMs?: number;
+  /**
    * Set by the kernel on an event emitted while handling a request: the `source`
    * of that request. Lets a listener tell whose action an event reports (e.g. the
    * scribe answers the player's strokes, not its own) without seeing the request.

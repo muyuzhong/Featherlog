@@ -19,6 +19,9 @@ export type ScribeView = {
 export const canAsk = (view: ScribeView) =>
   !!view.state && view.state.enabled && view.state.consented && view.state.configured && !view.state.paused;
 
+/** A model call can take up to 30 s, and a draft may be retried once after validation (design §14.4). */
+const MODEL_TIMEOUT_MS = 65_000;
+
 export function createScribeLink(bus: UiBus) {
   let view: ScribeView = { present: false, state: null, latest: null };
   const listeners = new Set<() => void>();
@@ -45,9 +48,10 @@ export function createScribeLink(bus: UiBus) {
       return () => listeners.delete(listener);
     },
     getSnapshot: () => view,
-    draft: (text: string): Promise<{ input: QuestInput; note?: string }> => bus.request('scribe/draft-quest', { text }),
+    draft: (text: string): Promise<{ input: QuestInput; note?: string }> =>
+      bus.request('scribe/draft-quest', { text }, { timeoutMs: MODEL_TIMEOUT_MS }),
     split: (questId: string, objectiveId: string): Promise<{ objectives: ObjectiveDraft[]; note?: string }> =>
-      bus.request('scribe/split-objective', { questId, objectiveId }),
+      bus.request('scribe/split-objective', { questId, objectiveId }, { timeoutMs: MODEL_TIMEOUT_MS }),
     lines: async (questId: string, limit = 2): Promise<ScribeLine[]> =>
       (await bus.request('scribe/lines', { questId, limit })).lines,
     epilogue: async (questId: string): Promise<ScribeEpilogue | null> => (await bus.request('scribe/epilogue', { questId })).epilogue,

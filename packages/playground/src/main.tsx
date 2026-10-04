@@ -1,8 +1,8 @@
 import type { MainContext, PluginManifest } from '@featherlog/contracts';
 import { createKernel, type MainPlugin } from '@featherlog/kernel';
 import questManifest from '@featherlog/plugin-quest/manifest.json';
-// The scribe's package lands with its main half; until then only its manifest (settings, tab) is shown.
-import scribeManifestJson from '../../../plugins/scribe/manifest.json';
+import scribeManifestJson from '@featherlog/plugin-scribe/manifest.json';
+import { setup as scribeUi } from '@featherlog/plugin-scribe/ui';
 import { setup as questMain } from '@featherlog/plugin-quest/main';
 import { setup as questUi } from '@featherlog/plugin-quest/ui';
 import { applyTheme, setPaper, type Paper } from '@featherlog/shell/renderer';
@@ -29,7 +29,7 @@ const scribeManifest = scribeManifestJson as PluginManifest;
 const mainPlugins: MainPlugin[] = [{ manifest, setup: questMain as (ctx: MainContext) => Promise<void> }];
 const uiPlugins: UiPlugin[] = [
   { manifest, setup: questUi },
-  { manifest: scribeManifest, setup: () => {} },
+  { manifest: scribeManifest, setup: scribeUi },
 ];
 
 const settings = createSettings([manifest, scribeManifest]);
