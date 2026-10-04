@@ -1,6 +1,7 @@
 import type { Json, QuestInput, UiContext } from '@featherlog/contracts';
 import { createRoot } from 'react-dom/client';
 import { Journal } from './Journal';
+import { createNotesLink } from './notes-link';
 import { createScribeLink } from './scribe-link';
 import { createQuestStore } from './store';
 import { TrackerNote } from './TrackerNote';
@@ -9,6 +10,7 @@ import { TrackerNote } from './TrackerNote';
 export function setup(ctx: UiContext): void {
   const store = createQuestStore(ctx.bus, ctx.sound);
   const scribe = createScribeLink(ctx.bus);
+  const notes = createNotesLink(ctx.bus, ctx.sound);
   ctx.onDispose(() => store.dispose());
   ctx.onDispose(() => scribe.dispose());
   const openWithDraft = (input: QuestInput, note?: string) =>
@@ -18,7 +20,7 @@ export function setup(ctx: UiContext): void {
 
   ctx.slots.provide('panel.tab', 'quest/journal', (el, host) => {
     const root = createRoot(el);
-    root.render(<Journal store={store} scribe={scribe} host={host} />);
+    root.render(<Journal store={store} scribe={scribe} notes={notes} host={host} />);
     return () => root.unmount();
   });
 

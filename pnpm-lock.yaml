@@ -34,6 +34,9 @@ importers:
       '@featherlog/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@featherlog/plugin-notes':
+        specifier: workspace:*
+        version: link:../../plugins/notes
       '@featherlog/plugin-quest':
         specifier: workspace:*
         version: link:../../plugins/quest
@@ -131,6 +134,16 @@ importers:
         version: 7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.33.0)
 
   plugins/notes:
+    dependencies:
+      motion:
+        specifier: ^13.4.4
+        version: 13.4.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      react:
+        specifier: ^19.3.0
+        version: 19.3.0
+      react-dom:
+        specifier: ^19.3.0
+        version: 19.3.0(react@19.3.0)
     devDependencies:
       '@featherlog/contracts':
         specifier: workspace:*
@@ -138,6 +151,12 @@ importers:
       '@featherlog/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.3.0
+        version: 19.3.0(@types/react@19.3.0)
 
   plugins/quest:
     dependencies:

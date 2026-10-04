@@ -8,6 +8,8 @@ const PATHS: Record<string, string> = {
   feather:
     'M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z M16 8 2 22 M17.5 15H9',
   x: 'M18 6 6 18 M6 6l12 12',
+  'pen-line':
+    'M12 20h9 M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z',
 };
 
 export function InkIcon({ name, size = 20, strokeWidth = 1.7 }: { name: string; size?: number; strokeWidth?: number }) {

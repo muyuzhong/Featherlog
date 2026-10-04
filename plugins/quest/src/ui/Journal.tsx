@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 import type { Json, PanelTabHost, QuestInput, QuestKind } from '@featherlog/contracts';
 import { draftFromInput, draftFromQuest, withSplit, type Draft } from './draft';
+import type { NotesLink } from './notes-link';
 import type { ScribeLink } from './scribe-link';
 import { DetailPage } from './DetailPage';
 import { Editor } from './Editor';
@@ -23,9 +24,9 @@ function draftParams(params: Json | undefined): { input: QuestInput; note?: stri
   return { input: draft as unknown as QuestInput, ...(typeof params.note === 'string' ? { note: params.note } : {}) };
 }
 
-type Props = { store: QuestStore; scribe: ScribeLink; host?: PanelTabHost };
+type Props = { store: QuestStore; scribe: ScribeLink; notes: NotesLink; host?: PanelTabHost };
 
-export function Journal({ store, scribe, host }: Props) {
+export function Journal({ store, scribe, notes, host }: Props) {
   const { loaded, quests } = useQuests(store);
   const [selectedId, setSelectedId] = useState<string>();
   const [moment, setMoment] = useState<Moment | null>(null);
@@ -144,6 +145,7 @@ export function Journal({ store, scribe, host }: Props) {
                       store={store}
                       today={today}
                       scribe={scribe}
+                      notes={notes}
                       onEdit={() => edit(selected.id)}
                       onSplit={(objectiveId, steps, note) =>
                         setWriting({

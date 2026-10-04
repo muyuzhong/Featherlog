@@ -1,0 +1,148 @@
+/* A quest's 手记 on its page (design §15.3). */
+.notes {
+  margin-top: 18px;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 0 6px;
+  font: 14px var(--fl-font-display);
+  color: var(--fl-rubric);
+  letter-spacing: 0.35em;
+}
+
+.head::after {
+  content: '';
+  order: 1;
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(138, 43, 29, 0.28), transparent);
+  transform: translateY(-4px);
+}
+
+.head button {
+  order: 2;
+  border: 0;
+  background: none;
+  font: 13.5px var(--fl-font-hand);
+  letter-spacing: 0.04em;
+  color: var(--fl-ink-faded);
+  cursor: pointer;
+}
+
+.head button:hover {
+  color: var(--fl-rubric);
+}
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.composer textarea,
+.editing {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 1.5px dotted var(--fl-ink-ghost);
+  background: none;
+  outline: none;
+  resize: none;
+  field-sizing: content;
+  min-height: 2em;
+  max-height: 12em;
+  font: 15px/1.8 var(--fl-font-hand);
+  color: var(--fl-ink);
+}
+
+.composer textarea::placeholder {
+  color: var(--fl-ink-ghost);
+}
+
+.composer textarea:focus,
+.editing:focus {
+  border-bottom-style: solid;
+  border-bottom-color: var(--fl-ink-faded);
+}
+
+.write {
+  flex: none;
+  padding: 3px 12px 4px;
+  border: 0;
+  border-radius: 40% 46% 42% 48% / 60% 52% 58% 50%;
+  background: none;
+  box-shadow: inset 0 0 0 1.3px rgba(138, 43, 29, 0.55);
+  font: 14px var(--fl-font-display);
+  letter-spacing: 0.2em;
+  color: var(--fl-rubric);
+  cursor: pointer;
+}
+
+.write:disabled {
+  opacity: 0.5;
+}
+
+.trouble {
+  margin: 4px 0 0;
+  font: 13px var(--fl-font-hand);
+  color: var(--fl-rubric);
+}
+
+.list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.entry {
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid rgba(90, 58, 26, 0.16);
+}
+
+.when {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font: 12.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.tools {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.entry:hover .tools,
+.entry:focus-within .tools {
+  opacity: 1;
+}
+
+.tools button {
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  font: 12.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  cursor: pointer;
+}
+
+.tools button:hover,
+.tools .confirming {
+  color: var(--fl-rubric);
+}
+
+.text {
+  margin: 2px 0 0;
+  font: 15px/1.8 var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+  white-space: pre-wrap;
+}

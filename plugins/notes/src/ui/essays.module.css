@@ -1,0 +1,323 @@
+.book,
+.book * {
+  box-sizing: border-box;
+}
+
+/* The same open book as the journal. */
+.book {
+  position: absolute;
+  inset: 2px 26px 22px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  max-width: 1240px;
+  max-height: 780px;
+  margin: 0 auto;
+}
+
+.pageWrap {
+  min-width: 0;
+  min-height: 0;
+  filter: drop-shadow(0 14px 20px rgba(8, 4, 1, 0.5)) drop-shadow(0 2px 3px rgba(8, 4, 1, 0.45));
+}
+
+.pageWrap:first-child {
+  margin-right: -8px;
+}
+
+.pageWrap:nth-child(2) {
+  margin-left: -8px;
+}
+
+.page {
+  height: 100%;
+  min-height: 0;
+}
+
+.left {
+  display: flex;
+  flex-direction: column;
+  padding: 44px 54px 26px 50px;
+}
+
+.right {
+  padding: 40px 50px 26px 60px;
+  background-position: 0 0, 377px 211px;
+}
+
+.gutter {
+  position: absolute;
+  top: 1%;
+  bottom: 1%;
+  left: 50%;
+  width: 90px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, rgba(70, 40, 14, 0.1) 30%, rgba(50, 26, 8, 0.34) 47%, rgba(30, 14, 4, 0.5) 50%, rgba(50, 26, 8, 0.34) 53%, rgba(70, 40, 14, 0.1) 70%, transparent 100%);
+  mix-blend-mode: multiply;
+}
+
+.head {
+  text-align: center;
+}
+
+.head h1 {
+  margin: 0;
+  font: 32px/1.2 var(--fl-font-title);
+  font-weight: normal;
+  letter-spacing: 0.55em;
+  padding-left: 0.55em;
+}
+
+.head p {
+  margin: 8px 0 18px;
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+/* ---- index ---- */
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.newPage {
+  flex: none;
+  padding: 4px 6px;
+  border: 0;
+  background: none;
+  font: 15px var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+  cursor: pointer;
+}
+
+.newPage:hover {
+  color: var(--fl-rubric);
+}
+
+.search {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 2px;
+  border: 0;
+  border-bottom: 1.5px dotted var(--fl-ink-ghost);
+  background: none;
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink);
+  outline: none;
+}
+
+.search::placeholder {
+  color: var(--fl-ink-ghost);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 4px;
+  font: 13.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  cursor: pointer;
+}
+
+.toggle input {
+  accent-color: var(--fl-rubric);
+}
+
+.empty {
+  margin: 30px 0 0;
+  font: 15px/1.8 var(--fl-font-hand);
+  color: var(--fl-ink-ghost);
+  text-align: center;
+}
+
+.index {
+  flex: 1;
+  min-height: 0;
+  margin-top: 8px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.dayGroup {
+  margin-bottom: 10px;
+}
+
+.day {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 12px 0 4px;
+  font: 14px var(--fl-font-display);
+  font-weight: normal;
+  color: var(--fl-rubric);
+  letter-spacing: 0.3em;
+}
+
+.day::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(138, 43, 29, 0.28), transparent);
+  transform: translateY(-4px);
+}
+
+.entry {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px 14px 10px 12px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.25s;
+}
+
+.entry:hover {
+  background: var(--fl-ink-wash);
+}
+
+.entryOn,
+.entryOn:hover {
+  background: linear-gradient(90deg, rgba(90, 58, 26, 0.13), rgba(90, 58, 26, 0.04));
+}
+
+.entryText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 15.5px var(--fl-font-hand);
+  color: var(--fl-ink);
+}
+
+.entryMeta {
+  flex: none;
+  font: 12.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.entryMeta em {
+  margin-right: 6px;
+  font-style: normal;
+  color: var(--fl-rubric);
+}
+
+.more {
+  display: block;
+  margin: 8px auto 0;
+  border: 0;
+  background: none;
+  font: 13.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  cursor: pointer;
+}
+
+/* ---- the open page ---- */
+.sheet {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.sheetHead {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font: 14px var(--fl-font-hand);
+  color: var(--fl-rubric);
+  letter-spacing: 0.15em;
+}
+
+.sheetHead small {
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  color: var(--fl-ink-faded);
+}
+
+.questLink {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 13.5px var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+  cursor: pointer;
+}
+
+.questLink:hover {
+  color: var(--fl-rubric);
+}
+
+/* Written on ruled lines, one per line-height. */
+.writing {
+  flex: 1;
+  min-height: 0;
+  margin-top: 14px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  font: 16.5px/2 var(--fl-font-hand);
+  color: var(--fl-ink);
+  background-color: transparent;
+  background-image: linear-gradient(transparent calc(2em - 1.5px), rgba(42, 28, 17, 0.13) calc(2em - 1.5px), rgba(42, 28, 17, 0.13) 2em);
+  background-size: 100% 2em;
+  background-attachment: local;
+  scrollbar-width: none;
+}
+
+.writing::placeholder {
+  color: var(--fl-ink-ghost);
+}
+
+.sheetFoot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+}
+
+.status {
+  font: 13px var(--fl-font-hand);
+  color: var(--fl-ink-ghost);
+}
+
+.failed {
+  color: var(--fl-rubric);
+}
+
+.tear {
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  font: 13.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  cursor: pointer;
+}
+
+.tear:hover,
+.confirming {
+  color: var(--fl-rubric);
+}
+
+.blank {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin-top: 40%;
+  font: 16px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.blank p {
+  margin: 0;
+}
