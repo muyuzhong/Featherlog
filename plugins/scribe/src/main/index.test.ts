@@ -7,6 +7,7 @@ import type {
 import { setup } from './index';
 import type { ModelClient, ModelReply } from './model';
 import { failure } from './model';
+import * as modelAdapters from './model';
 import { PERSONA } from './writing';
 
 const local = (day = '2026-10-03', hour = 12, minute = 0) => new Date(`${day}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`).getTime();
@@ -18,7 +19,7 @@ function quest(patch: Partial<Quest> = {}): Quest {
 }
 async function fixture(options: {
   time?: number; enabled?: boolean; consent?: boolean; settings?: Record<string, Json>;
-  key?: string | null; data?: Map<string, Json>; quests?: Quest[]; noQuest?: boolean; defaultFilter?: boolean;
+  key?: string | null; data?: Map<string, Json>; quests?: Quest[]; noQuest?: boolean;
   client?: ModelClient;
 } = {}) {
   let time = options.time ?? local();
@@ -42,11 +43,12 @@ async function fixture(options: {
     async keys() { return [...data.keys()]; }, async delete(name) { data.delete(name); },
   };
   const model = vi.fn<ModelClient>(options.client ?? (async () => ({ text: '此步已过。', usage: { inputTokens: 10, outputTokens: 4 } })));
+  vi.spyOn(modelAdapters, 'openAIClient').mockReturnValue(model);
+  vi.spyOn(modelAdapters, 'anthropicClient').mockReturnValue(model);
   const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const kernel = createKernel({ clock, log, development: true, createServices: () => ({ clock, log, storage, settings,
     secrets: { get: async () => key, onChange(listener) { secretListeners.add(listener); return () => { secretListeners.delete(listener); }; } } }) });
   const user = kernel.createBus('quest');
-  const shell = kernel.createBus('shell');
   const messages: Envelope[] = [];
   kernel.observe(message => messages.push(message));
   if (!options.noQuest) {
@@ -61,9 +63,7 @@ async function fixture(options: {
       return { periodKey: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`, dayStartHour: hour };
     });
   }
-  await kernel.load([{ manifest: { id: 'scribe', name: '翎', version: '0.1.0' }, setup: ctx => setup(ctx, {
-    client: model, ...(!options.defaultFilter ? { isLocalAction: envelope => envelope.causedBy === 'user' } : {}),
-  }) }]);
+  await kernel.load([{ manifest: { id: 'scribe', name: '翎', version: '0.1.0' }, setup }]);
   const request = <K extends keyof ScribeRequests>(type: K, payload: RequestPayload<K>) =>
     user.request(type, payload, { timeoutMs: 65_000 }) as Promise<ResponseData<K>>;
   const drain = async () => { for (let i = 0; i < 15; i++) await request('scribe/state', {}); };
@@ -74,7 +74,9 @@ async function fixture(options: {
   }
   const emit = <K extends keyof QuestEvents>(type: K, payload: QuestEvents[K], actor = 'user') => {
     if ('quest' in payload) list = list.map(item => item.id === payload.quest.id ? payload.quest : item);
-    user.emit(type, payload as EventPayload<K>, { causedBy: actor });
+    kernel.inject({ v: 1, kind: 'event', type, payload: payload as EventPayload<K>,
+      source: 'quest', id: crypto.randomUUID(), time,
+      ...(actor ? { origin: actor === 'user' ? 'quest' : actor } : {}) });
   };
   return { kernel, request, model, log, timers, messages, data, storage, failed, drain, emit,
     lines: async () => (await request('scribe/lines', {})).lines,
@@ -89,7 +91,11 @@ async function fixture(options: {
       for (const listener of settingListeners) listener(name, value);
     },
     secret(value: string | undefined) { key = value; for (const listener of secretListeners) listener('apiKey'); },
-    open(actor = 'user', view: 'panel' | 'collapsed' = 'panel') { shell.emit('shell/view-changed', { view }, { causedBy: actor }); },
+    open(actor = 'user', view: 'panel' | 'collapsed' = 'panel') {
+      kernel.inject({ v: 1, kind: 'event', type: 'shell/view-changed', payload: { view },
+        source: 'shell', id: crypto.randomUUID(), time,
+        ...(actor ? { origin: actor === 'user' ? 'quest' : actor } : {}) });
+    },
   };
 }
 const draftReply = (input: unknown = { kind: 'side', title: '整理桌面' }): ModelReply => ({ text: JSON.stringify({ input, note: '由你落笔。' }) });
@@ -291,13 +297,14 @@ describe('drafting and splitting never write quests', () => {
 });
 
 describe('event provenance, talkativeness and night hours', () => {
-  it('ignores self, external, unattributed events and defaults to no reactions without a host filter', async () => {
+  it('ignores self, external, other plugins and unattributed events using only origin', async () => {
     const f = await fixture();
-    for (const actor of ['scribe', 'external', '']) f.emit('quest/completed', { quest: quest({ status: 'completed' }) }, actor);
+    for (const actor of ['scribe', 'external', 'shell', 'another-plugin', '']) f.emit('quest/completed', { quest: quest({ status: 'completed' }) }, actor);
     await f.drain(); expect(await f.lines()).toEqual([]); expect(f.model).not.toHaveBeenCalled();
-    const noFilter = await fixture({ defaultFilter: true });
-    noFilter.emit('quest/completed', { quest: quest({ status: 'completed' }) }); await noFilter.drain();
-    expect(noFilter.model).not.toHaveBeenCalled();
+    expect((await f.request('scribe/epilogue', { questId: 'q1' })).epilogue).toBeNull();
+    f.emit('quest/completed', { quest: quest({ status: 'completed' }) }); await f.drain();
+    expect((await f.lines())[0]).toMatchObject({ topic: 'quest', origin: 'model' });
+    expect((await f.request('scribe/epilogue', { questId: 'q1' })).epilogue).not.toBeNull();
   });
   it('normal mode throttles objectives for exactly 3 minutes but always responds to chapters and quests', async () => {
     const f = await fixture({ consent: false });
@@ -391,9 +398,13 @@ describe('Clock-driven stuck objectives, recaps and epilogues', () => {
     const f = await fixture({ consent: false });
     f.setTime(local('2026-10-08') - 1); await f.drain(); expect(await f.lines()).toEqual([]);
     f.setTime(local('2026-10-08')); await f.drain();
-    expect((await f.lines()).map(line => line.topic)).toEqual(['greeting']);
+    expect((await f.lines()).map(line => line.topic)).toEqual(['stall']);
+    expect(f.messages.find(message => message.type === 'scribe/said')).toMatchObject({ payload: { line: { topic: 'stall' } } });
     f.setTime(local('2026-10-09')); await f.drain(); expect(await f.lines()).toHaveLength(1);
     expect(f.messages.some(message => message.kind === 'request' && message.type === 'quest/set-chapters')).toBe(false);
+    f.kernel.unload('scribe');
+    const reopened = await fixture({ data: f.data, time: local('2026-10-09'), consent: false });
+    expect((await reopened.lines()).map(line => line.topic)).toEqual(['stall']);
   });
   it('resets the five-day timer only for objective/count progress, not a renamed task', async () => {
     const f = await fixture({ consent: false });
@@ -430,6 +441,18 @@ describe('Clock-driven stuck objectives, recaps and epilogues', () => {
     f.model.mockResolvedValueOnce({ text: '今日留白也在日志里，明日接着写。' });
     f.open(); await f.drain(); expect(f.model).toHaveBeenCalledOnce();
     f.open('user', 'collapsed'); await f.drain(); f.setTime(local('2026-10-04', 20)); await f.drain(); expect(f.model).toHaveBeenCalledOnce();
+  });
+  it('stops automatic recaps on an unattributed native panel close', async () => {
+    const f = await fixture({ time: local('2026-10-03', 20) });
+    for (const actor of ['scribe', 'external', 'shell', 'another-plugin', '']) f.open(actor);
+    await f.drain();
+    f.setTime(local('2026-10-03', 22)); await f.drain();
+    expect(f.model).not.toHaveBeenCalled();
+    f.setTime(local('2026-10-04', 20)); f.open(); await f.drain();
+    f.open('', 'collapsed'); await f.drain();
+    f.setTime(local('2026-10-04', 22)); await f.drain();
+    expect(f.model).not.toHaveBeenCalled();
+    expect((await f.request('scribe/recap', {})).recap).toBeNull();
   });
   it('manual recap uses the logical period, validates dates and retries failed network later', async () => {
     const f = await fixture({ time: local('2026-10-04', 3) });
