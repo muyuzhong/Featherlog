@@ -571,7 +571,7 @@ Wayland 下应用不能置顶、也不能定位自己，交给一个**很小的*
   3. **冒烟测试**：在 Linux 上用 xvfb 实际启动打出的 AppImage（隔离的配置目录），等到日志出现内核与全部插件加载完成，再正常退出；失败则不发布。
   4. 全部通过后**自动发布**草稿并标为最新。发布说明由上一个标签以来合并的 PR 生成（GitHub 的自动生成说明，按 `.github/release.yml` 分类）。
   5. 任何一步失败都停在草稿，不发布残缺或未验证的版本；失败的版本修好后，用新的补丁版本号重发，不复用已失败的标签。
-  6. 发布后 CI 用 `packages/aur/update.sh` 的同等逻辑（Arch 容器里运行 `makepkg --printsrcinfo`）更新 PKGBUILD 与 `.SRCINFO`，开一个 PR，不直接推送到 `main`。
+  6. 发布后 CI 用 `packaging/aur/update.sh` 的同等逻辑（Arch 容器里运行 `makepkg --printsrcinfo`）更新 PKGBUILD 与 `.SRCINFO`，开一个 PR，不直接推送到 `main`。
 - 已安装的客户端只看到正式发布的版本，草稿和预发布版不会触发更新。
 
 ### 12.2 自动更新
