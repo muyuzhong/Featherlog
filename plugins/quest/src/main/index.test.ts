@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createKernel } from '@featherlog/kernel';
 import type {
-  Clock, Envelope, Json, PluginSettings, PluginStorage, Quest, QuestInput, QuestPatch,
+  ChapterDraft, Clock, Envelope, Json, PluginSettings, PluginStorage, Quest, QuestInput, QuestPatch,
   QuestRequests, RequestPayload, ResponseData,
 } from '@featherlog/contracts';
 import { setup } from './index';
@@ -1004,5 +1004,226 @@ describe('quest/period', () => {
     expect((await f.request('quest/period', {})).periodKey).toBe('2026-10-06');
     f.setHour(2);
     expect((await f.request('quest/period', {})).dayStartHour).toBe(2);
+  });
+});
+
+describe('§8.2 and §8.6 chapter deadlines', () => {
+  const reading: QuestInput = { kind: 'main', title: 'Reading plan', chapters: [
+    { title: 'First book', deadline: '2026-09-27', objectives: [{ text: 'Read first book' }] },
+    { title: 'Second book', deadline: '2026-09-29', objectives: [{ text: 'Read second book' }] },
+  ] };
+
+  it.each(['0000-01-01', '0099-12-31', '2024-02-29', '2000-02-29', '9999-12-31'])(
+    'accepts and persists valid chapter date %s on create and set-chapters', async deadline => {
+      const f = await fixture();
+      let quest = (await command(f, 'quest/create', { input: { ...reading,
+        deadline: '2026-09-26', chapters: [{ ...reading.chapters![0]!, deadline }],
+      } }, ['quest/created'])).quest;
+      expect(quest.chapters[0]!.deadline).toBe(deadline);
+      quest = (await command(f, 'quest/set-chapters', {
+        id: quest.id, chapters: [{ ...quest.chapters[0]!, deadline }],
+      }, ['quest/updated'])).quest;
+      expect(quest.derived.chapterDeadline).toBe(deadline);
+      f.kernel.unload('quest');
+      expect(await (await fixture({ data: f.data })).get(quest.id)).toEqual(quest);
+    },
+  );
+
+  const invalidDates: unknown[] = [
+    '', '2026-02-29', '1900-02-29', '2026-04-31', '2026-00-01', '2026-13-01',
+    '2026-01-00', '2026-01-32', '2026-9-28', ' 2026-09-28 ', '2026-09-28T00:00:00Z',
+    null, 20260928,
+  ];
+  it.each(invalidDates)('rejects invalid chapter date %j without changing data', async deadline => {
+    const f = await fixture();
+    const quest = await f.create(reading);
+    const saved = structuredClone(f.data);
+    f.messages.length = 0;
+    const chapters = [{ ...quest.chapters[0]!, deadline }] as ChapterDraft[];
+    await expect(f.request('quest/create', { input: { ...reading, chapters } }))
+      .rejects.toMatchObject({ code: 'quest/invalid-input' });
+    await expect(f.request('quest/set-chapters', { id: quest.id, chapters }))
+      .rejects.toMatchObject({ code: 'quest/invalid-input' });
+    expect(f.data).toEqual(saved);
+    expect(f.events()).toEqual([]);
+    expect(await f.get(quest.id)).toEqual(quest);
+  });
+
+  it.each(['side', 'daily'] as const)('rejects chapter deadlines on %s quests', async kind => {
+    const f = await fixture();
+    const base: QuestInput = kind === 'side' ? { kind, title: 'Task' } : daily;
+    const quest = await f.create(base);
+    const saved = structuredClone(f.data);
+    f.messages.length = 0;
+    const chapters = [{ title: '', deadline: '2026-09-28', objectives: [] }];
+    await expect(f.request('quest/create', { input: { ...base, chapters } }))
+      .rejects.toMatchObject({ code: 'quest/invalid-input' });
+    await expect(f.request('quest/set-chapters', { id: quest.id, chapters }))
+      .rejects.toMatchObject({ code: 'quest/invalid-input' });
+    expect(f.data).toEqual(saved);
+    expect(f.events()).toEqual([]);
+    expect(quest.derived).not.toHaveProperty('chapterDeadline');
+  });
+
+  it('updates or clears deadlines by id while retaining objective progress and doneAt', async () => {
+    const f = await fixture();
+    const initial = await f.create(reading);
+    const first = initial.chapters[0]!;
+    let quest = (await f.request('quest/complete-objective', {
+      id: initial.id, objectiveId: first.objectives[0]!.id,
+    })).quest;
+    const completed = quest.chapters[0]!;
+    quest = (await command(f, 'quest/set-chapters', { id: quest.id, chapters: [
+      { ...completed, deadline: '2026-09-25' },
+      { ...quest.chapters[1]!, deadline: '2026-09-28' },
+    ] }, ['quest/updated'])).quest;
+    expect(quest.chapters[0]!).toEqual({ ...completed, deadline: '2026-09-25' });
+    expect(quest.derived).toMatchObject({
+      chapterIndex: 1, chapterDeadline: '2026-09-28', dueToday: true, overdue: false,
+    });
+    quest = (await command(f, 'quest/set-chapters', { id: quest.id,
+      chapters: quest.chapters.map(({ deadline: _deadline, ...chapter }) => chapter),
+    }, ['quest/updated'])).quest;
+    expect(quest.chapters.every(chapter => !('deadline' in chapter))).toBe(true);
+    expect(quest.chapters[0]!.doneAt).toBe(completed.doneAt);
+    expect(quest.chapters[0]!.objectives).toEqual(completed.objectives);
+    expect(quest.derived).not.toHaveProperty('chapterDeadline');
+    expect(quest.derived).toMatchObject({ dueToday: false, overdue: false });
+    expect(await (await fixture({ data: f.data })).get(quest.id)).toEqual(quest);
+  });
+
+  it('uses only the current chapter, switches dates on progress, and restores them on undo', async () => {
+    const f = await fixture();
+    let quest = await f.create(reading);
+    expect(quest.derived).toMatchObject({
+      chapterDeadline: '2026-09-27', dueToday: true, overdue: true,
+    });
+    const firstId = quest.chapters[0]!.objectives[0]!.id;
+    const secondId = quest.chapters[1]!.objectives[0]!.id;
+    quest = (await command(f, 'quest/complete-objective', {
+      id: quest.id, objectiveId: firstId,
+    }, ['quest/objective-completed', 'quest/chapter-completed'])).quest;
+    expect(quest.derived).toMatchObject({
+      chapterIndex: 1, chapterDeadline: '2026-09-29', dueToday: false, overdue: false,
+    });
+    expect((await f.request('quest/list', {})).quests[0]!).toEqual(quest);
+    quest = (await command(f, 'quest/complete-objective', {
+      id: quest.id, objectiveId: secondId,
+    }, ['quest/objective-completed', 'quest/chapter-completed', 'quest/completed'])).quest;
+    expect(quest.derived).not.toHaveProperty('chapterDeadline');
+    expect(quest.derived).toMatchObject({ dueToday: false, overdue: false });
+    expect(quest.chapters.map(chapter => chapter.deadline)).toEqual(['2026-09-27', '2026-09-29']);
+    quest = (await command(f, 'quest/uncomplete', { id: quest.id }, ['quest/uncompleted'])).quest;
+    expect(quest.derived.chapterDeadline).toBe('2026-09-29');
+    quest = (await command(f, 'quest/reopen-objective', {
+      id: quest.id, objectiveId: firstId,
+    }, ['quest/objective-reopened'])).quest;
+    expect(quest.derived).toMatchObject({
+      chapterDeadline: '2026-09-27', dueToday: true, overdue: true,
+    });
+    quest = (await command(f, 'quest/complete', { id: quest.id }, ['quest/completed'])).quest;
+    expect(quest.derived).not.toHaveProperty('chapterDeadline');
+    expect((await f.get(quest.id)).derived).not.toHaveProperty('chapterDeadline');
+  });
+
+  it('omits the derived deadline when set-chapters completes a counted quest', async () => {
+    const f = await fixture();
+    const quest = await f.create({ ...reading, chapters: [
+      { title: 'Book', deadline: '2026-09-27',
+        objectives: [{ text: 'Pages', count: { target: 10 } }] },
+    ] });
+    const chapter = quest.chapters[0]!;
+    const objective = chapter.objectives[0]!;
+    await f.request('quest/count', { id: quest.id, objectiveId: objective.id, set: 5 });
+    const completed = (await command(f, 'quest/set-chapters', {
+      id: quest.id, chapters: [{ ...chapter, deadline: '2026-09-28',
+        objectives: [{ ...objective, count: { target: 3 } }] }],
+    }, ['quest/updated'])).quest;
+    expect(completed.status).toBe('completed');
+    expect(completed.chapters[0]!).toMatchObject({ deadline: '2026-09-28',
+      objectives: [{ id: objective.id, count: { current: 5, target: 3 } }],
+    });
+    expect(completed.derived).not.toHaveProperty('chapterDeadline');
+    expect(completed.derived).toMatchObject({ dueToday: false, overdue: false });
+  });
+
+  it('ignores future chapters, and still combines task deadline and scheduledFor', async () => {
+    const f = await fixture();
+    const input: QuestInput = { ...reading, chapters: [
+      { ...reading.chapters![0]!, deadline: '2026-09-30' },
+      { ...reading.chapters![1]!, deadline: '2026-09-26' },
+    ] };
+    const future = await f.create(input);
+    const taskDue = await f.create({ ...input, deadline: '2026-09-28' });
+    const taskOverdue = await f.create({ ...input, deadline: '2026-09-27' });
+    const scheduled = await f.create({ ...input, scheduledFor: '2026-09-27' });
+    expect(future.derived).toMatchObject({ dueToday: false, overdue: false });
+    expect(taskDue.derived).toMatchObject({ dueToday: true, overdue: false });
+    expect(taskOverdue.derived).toMatchObject({ dueToday: true, overdue: true });
+    expect(scheduled.derived).toMatchObject({ dueToday: true, overdue: false });
+    const archived = (await f.request('quest/archive', { id: taskOverdue.id })).quest;
+    expect(archived.derived).toMatchObject({
+      chapterDeadline: '2026-09-30', dueToday: false, overdue: false,
+    });
+    const noDeadline = await f.create({ ...reading, chapters: [
+      { title: 'Current', objectives: [{ text: 'Read' }] }, reading.chapters![0]!,
+    ] });
+    expect(noDeadline.derived).not.toHaveProperty('chapterDeadline');
+    expect(noDeadline.derived).toMatchObject({ dueToday: false, overdue: false });
+  });
+
+  it.each([0, 4, 23])('uses the period date at dayStartHour=%i, including sleep recovery', async hour => {
+    const boundary = local('2026-09-29', hour);
+    const f = await fixture({ now: boundary - 1, hour });
+    const previous = await f.create({ ...reading,
+      chapters: [{ ...reading.chapters![0]!, deadline: '2026-09-28' }],
+    });
+    const current = await f.create({ ...reading,
+      chapters: [{ ...reading.chapters![0]!, deadline: '2026-09-29' }],
+    });
+    expect(previous.derived).toMatchObject({ dueToday: true, overdue: false });
+    expect(current.derived).toMatchObject({ dueToday: false, overdue: false });
+    f.setTime(boundary);
+    expect((await f.get(previous.id)).derived).toMatchObject({ dueToday: true, overdue: true });
+    expect((await f.get(current.id)).derived).toMatchObject({ dueToday: true, overdue: false });
+    f.setTime(local('2026-10-01', hour), false);
+    const listed = (await f.request('quest/list', {})).quests;
+    expect(listed.every(quest => quest.derived.dueToday && quest.derived.overdue)).toBe(true);
+  });
+
+  it('changes dates immediately with dayStartHour even when the recorded period moves backwards', async () => {
+    const f = await fixture({ now: local('2026-09-28', 1), hour: 4 });
+    const previous = await f.create(reading);
+    const current = await f.create({ ...reading,
+      chapters: [{ ...reading.chapters![0]!, deadline: '2026-09-28' }],
+    });
+    expect(previous.derived.overdue).toBe(false);
+    expect(current.derived.dueToday).toBe(false);
+    f.setHour(0);
+    expect((await f.get(previous.id)).derived.overdue).toBe(true);
+    expect((await f.get(current.id)).derived.dueToday).toBe(true);
+    f.setHour(4);
+    expect((await f.get(previous.id)).derived.overdue).toBe(false);
+    expect((await f.get(current.id)).derived.dueToday).toBe(false);
+  });
+
+  it.each([1, 2])('loads old schemaVersion=%i data with no chapter deadlines or lost progress', async version => {
+    const f = await fixture();
+    const quest = await f.create(main);
+    await f.request('quest/complete-objective', {
+      id: quest.id, objectiveId: quest.chapters[0]!.objectives[0]!.id,
+    });
+    const before = (await f.request('quest/count', {
+      id: quest.id, objectiveId: quest.chapters[0]!.objectives[1]!.id, set: 1,
+    })).quest;
+    f.kernel.unload('quest');
+    const data = version === 2 ? structuredClone(f.data) : new Map<string, Json>([['state', {
+      schemaVersion: 1, quests: [storedRecord(f, quest.id).quest],
+      history: { [quest.id]: [] }, meta: { lastPeriodKey: '2026-09-28' },
+    }]]);
+    const restarted = await fixture({ data });
+    expect(await restarted.get(quest.id)).toEqual(before);
+    expect((await restarted.get(quest.id)).derived).not.toHaveProperty('chapterDeadline');
+    expect(restarted.data.get('state')).toMatchObject({ schemaVersion: 2 });
   });
 });
