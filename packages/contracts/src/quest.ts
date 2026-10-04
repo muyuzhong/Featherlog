@@ -31,6 +31,8 @@ export interface Chapter {
   id: string;
   /** Empty for a side quest's only chapter. */
   title: string;
+  /** Main quests only: this chapter's own deadline (e.g. one book of a reading plan). */
+  deadline?: LocalDate;
   objectives: Objective[];
   doneAt?: IsoDateTime;
 }
@@ -61,10 +63,12 @@ export interface QuestDerived {
   chapterRatio: number;
   /** daily: consecutive due periods completed. Otherwise 0. */
   streak: number;
-  /** daily due this period, or a side/main quest scheduled/due today or earlier. */
+  /** daily due this period, or a side/main quest (or a main quest's current chapter) scheduled/due today or earlier. */
   dueToday: boolean;
-  /** Active and `deadline` is before today. */
+  /** Active and `deadline`, or the current chapter's deadline, is before today. */
   overdue: boolean;
+  /** The current chapter's deadline, if it has one. */
+  chapterDeadline?: LocalDate;
 }
 
 export interface Quest {
@@ -113,6 +117,8 @@ export interface ObjectiveDraft {
 export interface ChapterDraft {
   id?: string;
   title: string;
+  /** Main quests only. */
+  deadline?: LocalDate;
   objectives: ObjectiveDraft[];
 }
 

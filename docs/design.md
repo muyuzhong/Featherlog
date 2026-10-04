@@ -362,6 +362,7 @@ featherlog/
 - `recurrence`：`daily` 必填，其他类型禁止。`weekly` 的 `weekdays` 非空、不重复、取值 0–6。
 - `quota`：只有 `daily` 可以有，`target` 为正整数。
 - `deadline`、`scheduledFor`：合法的 `YYYY-MM-DD`。
+- 章节的 `deadline`（每章自己的限期，2026-10-05 用户要求）：只有主线的章节可以有，合法的 `YYYY-MM-DD`；支线的那一章不能有（支线用任务自己的 `deadline`），否则以 `quest/invalid-input` 拒绝。章节限期晚于任务限期是允许的，界面负责提示。
 - `kind` 创建后不能修改。
 
 ### 8.3 目标与章节的推进
@@ -393,7 +394,9 @@ featherlog/
 
 `quest/list` 返回按 `kind` 分组后各自按 `order` 升序的任务。界面自行分组显示：主线、支线、每日委托。
 
-`derived.dueToday`：应做的每日委托；或 `scheduledFor ≤ 今天`、`deadline ≤ 今天` 的进行中主线和支线。
+`derived.dueToday`：应做的每日委托；或 `scheduledFor ≤ 今天`、`deadline ≤ 今天` 的进行中主线和支线；或**当前章**的 `deadline ≤ 今天` 的进行中主线。`derived.overdue` 同理：任务的 `deadline` 早于今天，或当前章的 `deadline` 早于今天。`derived.chapterDeadline` 是当前章的限期（没有则省略），已完成的章节不再算。
+
+例如"架构师的养成计划"：每本书是一章，各有自己的限期；每本书用一个计数目标"读完《人月神话》，共 16 章"，读完一章计一次，不必逐章写目标。
 
 **"今天"在整个任务插件里一律指当前周期键**（按 `dayStartHour` 偏移后的日期），包括 `dueToday`、`overdue` 和每日委托。例如一天从 4 点开始时，凌晨 1 点仍然算前一天：前一天到期的支线此时是"今日限期"，还不算逾期。
 
