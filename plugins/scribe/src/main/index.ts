@@ -18,6 +18,7 @@ interface Activity {
 interface State {
   version: 1;
   consentEndpoint: string | null;
+  consentNotes: boolean;
   auth: { signature: string; message: string } | null;
   usage: Record<string, ScribeUsage>;
   lines: ScribeLine[];
@@ -30,7 +31,7 @@ interface State {
   pending: string[];
   pendingRecaps: string[];
 }
-const fresh = (): State => ({ version: 1, consentEndpoint: null, auth: null, usage: {}, lines: [],
+const fresh = (): State => ({ version: 1, consentEndpoint: null, consentNotes: false, auth: null, usage: {}, lines: [],
   boards: {}, recaps: {}, epilogues: {}, progress: {}, peaks: {}, activity: [], pending: [], pendingRecaps: [] });
 const json = (value: unknown): Json => JSON.parse(JSON.stringify(value)) as Json;
 function timestamp(value: unknown) {
@@ -47,6 +48,7 @@ function load(value: Json | undefined): State {
   if (value === undefined) return fresh();
   const data = record(value);
   const valid = data.version === 1 && (data.consentEndpoint === null || typeof data.consentEndpoint === 'string') &&
+    (data.consentNotes === undefined || typeof data.consentNotes === 'boolean') &&
     (data.auth === null || (typeof record(data.auth).signature === 'string' && typeof record(data.auth).message === 'string')) &&
     Array.isArray(data.lines) && Array.isArray(data.activity) && Array.isArray(data.pending) &&
     data.pending.every(id => typeof id === 'string') && Array.isArray(data.pendingRecaps);
@@ -108,7 +110,7 @@ function load(value: Json | undefined): State {
     if (activity.previous !== undefined) nonnegative(activity.previous);
     if (activity.current !== undefined) nonnegative(activity.current);
   }
-  return structuredClone(value) as unknown as State;
+  return { ...structuredClone(value) as unknown as State, consentNotes: data.consentNotes === true };
 }
 function dateKey(time: number) {
   const date = new Date(time);
@@ -200,9 +202,15 @@ export async function setup(ctx: MainContext): Promise<void> {
     return { address, signature, config: { protocol, baseUrl: address, model, ...(apiKey ? { apiKey } : {}) } };
   };
   const enabled = () => ctx.settings.get('enabled') === true;
+  const readNotes = () => ctx.settings.get('readNotes') === true;
+  const consented = (address: string | undefined) => address !== undefined && state.consentEndpoint === address &&
+    (!readNotes() || state.consentNotes);
+  const checkRevision = (stamp: number) => {
+    if (stamp !== revision || disposed) throw failure('scribe/unavailable', '配置已改变，请重试。');
+  };
   const snapshot = async (): Promise<ScribeState> => {
     const settings = await configuration();
-    return { enabled: enabled(), consented: settings.address !== undefined && state.consentEndpoint === settings.address,
+    return { enabled: enabled(), consented: consented(settings.address),
       configured: settings.config !== undefined, ...(settings.address ? { endpoint: settings.address } : {}),
       ...(state.auth && state.auth.signature === settings.signature
         ? { paused: { reason: 'auth' as const, message: state.auth.message } } : {}), usage: { ...currentUsage() } };
@@ -212,7 +220,8 @@ export async function setup(ctx: MainContext): Promise<void> {
   };
   const gate = async () => {
     const settings = await configuration();
-    if (!settings.address || state.consentEndpoint !== settings.address) throw failure('scribe/no-consent', '请先同意将必要的任务资料发送到此接口。');
+    if (!consented(settings.address)) throw failure('scribe/no-consent', readNotes()
+      ? '手记也会发送给所配置的接口，请先重新同意。' : '请先同意将必要的任务资料发送到此接口。');
     if (!enabled() || !settings.config) throw failure('scribe/not-configured', '请先启用并配置翎的接口、模型和密钥。');
     if (state.auth?.signature === settings.signature) throw failure('scribe/auth-failed', '密钥不对，请检查配置。');
     if (ctx.clock.now() < retryAt) throw failure('scribe/unavailable', '接口正在歇笔，稍后再试。');
@@ -300,6 +309,21 @@ export async function setup(ctx: MainContext): Promise<void> {
   const period = () => questRequest('quest/period', {});
   const quests = async () => (await questRequest('quest/list', {})).quests;
   const note = (value: unknown, facts: unknown) => value === undefined ? {} : { note: prose(value, facts, 2000) };
+  const handnotes = async (ids: string[], stamp: number) => {
+    if (!readNotes()) return {};
+    await gate(); checkRevision(stamp);
+    const notes: { questId: string; text: string; createdAt: string }[] = [];
+    for (const id of new Set(ids)) {
+      checkRevision(stamp);
+      const result = await ctx.bus.request('notes/list', { questId: id, limit: 5 }).catch(() => {
+        throw failure('scribe/unavailable', '暂时无法读取手记，请稍后再试。');
+      });
+      checkRevision(stamp);
+      notes.push(...result.notes.filter(note => note.questId === id).slice(0, 5)
+        .map(note => ({ questId: id, text: Array.from(note.text).slice(0, 300).join(''), createdAt: note.createdAt })));
+    }
+    return { handnotes: notes };
+  };
   const say = async (topic: ScribeTopic, quest: Quest, at: number) => {
     if (!enabled() || night(at) || night(ctx.clock.now())) return;
     const stamp = revision;
@@ -320,9 +344,12 @@ export async function setup(ctx: MainContext): Promise<void> {
     if (quest.kind === 'daily' || state.epilogues[quest.id] || !enabled()) return;
     if (night(ctx.clock.now())) { await persist(draft => { if (!draft.pending.includes(quest.id)) draft.pending.push(quest.id); }); return; }
     const stamp = revision;
-    const facts = context(quest);
     let written = '这一卷写到功成，走过的路留在日志里。鹅毛笔收好了，下一卷由你落笔。';
-    try { written = prose((await invoke(`依据日志写不超过200字的中文尾声，只输出正文：${JSON.stringify(facts)}`, 600)).text, facts, 200); }
+    try {
+      const facts = { ...context(quest), ...await handnotes([quest.id], stamp) };
+      checkRevision(stamp);
+      written = prose((await invoke(`依据日志写不超过200字的中文尾声，只输出正文：${JSON.stringify(facts)}`, 600)).text, facts, 200);
+    }
     catch { /* A completed quest keeps its ending even without an endpoint. */ }
     if (disposed || stamp !== revision || !enabled()) return;
     if (night(ctx.clock.now())) { await persist(draft => { if (!draft.pending.includes(quest.id)) draft.pending.push(quest.id); }); return; }
@@ -374,15 +401,19 @@ export async function setup(ctx: MainContext): Promise<void> {
     const existing = recapCalls.get(key);
     if (existing) return existing;
     const work = (async () => {
+      const stamp = revision;
       await gate();
       const facts = state.activity.filter(activity => activity.periodKey === key);
       const list = await quests();
       const tomorrow = new Date(`${key}T12:00:00`);
       tomorrow.setDate(tomorrow.getDate() + 1);
-      const next = choose(list, dateKey(tomorrow.getTime()), true).map(item => ({ reason: item.reason,
+      const selected = choose(list, dateKey(tomorrow.getTime()), true);
+      const next = selected.map(item => ({ reason: item.reason,
         quest: context(list.find(quest => quest.id === item.questId)!) }));
-      const source = { periodKey: key, progress: facts, suggested: next };
-      const stamp = revision;
+      const ids = [...facts.map(activity => activity.questId), ...selected.map(item => item.questId)]
+        .filter(id => list.some(quest => quest.id === id));
+      const source = { periodKey: key, progress: facts, suggested: next, ...await handnotes(ids, stamp) };
+      checkRevision(stamp);
       const reply = await invoke(`写一页中文战报，只输出正文。只用这些本机进展，未记录的历史不要补写；明日建议是提议，不是事实：${JSON.stringify(source)}`, 1800);
       const recap: ScribeRecap = { periodKey: key, text: prose(reply.text, source, 4000), writtenAt: nowISO() };
       if (stamp !== revision || disposed) throw failure('scribe/unavailable', '配置已改变，请重试。');
@@ -466,10 +497,18 @@ export async function setup(ctx: MainContext): Promise<void> {
   register('scribe/state', snapshot);
   register('scribe/consent', async payload => {
     if (typeof payload.granted !== 'boolean') throw inputError();
-    const settings = await configuration();
-    if (payload.granted && !settings.address) throw failure('scribe/not-configured', '请先填写有效的接口地址。');
+    const stamp = revision;
+    const notes = readNotes();
+    const settings = payload.granted ? await configuration() : null;
+    if (payload.granted) {
+      checkRevision(stamp);
+      if (!settings?.address) throw failure('scribe/not-configured', '请先填写有效的接口地址。');
+    }
     revision++; controllers.forEach(controller => controller.abort());
-    await persist(draft => { draft.consentEndpoint = payload.granted ? settings.address! : null; });
+    await persist(draft => {
+      draft.consentEndpoint = settings?.address ?? null;
+      draft.consentNotes = payload.granted && notes;
+    });
     await changed(); schedule(); return snapshot();
   });
   register('scribe/test', async () => {
@@ -523,6 +562,10 @@ export async function setup(ctx: MainContext): Promise<void> {
   };
   ctx.settings.onChange(key => {
     if (['protocol', 'baseUrl', 'model', 'enabled'].includes(key)) settingChange();
+    else if (key === 'readNotes') {
+      revision++; controllers.forEach(controller => controller.abort());
+      queue(async () => { await changed(); await checkTime(); });
+    }
     else schedule();
   });
   ctx.secrets.onChange(key => { if (key === 'apiKey') settingChange(); });
