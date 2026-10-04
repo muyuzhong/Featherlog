@@ -46,8 +46,9 @@ export function releaseTask(command, { version, tag, repo, id, previousTag }, ru
   };
   let release = find();
   if (!release && command === 'prepare') {
+    // Both workflow paths already have the tag; target_commitish only accepts a branch or SHA.
     release = JSON.parse(run('api', '-X', 'POST', `repos/${repo}/releases`,
-      '-f', `tag_name=${tag}`, '-f', `target_commitish=${tag}`, '-f', `name=${tag}`, '-F', 'draft=true',
+      '-f', `tag_name=${tag}`, '-f', `name=${tag}`, '-F', 'draft=true',
       '-F', 'generate_release_notes=true'));
   }
   if (!release) throw new Error(`Draft ${tag} does not exist`);
@@ -77,7 +78,7 @@ export function releaseTask(command, { version, tag, repo, id, previousTag }, ru
   if (command === 'publish') {
     if (release.prerelease) throw new Error(`${tag} is a prerelease`);
     const notes = JSON.parse(run('api', '-X', 'POST', `repos/${repo}/releases/generate-notes`,
-      '-f', `tag_name=${tag}`, '-f', `target_commitish=${tag}`, '-f', 'configuration_file_path=.github/release.yml',
+      '-f', `tag_name=${tag}`, '-f', 'configuration_file_path=.github/release.yml',
       ...(previousTag ? ['-f', `previous_tag_name=${previousTag}`] : [])));
     if (typeof notes.body !== 'string' || !notes.body.trim()) throw new Error('Generated release notes are empty');
     run('api', '-X', 'PATCH', `repos/${repo}/releases/${release.id}`,
