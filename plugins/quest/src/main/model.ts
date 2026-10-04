@@ -116,6 +116,8 @@ export function chapters(
     const id = identify(draft.id);
     const title = text(draft.title, 'chapter title');
     valid(kind !== 'side' || title === '', 'Side chapters must be untitled');
+    valid(kind === 'main' || draft.deadline === undefined, 'Chapter deadlines are main-only');
+    const deadline = draft.deadline === undefined ? undefined : localDate(draft.deadline);
     valid(Array.isArray(draft.objectives), 'Objectives must be an array');
     valid(kind !== 'main' || draft.objectives.length > 0, 'Main chapters need objectives');
     const objectives = draft.objectives.map((item: unknown) => {
@@ -138,6 +140,7 @@ export function chapters(
     const previous = old.find(chapter => chapter.id === id);
     return {
       id, title, objectives,
+      ...(deadline === undefined ? {} : { deadline }),
       ...(objectives.length && objectives.every(item => item.doneAt) && previous?.doneAt
         ? { doneAt: previous.doneAt } : {}),
     };
@@ -215,6 +218,8 @@ export function derived(
   const key = quest.kind === 'daily' ? state.meta.lastPeriodKey : periodKey(time, hour);
   const chapterIndex = quest.chapters.findIndex(chapter => chapter.objectives.some(o => !o.doneAt));
   const chapter = quest.chapters[chapterIndex];
+  const chapterDeadline = quest.kind === 'main' && quest.status !== 'completed'
+    ? chapter?.deadline : undefined;
   const objectiveIndex = chapter?.objectives.findIndex(objective => !objective.doneAt) ?? -1;
   const progress = (items: Chapter['objectives']) => items.length
     ? items.reduce((sum, item) => sum + (item.doneAt ? 1 : item.count
@@ -242,7 +247,10 @@ export function derived(
     dueToday: quest.status !== 'archived' && (quest.kind === 'daily' ? due(quest, key)
       : quest.status === 'active' && Boolean(
         (quest.scheduledFor && quest.scheduledFor <= key) ||
-        (quest.deadline && quest.deadline <= key))),
-    overdue: quest.status === 'active' && Boolean(quest.deadline && quest.deadline < key),
+        (quest.deadline && quest.deadline <= key) ||
+        (chapterDeadline && chapterDeadline <= key))),
+    overdue: quest.status === 'active' && Boolean(
+      (quest.deadline && quest.deadline < key) || (chapterDeadline && chapterDeadline < key)),
+    ...(chapterDeadline === undefined ? {} : { chapterDeadline }),
   };
 }

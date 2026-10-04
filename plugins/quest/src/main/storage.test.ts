@@ -38,6 +38,46 @@ it('migrates all data atomically, keeps order, and reopens the new format', asyn
   expect([...f.data.keys()]).toHaveLength(3);
 });
 
+it('preserves optional chapter deadlines through legacy migration and indexed reads', async () => {
+  const initial = legacy();
+  const main = initial.quests[0]!;
+  main.kind = 'main';
+  delete main.recurrence;
+  delete main.cycle;
+  main.chapters = [
+    { id: 'chapter-a', title: 'Book A', deadline: '2026-09-28',
+      objectives: [{ id: 'objective-a', text: 'Read A' }] },
+    { id: 'chapter-b', title: 'Book B', objectives: [{ id: 'objective-b', text: 'Read B' }] },
+  ];
+  const f = fixture(initial);
+  expect((await f.open()).state).toEqual(initial);
+  expect((await f.open()).state).toEqual(initial);
+});
+
+it.each([1, 2])('rejects invalid stored chapter dates in schemaVersion=%i without overwriting', async version => {
+  const initial = legacy();
+  const main = initial.quests[0]!;
+  main.kind = 'main';
+  delete main.recurrence;
+  delete main.cycle;
+  main.chapters = [{ id: 'chapter', title: 'Book', deadline: '2026-09-28',
+    objectives: [{ id: 'objective', text: 'Read' }] }];
+  const f = fixture(initial);
+  if (version === 1) {
+    main.chapters[0]!.deadline = '2026-02-29';
+    f.data.set('state', structuredClone(initial) as unknown as Json);
+  } else {
+    await f.open();
+    const index = f.data.get('state') as { quests: { id: string; key: string }[] };
+    const key = index.quests.find(quest => quest.id === main.id)!.key;
+    const record = f.data.get(key) as unknown as { quest: StoredQuest; history: string[] };
+    record.quest.chapters[0]!.deadline = '2026-02-29';
+  }
+  const saved = structuredClone(f.data);
+  await expect(f.open()).rejects.toMatchObject({ code: 'quest/invalid-input' });
+  expect(f.data).toEqual(saved);
+});
+
 it.each([1, 2, 3])('preserves legacy data when migration write %i fails', async failure => {
   const f = fixture();
   const original = structuredClone(f.data);
