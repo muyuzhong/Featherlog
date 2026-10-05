@@ -354,9 +354,15 @@ export async function setup(ctx: MainContext): Promise<void> {
       checkRevision(stamp);
       if (quest.kind === 'main') {
         const reply = await invoke(`${EPILOGUE_PROMPT}\n日志：${JSON.stringify(facts)}`, 600);
-        const result = record(JSON.parse(reply.text));
-        written = prose(result.text, facts, 200);
-        title = epilogueTitle(result.title);
+        const body = reply.text.trim().replace(/^```(?:json)?\s*\r?\n([\s\S]*?)\r?\n```$/i, '$1').trim();
+        try {
+          const result = record(JSON.parse(body));
+          written = prose(result.text, facts, 200);
+          title = epilogueTitle(result.title);
+        } catch {
+          // A formatting failure must not discard an otherwise usable ending.
+          written = prose(body, facts, 200);
+        }
       } else {
         written = prose((await invoke(`依据日志写不超过200字的中文尾声，只输出正文：${JSON.stringify(facts)}`, 600)).text, facts, 200);
       }

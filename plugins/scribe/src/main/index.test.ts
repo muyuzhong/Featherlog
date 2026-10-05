@@ -863,6 +863,41 @@ describe('§14.3 and §16.4 attribute suggestions and main epilogue gifts', () =
     },
   );
 
+  it.each(['json', ''])('unwraps a fenced %s main ending and keeps its title', async language => {
+    const f = await fixture();
+    const text = '此卷功成，鹅毛笔收好了。';
+    f.model.mockResolvedValueOnce({ text: '此事功成。' })
+      .mockResolvedValueOnce({ text: `  \n\`\`\`${language}\n${JSON.stringify({ text, title: '三卷读罢' })}\n\`\`\`\n  ` });
+    f.emit('quest/completed', { quest: quest({ status: 'completed' }) }); await f.drain();
+    const ending = (await f.request('scribe/epilogue', { questId: 'q1' })).epilogue!;
+    expect(ending).toMatchObject({ text, title: '三卷读罢' });
+    expect(f.messages.filter(m => m.type === 'scribe/epilogue-written')[0]!.payload).toEqual({ epilogue: ending });
+    expect(f.model).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['此卷功成，鹅毛笔收好了。', JSON.stringify({ text: null, title: '三卷读罢' })])(
+    'preserves prose without a title when JSON or its text is unusable: %s', async text => {
+      const f = await fixture();
+      f.model.mockResolvedValueOnce({ text: '此事功成。' }).mockResolvedValueOnce({ text });
+      f.emit('quest/completed', { quest: quest({ status: 'completed' }) }); await f.drain();
+      const ending = (await f.request('scribe/epilogue', { questId: 'q1' })).epilogue!;
+      expect(ending.text).toBe(text);
+      expect(ending).not.toHaveProperty('title');
+      expect(f.model).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it.each(['No usable ending', JSON.stringify({ text: '你又没坚持。', title: '三卷读罢' })])(
+    'uses a builtin only when neither structured text nor prose is valid: %s', async text => {
+      const f = await fixture();
+      f.model.mockResolvedValueOnce({ text: '此事功成。' }).mockResolvedValueOnce({ text });
+      f.emit('quest/completed', { quest: quest({ status: 'completed' }) }); await f.drain();
+      const ending = (await f.request('scribe/epilogue', { questId: 'q1' })).epilogue!;
+      expect(ending.text).toBe('这一卷写到功成，走过的路留在日志里。鹅毛笔收好了，下一卷由你落笔。');
+      expect(ending).not.toHaveProperty('title');
+    },
+  );
+
   it('keeps side endings as prose without requesting a title and ignores daily endings', async () => {
     const f = await fixture({ quests: [quest({ kind: 'side' })] });
     f.model.mockResolvedValueOnce({ text: '此事功成。' }).mockResolvedValueOnce({ text: '此卷功成，鹅毛笔收好了。' });
