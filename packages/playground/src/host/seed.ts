@@ -23,6 +23,7 @@ export async function seedJournal(bus: Bus, today: (plusDays?: number) => string
     kind: 'main',
     title: '背完 Redis 八股',
     name: '内存之王',
+    attributes: ['learning'],
     story: 'Redis 把一切记在内存里，快得惊人——可一旦断电，记忆便烟消云散。弄清它如何把记忆刻进磁盘，方能踏上通往下一章的道路。',
     priority: 'high',
     deadline: today(33),
@@ -49,6 +50,7 @@ export async function seedJournal(bus: Bus, today: (plusDays?: number) => string
     kind: 'main',
     title: '跑完一次半程马拉松',
     name: '铁人之路',
+    attributes: ['body', 'mind'],
     story: '从门口的那条街开始。先让双腿记住节奏，再让心肺学会忍耐，终点在二十一公里之外。',
     chapters: [
       { title: '从五公里开始', objectives: [{ text: '每周跑三次', detail: '连续两周', count: { target: 6, unit: '次' } }, { text: '不停歇跑完五公里' }] },
@@ -63,6 +65,7 @@ export async function seedJournal(bus: Bus, today: (plusDays?: number) => string
     kind: 'side',
     title: '修掉登录页 bug',
     name: '登录门外的怪物',
+    attributes: ['craft'],
     story: '有人在登录门外徘徊，偶尔把人挡在门外。找出它，赶走它。',
     priority: 'high',
     deadline: today(),
@@ -75,12 +78,14 @@ export async function seedJournal(bus: Bus, today: (plusDays?: number) => string
     kind: 'side',
     title: '读《DDIA》第五章',
     name: '复制之谜',
+    attributes: ['learning'],
     chapters: [{ title: '', objectives: [{ text: '领导者与追随者' }, { text: '复制延迟的问题' }, { text: '多主与无主复制' }] }],
   });
   const ledger = await create({
     kind: 'side',
     title: '整理九月的账单',
     name: '旧日的账簿',
+    attributes: ['mind'],
     chapters: [{ title: '', objectives: [{ text: '收齐票据' }, { text: '记入账本' }] }],
   });
   await bus.request('quest/complete', { id: ledger.id });
