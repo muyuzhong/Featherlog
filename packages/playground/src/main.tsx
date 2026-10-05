@@ -38,6 +38,8 @@ const mainPlugins: MainPlugin[] = [
   // The real notes plugin: 手记 and 随笔 are kept in the playground's storage like quests are.
   { manifest: notesManifest, setup: notesMain },
   { manifest: characterManifest, setup: characterMain },
+  // The fake scribe responders are installed after seeding below.
+  { manifest: scribeManifest, setup: () => {} },
 ];
 const uiPlugins: UiPlugin[] = [
   { manifest, setup: questUi },
@@ -56,7 +58,7 @@ const kernel = createKernel({
   createServices: (pluginId) => ({ storage: createStorage(pluginId), settings: settings.forPlugin(pluginId),
     secrets: secretsForPlugin(pluginId), clock, log }),
 });
-const shell = createHostShell(kernel);
+const shell = createHostShell(kernel, mainPlugins, settings);
 const busLog = { entries: [] as import('@featherlog/contracts').Envelope[] };
 kernel.observe((envelope) => {
   busLog.entries.push(envelope);
@@ -66,7 +68,7 @@ kernel.observe((envelope) => {
 applyTheme({ paper: (settings.all().shell?.paper as Paper | undefined) ?? 'vellum' });
 settings.onChange((scope, key, value) => scope === 'shell' && key === 'paper' && setPaper(value as Paper));
 
-await kernel.load(mainPlugins);
+await shell.plugins.start();
 const dayStartHour = () => Number(settings.all().quest?.dayStartHour ?? 4);
 await seedJournal(shell.bus, (plus = 0) => periodKey(clock.now(), dayStartHour(), plus));
 // A few notes to read, only into a fresh playground.

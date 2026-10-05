@@ -28,7 +28,21 @@ export function createSettings(manifests: PluginManifest[]) {
 
   return {
     all: (): Values => structuredClone(values),
+    enabledPlugins(): string[] {
+      const ids = values.shell?.enabledPlugins;
+      return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
+    },
+    setEnabledPlugins(ids: string[]) {
+      const next = [...new Set(ids)];
+      const persisted = JSON.parse(load('settings') ?? '{}') as Values;
+      (persisted.shell ??= {}).enabledPlugins = next;
+      save('settings', JSON.stringify(persisted));
+      values.shell!.enabledPlugins = next;
+    },
     set(scope: string, key: string, value: Json) {
+      if (scope === 'shell' && key === 'enabledPlugins') {
+        throw Object.assign(new Error('Use shell/set-plugin-enabled'), { code: 'shell/invalid-setting' });
+      }
       (values[scope] ??= {})[key] = value;
       const persisted = JSON.parse(load('settings') ?? '{}') as Values;
       (persisted[scope] ??= {})[key] = value;

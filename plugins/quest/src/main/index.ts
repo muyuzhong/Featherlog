@@ -127,6 +127,7 @@ export async function setup(ctx: MainContext): Promise<void> {
     }).catch(cause => ctx.log.error('Could not apply quest settings', cause));
   });
   ctx.bus.on('kernel/ready', () => {
+    if (ready) return;
     ready = true;
     badge();
   });
