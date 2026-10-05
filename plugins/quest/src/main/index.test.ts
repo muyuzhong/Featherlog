@@ -1227,3 +1227,53 @@ describe('§8.2 and §8.6 chapter deadlines', () => {
     expect(restarted.data.get('state')).toMatchObject({ schemaVersion: 2 });
   });
 });
+
+describe('§8.2 quest attributes', () => {
+  it.each([main, daily, { kind: 'side', title: 'Task' } as QuestInput])(
+    'persists, replaces and clears attributes on $kind quests', async input => {
+      const f = await fixture();
+      const quest = await f.create({ ...input, attributes: ['learning', 'craft'] });
+      expect(quest.attributes).toEqual(['learning', 'craft']);
+      expect(storedRecord(f, quest.id).quest.attributes).toEqual(['learning', 'craft']);
+      const reloaded = await fixture({ data: f.data });
+      expect((await reloaded.get(quest.id)).attributes).toEqual(['learning', 'craft']);
+      await command(f, 'quest/update', { id: quest.id, patch: { attributes: ['mind', 'body'] } },
+        ['quest/updated']);
+      expect((f.events()[0]!.payload as { changed: string[] }).changed).toContain('attributes');
+      expect((await f.get(quest.id)).attributes).toEqual(['mind', 'body']);
+      await f.request('quest/update', { id: quest.id, patch: { title: 'Renamed' } });
+      expect((await f.get(quest.id)).attributes).toEqual(['mind', 'body']);
+      for (const attributes of [[], null] as const) {
+        await f.request('quest/update', { id: quest.id, patch: { attributes: ['body'] } });
+        const cleared = await f.request('quest/update', { id: quest.id,
+          patch: { attributes: attributes === null ? null : [] } });
+        expect(cleared.quest).not.toHaveProperty('attributes');
+        expect(storedRecord(f, quest.id).quest).not.toHaveProperty('attributes');
+      }
+      const empty = await f.create({ ...input, attributes: [] });
+      expect(empty).not.toHaveProperty('attributes');
+      expect(storedRecord(f, empty.id).quest).not.toHaveProperty('attributes');
+    },
+  );
+
+  it.each([null, 'learning', {}, ['unknown'], ['learning', 'learning'],
+    ['learning', 'body', 'mind'], [1], [null]])('rejects invalid attributes %j', async attributes => {
+    const f = await fixture();
+    await expect(f.create({ kind: 'side', title: 'Task', attributes } as QuestInput))
+      .rejects.toMatchObject({ code: 'quest/invalid-input' });
+    if (attributes === null) return;
+    const quest = await f.create({ kind: 'side', title: 'Task', attributes: ['craft'] });
+    const before = structuredClone(f.data);
+    await expect(f.request('quest/update', { id: quest.id, patch: { attributes } as QuestPatch }))
+      .rejects.toMatchObject({ code: 'quest/invalid-input' });
+    expect(f.data).toEqual(before);
+    expect((await f.get(quest.id)).attributes).toEqual(['craft']);
+  });
+
+  it('reads existing records without attributes unchanged', async () => {
+    const f = await fixture();
+    const quest = await f.create();
+    expect((await (await fixture({ data: f.data })).get(quest.id))).toEqual(quest);
+    expect(quest).not.toHaveProperty('attributes');
+  });
+});

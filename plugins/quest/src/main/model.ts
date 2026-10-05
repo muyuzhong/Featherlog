@@ -1,5 +1,5 @@
 import type {
-  Chapter, ChapterDraft, Quest, QuestDerived, QuestErrorCode, QuestInput, QuestKind,
+  Chapter, ChapterDraft, Quest, QuestDerived, QuestErrorCode, QuestInput, QuestKind, QuestAttribute,
   Recurrence,
 } from '@featherlog/contracts';
 
@@ -156,6 +156,14 @@ export function input(value: unknown): QuestInput {
     kind,
     title: text(value.title, 'title', 200, true),
   };
+  if (value.attributes !== undefined) {
+    valid(Array.isArray(value.attributes), 'Attributes must be an array');
+    const attributes: unknown[] = value.attributes;
+    valid(attributes.length <= 2 && new Set(attributes).size === attributes.length &&
+      attributes.every(attribute => typeof attribute === 'string' &&
+        ['learning', 'body', 'mind', 'craft'].includes(attribute)), 'Invalid attributes');
+    if (attributes.length) result.attributes = attributes as QuestAttribute[];
+  }
   if (value.name !== undefined) result.name = text(value.name, 'name', 40);
   if (value.story !== undefined) result.story = text(value.story, 'story', 2000);
   if (value.priority !== undefined) {
@@ -182,7 +190,7 @@ export function patch(quest: StoredQuest, value: unknown): string[] {
   object(value);
   valid(!('kind' in value) && !('chapters' in value), 'Kind is immutable; use set-chapters');
   const keys = ['title', 'name', 'story', 'priority', 'deadline', 'scheduledFor',
-    'recurrence', 'quota', 'revealed'] as const;
+    'recurrence', 'quota', 'attributes', 'revealed'] as const;
   const candidate = structuredClone(quest);
   for (const key of keys) {
     if (value[key] === undefined) continue;
@@ -197,6 +205,7 @@ export function patch(quest: StoredQuest, value: unknown): string[] {
   const fields = input({ ...candidate, chapters: quest.kind === 'daily'
     ? undefined : candidate.chapters });
   const normalized = { ...candidate, ...fields };
+  if (!fields.attributes) delete normalized.attributes;
   const changed = keys.filter(key =>
     JSON.stringify(quest[key]) !== JSON.stringify(normalized[key]));
   for (const key of keys) {
