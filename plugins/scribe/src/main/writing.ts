@@ -1,4 +1,4 @@
-import type { ObjectiveDraft, Quest, QuestInput, ScribeTopic } from '@featherlog/contracts';
+import type { ObjectiveDraft, Quest, QuestAttribute, QuestInput, ScribeTopic } from '@featherlog/contracts';
 import { failure, record } from './model';
 
 export const PERSONA = `你是羽记的老书记官翎，替冒险者执笔，话少、干脆，带一点冷幽默，真心为进展高兴但不肉麻。
@@ -56,6 +56,14 @@ export function questDraft(value: unknown): QuestInput {
   const data = record(value);
   check(data.kind === 'main' || data.kind === 'side' || data.kind === 'daily', 'kind须为main、side或daily。');
   const result: QuestInput = { kind: data.kind, title: text(data.title, 'title', 200, true) };
+  if (data.attributes !== undefined) {
+    check(Array.isArray(data.attributes), 'attributes须为数组。');
+    const attributes: unknown[] = data.attributes;
+    check(attributes.length <= 2 && new Set(attributes).size === attributes.length &&
+      attributes.every(attribute => typeof attribute === 'string' &&
+        ['learning', 'body', 'mind', 'craft'].includes(attribute)), 'attributes须为一到两项不重复的合法属性。');
+    if (attributes.length) result.attributes = attributes as QuestAttribute[];
+  }
   if (data.name !== undefined) result.name = text(data.name, 'name', 40);
   if (data.story !== undefined) result.story = text(data.story, 'story', 2000);
   if (data.priority !== undefined) {
@@ -98,9 +106,10 @@ export function splitDraft(value: unknown): ObjectiveDraft[] {
   return value.map(objective);
 }
 export const DRAFT_PROMPT = `只输出JSON对象 {"input":QuestInput,"note"?:string}。
-QuestInput: {kind:"main"|"side"|"daily",title:string,name?:string,story?:string,priority?:"none"|"low"|"medium"|"high",chapters?:[{title:string,objectives:[{text:string,detail?:string,count?:{target:正整数,unit?:string}}]}],deadline?:"YYYY-MM-DD",scheduledFor?:"YYYY-MM-DD",recurrence?:{freq:"daily"}|{freq:"weekly",weekdays:[0到6不重复的整数]},quota?:{target:正整数,unit?:string}}。
+QuestInput: {kind:"main"|"side"|"daily",title:string,name?:string,story?:string,priority?:"none"|"low"|"medium"|"high",chapters?:[{title:string,objectives:[{text:string,detail?:string,count?:{target:正整数,unit?:string}}]}],deadline?:"YYYY-MM-DD",scheduledFor?:"YYYY-MM-DD",recurrence?:{freq:"daily"}|{freq:"weekly",weekdays:[0到6不重复的整数]},quota?:{target:正整数,unit?:string},attributes?:["learning"|"body"|"mind"|"craft"]}。
 title非空最多200字，name最多40字，story最多2000字；main至少一章且每章至少一目标；side至多一章且章名为空；daily不许有章节，必须有recurrence；只有daily可有quota，非daily不许有recurrence。日期必须真实存在，不确定限期就省略。不生成id或进度。
-示例：{"input":{"kind":"side","title":"整理桌面","chapters":[{"title":"","objectives":[{"text":"清空桌面"},{"text":"归位常用物品"}]}]},"note":"先摆成小步，由你落笔。"}`;
+根据任务建议一到两项不重复的attributes：learning学识、body体魄、mind心性、craft技艺。三种任务都可以有；无法确定可省略或给空数组，由用户最后选择。
+示例：{"input":{"kind":"side","title":"整理桌面","attributes":["mind"],"chapters":[{"title":"","objectives":[{"text":"清空桌面"},{"text":"归位常用物品"}]}]},"note":"先摆成小步，由你落笔。"}`;
 export const SPLIT_PROMPT = `只输出JSON对象 {"objectives":[{text:string,detail?:string,count?:{target:正整数,unit?:string}}],"note"?:string}。
 只拆当前目标，给2–4个非空的新目标，不返回其他已完成的目标，不生成id、doneAt或current；已完成目标由编辑稿纸保留原id。
 示例：{"objectives":[{"text":"列出三个要点"},{"text":"逐条查证要点"}],"note":"拆小了，仍由你决定。"}`;
@@ -134,4 +143,14 @@ export function prose(value: unknown, facts: unknown, max: number, single = fals
   for (const number of result.match(/\d+(?:[-/:.]\d+)*/gu) ?? []) check(numbers.has(number), '日期或次数未记在日志中。');
   // ponytail: textual checks cannot prove every factual claim; strengthen with curated model evaluations.
   return result;
+}
+
+export const EPILOGUE_PROMPT = `依据日志写不超过200字的中文主线尾声，同时题赠一个至多8字、不带标点的称号。
+只输出JSON对象 {"text":string,"title"?:string}；text为尾声正文，title为题赠，如"三卷读罢"。题赠用文字或数字，不含空白或符号；不能确定时可省略title。`;
+
+export function epilogueTitle(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const title = value.trim();
+  return [...title].length <= 8 && /^[\p{L}\p{N}\p{M}]+$/u.test(title)
+    ? title : undefined;
 }

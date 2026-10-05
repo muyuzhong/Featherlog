@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BUILTIN, DRAFT_PROMPT, PERSONA, prose, questDraft, SPLIT_PROMPT, splitDraft, validDate } from './writing';
+import { BUILTIN, DRAFT_PROMPT, EPILOGUE_PROMPT, epilogueTitle, PERSONA, prose, questDraft, SPLIT_PROMPT, splitDraft, validDate } from './writing';
 
 const main = { kind: 'main', title: '  学习  ', chapters: [{ title: '开卷', objectives: [{ text: '动手', count: { target: 3, unit: '页' } }] }] };
 const daily = { kind: 'daily', title: '练习', recurrence: { freq: 'daily' } };
@@ -56,5 +56,33 @@ describe('fixed persona and offline review samples', () => {
   it('allows only provided task names, dates and counts', () => {
     expect(prose('《练习》记了3次。', { title: '练习', count: 3 }, 40, true)).toBe('《练习》记了3次。');
     expect(prose('2026-10-03这页已记。', { date: '2026-10-03' }, 40, true)).toContain('2026-10-03');
+  });
+});
+
+
+describe('§16 attributes and optional epilogue titles', () => {
+  it.each([main, daily, { kind: 'side', title: '整理' }])('keeps valid attributes on $kind drafts and omits empty arrays', input => {
+    expect(questDraft({ ...input, attributes: ['learning', 'craft'] }).attributes).toEqual(['learning', 'craft']);
+    expect(questDraft({ ...input, attributes: ['body', 'mind'] }).attributes).toEqual(['body', 'mind']);
+    expect(questDraft({ ...input, attributes: [] })).not.toHaveProperty('attributes');
+    expect(questDraft(input)).not.toHaveProperty('attributes');
+  });
+  it.each([null, 'learning', {}, [null], [1], ['other'], ['mind', 'mind'], ['mind', 'body', 'craft']])(
+    'rejects invalid draft attributes %j', attributes => {
+      expect(() => questDraft({ ...main, attributes })).toThrow(expect.objectContaining({ code: 'scribe/unusable-reply' }));
+    },
+  );
+  it('explains all four attributes and the main epilogue title shape in prompts', () => {
+    for (const attribute of ['learning', 'body', 'mind', 'craft']) expect(DRAFT_PROMPT).toContain(attribute);
+    expect(DRAFT_PROMPT).toContain('一到两项不重复');
+    expect(EPILOGUE_PROMPT).toContain('至多8字、不带标点');
+    expect(EPILOGUE_PROMPT).toContain('"text":string,"title"?:string');
+  });
+  it.each([undefined, null, false, 8, {}, [], '', '   ', '一二三四五六七八九', '三卷，读罢', '三卷。',
+    '三卷!', '「三卷」', '三卷—读罢', '三 卷', '三\n卷', '三卷🪶', '\u0000三卷'])('drops unusable title %j without throwing', title => {
+    expect(epilogueTitle(title)).toBeUndefined();
+  });
+  it.each(['三卷读罢', '一二三四五六七八', '𠀀'.repeat(8), '读书8卷'])('accepts at most eight Unicode characters: %s', title => {
+    expect(epilogueTitle(`  ${title}  `)).toBe(title);
   });
 });

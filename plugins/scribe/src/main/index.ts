@@ -6,7 +6,7 @@ import type {
 import { anthropicClient, endpoint, failure, openAIClient, record } from './model';
 import type { ModelClient, ModelConfig, ModelReply } from './model';
 import {
-  builtin, context, currentObjective, DRAFT_PROMPT, PERSONA, prose, questDraft,
+  builtin, context, currentObjective, DRAFT_PROMPT, EPILOGUE_PROMPT, epilogueTitle, PERSONA, prose, questDraft,
   SPLIT_PROMPT, splitDraft, text, validDate,
 } from './writing';
 
@@ -92,6 +92,9 @@ function load(value: Json | undefined): State {
     const epilogue = record(entry);
     if (epilogue.questId !== key) throw failure('scribe/unusable-reply', '尾声任务无法使用。');
     text(epilogue.text, '尾声', 200, true); timestamp(epilogue.writtenAt);
+    const title = epilogueTitle(epilogue.title);
+    if (title === undefined) delete epilogue.title;
+    else epilogue.title = title;
   }
   for (const entry of Object.values(record(data.progress))) {
     const progress = record(entry);
@@ -345,15 +348,30 @@ export async function setup(ctx: MainContext): Promise<void> {
     if (night(ctx.clock.now())) { await persist(draft => { if (!draft.pending.includes(quest.id)) draft.pending.push(quest.id); }); return; }
     const stamp = revision;
     let written = '这一卷写到功成，走过的路留在日志里。鹅毛笔收好了，下一卷由你落笔。';
+    let title: string | undefined;
     try {
       const facts = { ...context(quest), ...await handnotes([quest.id], stamp) };
       checkRevision(stamp);
-      written = prose((await invoke(`依据日志写不超过200字的中文尾声，只输出正文：${JSON.stringify(facts)}`, 600)).text, facts, 200);
+      if (quest.kind === 'main') {
+        const reply = await invoke(`${EPILOGUE_PROMPT}\n日志：${JSON.stringify(facts)}`, 600);
+        const body = reply.text.trim().replace(/^```(?:json)?\s*\r?\n([\s\S]*?)\r?\n```$/i, '$1').trim();
+        try {
+          const result = record(JSON.parse(body));
+          written = prose(result.text, facts, 200);
+          title = epilogueTitle(result.title);
+        } catch {
+          // A formatting failure must not discard an otherwise usable ending.
+          written = prose(body, facts, 200);
+        }
+      } else {
+        written = prose((await invoke(`依据日志写不超过200字的中文尾声，只输出正文：${JSON.stringify(facts)}`, 600)).text, facts, 200);
+      }
     }
     catch { /* A completed quest keeps its ending even without an endpoint. */ }
     if (disposed || stamp !== revision || !enabled()) return;
     if (night(ctx.clock.now())) { await persist(draft => { if (!draft.pending.includes(quest.id)) draft.pending.push(quest.id); }); return; }
-    const ending: ScribeEpilogue = { questId: quest.id, text: written, writtenAt: nowISO() };
+    const ending: ScribeEpilogue = { questId: quest.id, text: written, writtenAt: nowISO(),
+      ...(title === undefined ? {} : { title }) };
     await persist(draft => { draft.epilogues[quest.id] = ending; draft.pending = draft.pending.filter(id => id !== quest.id); });
     if (!disposed && stamp === revision && enabled() && !night(ctx.clock.now())) ctx.bus.emit('scribe/epilogue-written', { epilogue: ending });
   };
