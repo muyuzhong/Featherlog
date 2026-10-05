@@ -45,6 +45,18 @@ export type UpdateState = { current: string } & (
   | { status: 'managed' }
 );
 
+/** A plugin as the settings page lists it (design §17.1). */
+export interface PluginEntry {
+  id: string;
+  name: string;
+  description?: string;
+  /** Off until the user turns it on; only optional plugins can be turned on or off. */
+  optional: boolean;
+  enabled: boolean;
+  /** `failed`: enabled, but its main half could not be set up. */
+  state: 'loaded' | 'failed' | 'off';
+}
+
 /** "shell/*" belongs to the Electron shell. */
 export interface ShellEvents {
   /** `tabId`/`params` accompany view "panel": the tab to show and its "shell/open-panel" params. */
@@ -54,6 +66,8 @@ export interface ShellEvents {
   'shell/notified': { id: string; notification: ShellNotification };
   /** Every change of the updater's state; download progress at most every 500 ms. */
   'shell/update-changed': UpdateState;
+  /** Optional plugins were turned on or off; windows load or drop their UI halves to match. */
+  'shell/plugins-changed': { plugins: PluginEntry[] };
   'shell/popup-closed': {
     popupId: string;
     type: string;
@@ -70,6 +84,10 @@ export interface ShellRequests {
   'shell/quit': { req: Record<string, never>; res: null };
   'shell/set-badge': { req: { iconId: string; badge: Badge | null }; res: null };
   'shell/notify': { req: ShellNotification; res: null };
+  /** Every plugin the shell knows, built in or optional. */
+  'shell/plugins': { req: Record<string, never>; res: { plugins: PluginEntry[] } };
+  /** Turn an optional plugin on (load it now) or off (unload it now). Others are "shell/invalid-input". */
+  'shell/set-plugin-enabled': { req: { pluginId: string; enabled: boolean }; res: { plugins: PluginEntry[] } };
   'shell/update-state': { req: Record<string, never>; res: UpdateState };
   /** Starts a check and returns at once; results arrive as "shell/update-changed". */
   'shell/check-update': { req: Record<string, never>; res: null };

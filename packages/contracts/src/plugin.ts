@@ -23,6 +23,11 @@ export interface PluginManifest {
   handles?: string[];
   requests?: string[];
   contributes?: Contributions;
+  /**
+   * Not loaded until the user enables it in the settings page (design §17.1).
+   * Its data stays when it is turned off again.
+   */
+  optional?: boolean;
 }
 
 export type PluginSetup<C> = (ctx: C) => void | Promise<void>;

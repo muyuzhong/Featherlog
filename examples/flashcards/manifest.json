@@ -1,0 +1,59 @@
+{
+  "id": "flashcards",
+  "name": "八股",
+  "version": "0.1.0",
+  "description": "背八股的小卡片：卷轴上悬停翻一题，按记得的程度安排下次复习。也是编写插件的示例。",
+  "main": "src/main/index.ts",
+  "ui": "src/ui/index.tsx",
+  "optional": true,
+  "emits": ["flashcards/changed", "flashcards/deleted", "flashcards/imported", "flashcards/reviewed"],
+  "listens": [
+    "kernel/ready",
+    "flashcards/changed",
+    "flashcards/deleted",
+    "flashcards/imported",
+    "flashcards/reviewed"
+  ],
+  "handles": [
+    "flashcards/list",
+    "flashcards/next",
+    "flashcards/grade",
+    "flashcards/create",
+    "flashcards/update",
+    "flashcards/delete",
+    "flashcards/import"
+  ],
+  "requests": [
+    "quest/period",
+    "shell/open-panel",
+    "flashcards/list",
+    "flashcards/next",
+    "flashcards/grade",
+    "flashcards/create",
+    "flashcards/update",
+    "flashcards/delete",
+    "flashcards/import"
+  ],
+  "contributes": {
+    "collapsedIcons": [
+      { "id": "flashcards/card", "title": "背一题", "icon": "layers", "order": 2, "preview": true, "opens": "flashcards/deck" }
+    ],
+    "panelTabs": [{ "id": "flashcards/deck", "title": "八股", "icon": "layers", "order": 20 }],
+    "settings": {
+      "title": "八股",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "newPerDay": {
+            "type": "integer",
+            "title": "每天新学几题",
+            "description": "到期的旧题照常出现，这里只限制每天第一次见的新题。",
+            "minimum": 0,
+            "maximum": 100,
+            "default": 10
+          }
+        }
+      }
+    }
+  }
+}

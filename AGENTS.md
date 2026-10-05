@@ -10,9 +10,9 @@
 |---|---|
 | `packages/kernel/` | Codex |
 | `packages/shell/src/main/`、`packages/shell/src/preload/` | Codex |
-| `plugins/*/src/main/` | Codex |
-| `packages/shell/src/renderer/`、`plugins/*/src/ui/` | Claude（前端） |
-| `packages/contracts/`、`plugins/*/manifest.json`、`docs/` | 共享接口，修改需审查 |
+| `plugins/*/src/main/`、`examples/*/src/main/` | Codex |
+| `packages/shell/src/renderer/`、`plugins/*/src/ui/`、`examples/*/src/ui/` | Claude（前端） |
+| `packages/contracts/`、`plugins/*/manifest.json`、`examples/*/manifest.json`、`docs/` | 共享接口，修改需审查 |
 
 **不要编写或修改任何前端代码。** 前端指一切在渲染进程里运行的代码：界面、样式、窗口侧的 `UiBus` 封装、插件的 `src/ui/`。即使任务描述看起来需要，也只做主进程和 preload 的部分，前端需要配合的地方写进 PR 描述。
 
