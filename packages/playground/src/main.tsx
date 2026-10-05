@@ -3,6 +3,8 @@ import { createKernel, type MainPlugin } from '@featherlog/kernel';
 import characterManifest from '@featherlog/plugin-character/manifest.json';
 import { setup as characterMain } from '@featherlog/plugin-character/main';
 import { setup as characterUi } from '@featherlog/plugin-character/ui';
+import flashcardsManifest from '@featherlog/plugin-flashcards/manifest.json';
+import { setup as flashcardsMain } from '@featherlog/plugin-flashcards/main';
 import questManifest from '@featherlog/plugin-quest/manifest.json';
 import notesManifestJson from '@featherlog/plugin-notes/manifest.json';
 import { setup as notesMain } from '@featherlog/plugin-notes/main';
@@ -38,6 +40,7 @@ const mainPlugins: MainPlugin[] = [
   // The real notes plugin: 手记 and 随笔 are kept in the playground's storage like quests are.
   { manifest: notesManifest, setup: notesMain },
   { manifest: characterManifest, setup: characterMain },
+  { manifest: flashcardsManifest, setup: flashcardsMain },
   // The fake scribe responders are installed after seeding below.
   { manifest: scribeManifest, setup: () => {} },
 ];
@@ -48,7 +51,7 @@ const uiPlugins: UiPlugin[] = [
   { manifest: characterManifest as PluginManifest, setup: characterUi },
 ];
 
-const settings = createSettings([manifest, scribeManifest, notesManifest]);
+const settings = createSettings(mainPlugins.map(plugin => plugin.manifest));
 const { clock, nextDay } = createDevClock();
 const log = { debug: console.debug, info: console.info, warn: console.warn, error: console.error };
 const kernel = createKernel({

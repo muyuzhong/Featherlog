@@ -162,3 +162,18 @@ it('marks setup timeouts failed and cleans resources without losing the selectio
   expect(cleaned).toHaveBeenCalledOnce();
   expect(f.settings.enabledPlugins()).toEqual(['example']);
 });
+
+it('registers the real flashcards example as optional and restores its library on reenable', async () => {
+  const f = fixture(builtin); await f.host.start();
+  expect((await f.bus.request('shell/plugins', {})).plugins.find(p => p.id === 'flashcards'))
+    .toMatchObject({ optional: true, enabled: false, state: 'off' });
+  await expect(f.bus.request('flashcards/next', {})).rejects.toMatchObject({ code: 'no-handler' });
+  await f.toggle('flashcards', true);
+  const { card } = await f.bus.request('flashcards/create', { input: { question: 'RDB?', answer: 'Snapshot' } });
+  await f.bus.request('flashcards/grade', { id: card.id, grade: 'good' });
+  await f.toggle('flashcards', false);
+  await expect(f.bus.request('flashcards/list', {})).rejects.toMatchObject({ code: 'no-handler' });
+  await f.toggle('flashcards', true);
+  const { cards } = await f.bus.request('flashcards/list', {});
+  expect(cards).toHaveLength(1); expect(cards[0]!.review.reviews).toBe(1);
+});

@@ -38,7 +38,8 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "vite": "^7.3.6",
-    "@featherlog/plugin-character": "workspace:*"
+    "@featherlog/plugin-character": "workspace:*",
+    "@featherlog/plugin-flashcards": "workspace:*"
   },
   "main": "out/main/index.js",
   "description": "羽记 — a personal quest journal",
