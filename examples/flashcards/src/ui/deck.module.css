@@ -1,0 +1,367 @@
+.book,
+.book * {
+  box-sizing: border-box;
+}
+
+/* The same open book as the journal. */
+.book {
+  position: absolute;
+  inset: 2px 26px 22px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  max-width: 1240px;
+  max-height: 780px;
+  margin: 0 auto;
+}
+
+.pageWrap {
+  min-width: 0;
+  min-height: 0;
+  filter: drop-shadow(0 14px 20px rgba(8, 4, 1, 0.5)) drop-shadow(0 2px 3px rgba(8, 4, 1, 0.45));
+}
+
+.pageWrap:first-child {
+  margin-right: -8px;
+}
+
+.pageWrap:nth-child(2) {
+  margin-left: -8px;
+}
+
+.page {
+  height: 100%;
+  min-height: 0;
+}
+
+.left {
+  display: flex;
+  flex-direction: column;
+  padding: 44px 54px 26px 50px;
+}
+
+.right {
+  padding: 40px 50px 26px 60px;
+  background-position: 0 0, 377px 211px;
+}
+
+.gutter {
+  position: absolute;
+  top: 1%;
+  bottom: 1%;
+  left: 50%;
+  width: 90px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, rgba(70, 40, 14, 0.1) 30%, rgba(50, 26, 8, 0.34) 47%, rgba(30, 14, 4, 0.5) 50%, rgba(50, 26, 8, 0.34) 53%, rgba(70, 40, 14, 0.1) 70%, transparent 100%);
+  mix-blend-mode: multiply;
+}
+
+
+.right {
+  display: flex;
+  flex-direction: column;
+}
+
+.head {
+  text-align: center;
+}
+
+.head h1 {
+  margin: 0;
+  font: 32px/1.2 var(--fl-font-title);
+  font-weight: normal;
+  letter-spacing: 0.55em;
+  padding-left: 0.55em;
+}
+
+.head p {
+  margin: 8px 0 16px;
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.tools {
+  display: flex;
+  gap: 14px;
+}
+
+.tools button,
+.decks button {
+  padding: 3px 6px;
+  border: 0;
+  background: none;
+  font: 15px var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+  cursor: pointer;
+}
+
+.tools button:hover {
+  color: var(--fl-rubric);
+}
+
+.decks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin: 12px 0 4px;
+}
+
+.decks button {
+  border-radius: 12px;
+  font-size: 14px;
+}
+
+.decks button small {
+  margin-left: 4px;
+  font-size: 12px;
+  color: var(--fl-ink-faded);
+}
+
+.decks button em {
+  font-style: normal;
+  color: var(--fl-rubric);
+}
+
+.decks .deckOn {
+  background: var(--fl-rubric-wash);
+  color: var(--fl-ink);
+}
+
+.search {
+  margin: 6px 0 4px;
+  padding: 4px 2px;
+  border: 0;
+  border-bottom: 1.5px dotted var(--fl-ink-ghost);
+  background: none;
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink);
+  outline: none;
+}
+
+.search::placeholder {
+  color: var(--fl-ink-ghost);
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.list button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-bottom: 1px dotted rgba(80, 50, 20, 0.16);
+  background: none;
+  text-align: left;
+  font: 15px var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+  cursor: pointer;
+}
+
+.list button:hover {
+  background: var(--fl-ink-wash);
+}
+
+.list .entryOn {
+  background: var(--fl-rubric-wash);
+  color: var(--fl-ink);
+}
+
+.entryText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dots {
+  display: flex;
+  gap: 2px;
+}
+
+.dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(80, 50, 20, 0.3);
+}
+
+.dots .dotOn {
+  background: var(--fl-rubric);
+  box-shadow: none;
+}
+
+.newMark {
+  font-size: 12px;
+  color: var(--fl-rubric);
+}
+
+.empty,
+.blank {
+  margin: 30px 0 0;
+  font: 15px/1.8 var(--fl-font-hand);
+  color: var(--fl-ink-ghost);
+  text-align: center;
+}
+
+.blank {
+  margin-top: 120px;
+}
+
+.blankHint {
+  font-size: 13.5px;
+}
+
+/* ---- one card ---- */
+.sheet {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sheetTitle {
+  margin: 0 0 6px;
+  font: 20px var(--fl-font-display);
+  font-weight: normal;
+  letter-spacing: 0.3em;
+}
+
+.line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.line input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px;
+  border: 0;
+  border-bottom: 1.5px dotted var(--fl-ink-ghost);
+  background: none;
+  font: 15px var(--fl-font-hand);
+  color: var(--fl-ink);
+  outline: none;
+}
+
+.question,
+.answer,
+.paste {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background-color: transparent;
+  color: var(--fl-ink);
+}
+
+.question {
+  font: 20px/1.6 var(--fl-font-display);
+}
+
+.question::placeholder,
+.answer::placeholder,
+.paste::placeholder {
+  color: var(--fl-ink-ghost);
+}
+
+.answer,
+.paste {
+  flex: 1;
+  min-height: 120px;
+  margin-top: 8px;
+  font: 15.5px/2 var(--fl-font-hand);
+  background-image: linear-gradient(transparent calc(2em - 1.5px), rgba(42, 28, 17, 0.14) calc(2em - 1.5px), rgba(42, 28, 17, 0.14) 2em);
+  background-size: 100% 2em;
+  background-attachment: local;
+}
+
+.format {
+  margin: 0;
+  font: 13.5px/1.7 var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.format code {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--fl-ink-wash);
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px;
+}
+
+.example {
+  margin: 8px 0 12px;
+  padding: 8px 12px;
+  border-left: 2px solid rgba(138, 43, 29, 0.35);
+  background: rgba(255, 246, 222, 0.3);
+  font: 12.5px/1.6 ui-monospace, monospace;
+  color: var(--fl-ink-soft);
+  white-space: pre-wrap;
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.stats {
+  flex: 1;
+  font: 13px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.stats em {
+  font-style: normal;
+}
+
+.warn {
+  color: var(--fl-rubric);
+}
+
+.write,
+.tear {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 14px;
+  background: none;
+  font: 15px var(--fl-font-hand);
+  cursor: pointer;
+}
+
+.write {
+  background: var(--fl-rubric);
+  color: var(--fl-paper-light);
+  letter-spacing: 0.2em;
+}
+
+.write:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.tear {
+  color: var(--fl-ink-faded);
+}
+
+.tear:hover,
+.confirming {
+  color: var(--fl-rubric);
+}

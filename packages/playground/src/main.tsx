@@ -5,6 +5,7 @@ import { setup as characterMain } from '@featherlog/plugin-character/main';
 import { setup as characterUi } from '@featherlog/plugin-character/ui';
 import flashcardsManifest from '@featherlog/plugin-flashcards/manifest.json';
 import { setup as flashcardsMain } from '@featherlog/plugin-flashcards/main';
+import { setup as flashcardsUi } from '@featherlog/plugin-flashcards/ui';
 import questManifest from '@featherlog/plugin-quest/manifest.json';
 import notesManifestJson from '@featherlog/plugin-notes/manifest.json';
 import { setup as notesMain } from '@featherlog/plugin-notes/main';
@@ -49,6 +50,7 @@ const uiPlugins: UiPlugin[] = [
   { manifest: scribeManifest, setup: scribeUi },
   { manifest: notesManifest, setup: notesUi },
   { manifest: characterManifest as PluginManifest, setup: characterUi },
+  { manifest: flashcardsManifest as PluginManifest, setup: flashcardsUi },
 ];
 
 const settings = createSettings(mainPlugins.map(plugin => plugin.manifest));
@@ -103,8 +105,8 @@ const menu = {
   },
 };
 const [collapsed, panel] = await Promise.all([
-  createRuntime(createFakePreload('collapsed', kernel, shell, settings, menu.open, [manifest, scribeManifest, notesManifest]), uiPlugins),
-  createRuntime(createFakePreload('panel', kernel, shell, settings, menu.open, [manifest, scribeManifest, notesManifest]), uiPlugins),
+  createRuntime(createFakePreload('collapsed', kernel, shell, settings, menu.open, [manifest, scribeManifest, notesManifest, flashcardsManifest]), uiPlugins),
+  createRuntime(createFakePreload('panel', kernel, shell, settings, menu.open, [manifest, scribeManifest, notesManifest, flashcardsManifest]), uiPlugins),
 ]);
 
 createRoot(document.getElementById('root')!).render(

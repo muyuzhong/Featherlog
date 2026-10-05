@@ -583,3 +583,9 @@ button:focus-visible,
   opacity: 0.45;
   cursor: default;
 }
+
+.optionalHead {
+  margin: 18px 8px 4px;
+  font: 13.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}

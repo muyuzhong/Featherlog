@@ -2,6 +2,7 @@ import type { Json } from '@featherlog/contracts';
 import { motion } from 'motion/react';
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import type { WindowRuntime } from '../app/runtime';
+import { useManifests, usePluginEntries } from '../app/use-plugins';
 import { useSetting } from '../app/use-setting';
 import { PAPERS, type Paper } from '../theme';
 import { readFields, type Field } from './schema';
@@ -13,7 +14,8 @@ import { UpdateNotes } from './Updates';
  * hand, then one section per plugin rendered from its settings schema.
  */
 export function SettingsPage({ runtime }: { runtime: WindowRuntime }) {
-  const sections = runtime.manifests.flatMap((manifest) => {
+  const manifests = useManifests(runtime);
+  const sections = manifests.flatMap((manifest) => {
     const settings = manifest.contributes?.settings;
     const fields = settings ? readFields(settings.schema) : [];
     return fields.length ? [{ scope: manifest.id, title: settings?.title ?? manifest.name, fields }] : [];
@@ -67,15 +69,7 @@ export function SettingsPage({ runtime }: { runtime: WindowRuntime }) {
             />
 
             <Section title="插件">
-              <ul className={styles.plugins}>
-                {runtime.manifests.map((manifest) => (
-                  <li key={manifest.id}>
-                    <span className={styles.pluginName}>{manifest.name}</span>
-                    <small>v{manifest.version}</small>
-                    {manifest.description && <p>{manifest.description}</p>}
-                  </li>
-                ))}
-              </ul>
+              <Plugins runtime={runtime} />
             </Section>
 
             <footer className={styles.colophon}>羽记 · 一切皆插件</footer>
@@ -83,6 +77,72 @@ export function SettingsPage({ runtime }: { runtime: WindowRuntime }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Built-in plugins are listed as they are; optional ones (design §17.1) can be
+ * ticked on and off, which takes effect at once.
+ */
+function Plugins({ runtime }: { runtime: WindowRuntime }) {
+  const manifests = useManifests(runtime);
+  const entries = usePluginEntries(runtime);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<{ id: string; message: string } | null>(null);
+  const builtIn = manifests.filter((m) => !m.optional);
+  const optional = entries.filter((e) => e.optional);
+  const toggle = async (id: string, enabled: boolean) => {
+    setBusy(id);
+    setError(null);
+    try {
+      // Turning a plugin on waits for its setup, which the kernel allows up to 10 s.
+      await runtime.shellBus.request('shell/set-plugin-enabled', { pluginId: id, enabled }, { timeoutMs: 15_000 });
+      if (enabled) runtime.sound.play('seal');
+    } catch (cause) {
+      console.error(cause);
+      setError({ id, message: enabled ? '没能启用，请再试一次' : '没能停用，请再试一次' });
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <>
+      <ul className={styles.plugins}>
+        {builtIn.map((manifest) => (
+          <li key={manifest.id}>
+            <span className={styles.pluginName}>{manifest.name}</span>
+            <small>v{manifest.version}</small>
+            {manifest.description && <p>{manifest.description}</p>}
+          </li>
+        ))}
+      </ul>
+      {optional.length > 0 && (
+        <>
+          <p className={styles.optionalHead}>可选插件 · 勾选后启用，取消后停用，数据都会留着</p>
+          {optional.map((entry) => {
+            const failed = entry.enabled && entry.state === 'failed';
+            const hint = error?.id === entry.id ? error.message : failed ? '没能启用：取消勾选再勾上可以重试' : undefined;
+            return (
+              <button
+                key={entry.id}
+                className={`${styles.row} ${styles.check}`}
+                role="switch"
+                aria-checked={entry.enabled}
+                disabled={busy === entry.id}
+                onClick={() => void toggle(entry.id, !entry.enabled)}
+              >
+                <InkBox on={entry.enabled} />
+                <span className={styles.label}>
+                  <span className={styles.fieldTitle}>{entry.name}</span>
+                  {entry.description && <span className={styles.desc}>{entry.description}</span>}
+                  {hint && <span className={`${styles.hint} ${styles.warn}`}>{hint}</span>}
+                </span>
+              </button>
+            );
+          })}
+        </>
+      )}
+    </>
   );
 }
 

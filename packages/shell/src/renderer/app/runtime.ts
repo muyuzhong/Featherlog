@@ -2,6 +2,7 @@ import type {
   Dispose,
   FeatherlogPreload,
   Json,
+  PluginEntry,
   PluginManifest,
   PluginSettings,
   UiBus,
@@ -22,7 +23,12 @@ export interface WindowRuntime {
   readonly registry: SlotRegistry;
   /** The shell's own bus, sending as "shell". */
   readonly shellBus: UiBus;
+  /** Plugins whose UI half runs in this window: built-in ones and enabled optional ones (design §17.1). */
   readonly manifests: PluginManifest[];
+  /** Every plugin the shell knows, as it last reported them; empty for a shell that predates §17. */
+  readonly plugins: PluginEntry[];
+  /** Notified when plugins are turned on or off. */
+  onPluginsChange(listener: () => void): Dispose;
   /** This window's sound player, shared by the shell and every plugin. */
   readonly sound: UiSound;
   setting<T extends Json>(scope: string, key: string): T | undefined;
@@ -61,7 +67,8 @@ export async function createRuntime(preload: FeatherlogPreload, plugins: UiPlugi
   const shellBus = createUiBus(preload.bus, 'shell');
   disposers.push(shellBus.dispose);
 
-  for (const plugin of plugins) {
+  // One plugin's UI half: set up now, torn down when it is turned off or the window goes.
+  const start = async (plugin: UiPlugin): Promise<Dispose> => {
     const id = plugin.manifest.id;
     const bus = createUiBus(preload.bus, id);
     const slots = registry.providerFor(id);
@@ -79,20 +86,70 @@ export async function createRuntime(preload: FeatherlogPreload, plugins: UiPlugi
       log: prefixed(id),
       onDispose: (callback) => void own.push(callback),
     };
-    disposers.push(() => own.reverse().forEach(run));
     try {
       await plugin.setup(ctx);
     } catch (cause) {
       // One plugin's UI failing must not take the window down with it.
       console.error(`[${id}] UI setup failed`, cause);
     }
+    return () => own.reverse().forEach(run);
+  };
+
+  // Optional plugins run only while the shell has them loaded (design §17.1).
+  let entries: PluginEntry[] = [];
+  const running = new Map<string, Dispose>();
+  const pluginListeners = new Set<() => void>();
+  const wanted = (manifest: PluginManifest) =>
+    !manifest.optional || entries.some((e) => e.id === manifest.id && e.enabled && e.state === 'loaded');
+  // Replaced, never mutated, so React can compare snapshots.
+  let active: PluginManifest[] = [];
+  let syncing = Promise.resolve();
+  const sync = () =>
+    (syncing = syncing.then(async () => {
+      for (const plugin of plugins) {
+        const id = plugin.manifest.id;
+        const stop = running.get(id);
+        if (stop && !wanted(plugin.manifest)) {
+          running.delete(id);
+          run(stop);
+        } else if (!stop && wanted(plugin.manifest)) {
+          running.set(id, await start(plugin));
+        }
+      }
+      active = plugins.filter((p) => running.has(p.manifest.id)).map((p) => p.manifest);
+      pluginListeners.forEach((listener) => listener());
+    }));
+  try {
+    entries = (await shellBus.request('shell/plugins', {})).plugins;
+  } catch {
+    // A shell without optional plugins: every built-in plugin runs, no optional one does.
   }
+  disposers.push(
+    shellBus.on('shell/plugins-changed', ({ plugins: next }) => {
+      entries = next;
+      void sync();
+    }),
+  );
+  await sync();
+  disposers.push(() => {
+    for (const stop of [...running.values()].reverse()) run(stop);
+    running.clear();
+  });
 
   return {
     preload,
     registry,
     shellBus,
-    manifests: plugins.map((p) => p.manifest),
+    get manifests() {
+      return active;
+    },
+    get plugins() {
+      return entries;
+    },
+    onPluginsChange(listener) {
+      pluginListeners.add(listener);
+      return () => pluginListeners.delete(listener);
+    },
     sound,
     setting: <T extends Json>(scope: string, key: string) => settings[scope]?.[key] as T | undefined,
     onSettingChange,
