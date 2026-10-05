@@ -820,3 +820,69 @@ it('gives recap tomorrow suggestions real names and next-day recurrence instead 
   const prompt = f.model.mock.calls[0]![0].messages[0]!.content;
   expect(prompt).toContain('明日限期'); expect(prompt).not.toContain('周六专用');
 });
+
+describe('§14.3 and §16.4 attribute suggestions and main epilogue gifts', () => {
+  it('returns validated suggested attributes and retries invalid suggestions once', async () => {
+    const f = await fixture();
+    f.model.mockResolvedValueOnce(draftReply({ kind: 'side', title: '整理桌面', attributes: ['mind', 'mind'] }))
+      .mockResolvedValueOnce(draftReply({ kind: 'side', title: '整理桌面', attributes: ['mind', 'craft'] }));
+    expect((await f.request('scribe/draft-quest', { text: '整理桌面' })).input.attributes).toEqual(['mind', 'craft']);
+    expect(f.model).toHaveBeenCalledTimes(2);
+    expect(f.model.mock.calls[1]![0].messages.at(-1)!.content).toContain('attributes');
+    f.model.mockResolvedValue(draftReply({ kind: 'side', title: '整理桌面', attributes: ['alien'] }));
+    await expect(f.request('scribe/draft-quest', { text: '整理桌面' })).rejects.toMatchObject({ code: 'scribe/unusable-reply' });
+    expect(f.model).toHaveBeenCalledTimes(4);
+  });
+
+  it('persists and emits a main title, preserves it after restart and does not rewrite the ending', async () => {
+    const f = await fixture();
+    f.model.mockResolvedValueOnce({ text: '此事功成。' })
+      .mockResolvedValueOnce({ text: JSON.stringify({ text: '此卷功成，鹅毛笔收好了。', title: '  三卷读罢  ' }) });
+    f.emit('quest/completed', { quest: quest({ status: 'completed' }) }); await f.drain();
+    const ending = (await f.request('scribe/epilogue', { questId: 'q1' })).epilogue!;
+    expect(ending).toEqual({ questId: 'q1', text: '此卷功成，鹅毛笔收好了。', title: '三卷读罢', writtenAt: new Date(local()).toISOString() });
+    expect(f.messages.filter(m => m.type === 'scribe/epilogue-written')[0]!.payload).toEqual({ epilogue: ending });
+    expect(f.model.mock.calls[1]![0].messages[0]!.content).toContain('title');
+    f.emit('quest/completed', { quest: quest({ status: 'completed' }) }); await f.drain();
+    expect((await f.request('scribe/epilogue', { questId: 'q1' })).epilogue).toEqual(ending);
+    const restarted = await fixture({ data: f.data });
+    expect((await restarted.request('scribe/epilogue', { questId: 'q1' })).epilogue).toEqual(ending);
+  });
+
+  it.each([undefined, null, 123, {}, [], '', '一二三四五六七八九', '三卷，读罢', '题赠！', '三\n卷'])(
+    'discards invalid title %j while preserving model prose without retry', async title => {
+      const f = await fixture();
+      f.model.mockResolvedValueOnce({ text: '此事功成。' })
+        .mockResolvedValueOnce({ text: JSON.stringify({ text: '此卷功成，鹅毛笔收好了。', title }) });
+      f.emit('quest/completed', { quest: quest({ status: 'completed' }) }); await f.drain();
+      const ending = (await f.request('scribe/epilogue', { questId: 'q1' })).epilogue!;
+      expect(ending.text).toBe('此卷功成，鹅毛笔收好了。');
+      expect(ending).not.toHaveProperty('title');
+      expect(f.model).toHaveBeenCalledTimes(2);
+      expect(f.messages.filter(m => m.type === 'scribe/epilogue-written')).toHaveLength(1);
+    },
+  );
+
+  it('keeps side endings as prose without requesting a title and ignores daily endings', async () => {
+    const f = await fixture({ quests: [quest({ kind: 'side' })] });
+    f.model.mockResolvedValueOnce({ text: '此事功成。' }).mockResolvedValueOnce({ text: '此卷功成，鹅毛笔收好了。' });
+    f.emit('quest/completed', { quest: quest({ kind: 'side', status: 'completed' }) }); await f.drain();
+    const ending = (await f.request('scribe/epilogue', { questId: 'q1' })).epilogue!;
+    expect(ending.text).toBe('此卷功成，鹅毛笔收好了。'); expect(ending).not.toHaveProperty('title');
+    expect(f.model.mock.calls[1]![0].messages[0]!.content).toContain('只输出正文');
+    const daily = quest({ id: 'daily', kind: 'daily', chapters: [], recurrence: { freq: 'daily' } });
+    f.emit('quest/completed', { quest: daily, periodKey: '2026-10-03' }); await f.drain();
+    expect((await f.request('scribe/epilogue', { questId: 'daily' })).epilogue).toBeNull();
+  });
+
+  it('retains old endings without titles and drops malformed optional stored titles', async () => {
+    const f = await fixture({ consent: false });
+    f.emit('quest/completed', { quest: quest({ status: 'completed' }) }); await f.drain();
+    const ending = (await f.request('scribe/epilogue', { questId: 'q1' })).epilogue!;
+    expect(ending).not.toHaveProperty('title');
+    const state = f.data.get('state') as { epilogues: Record<string, Json> };
+    state.epilogues.q1 = { ...ending, title: { bad: true } };
+    const reopened = await fixture({ data: f.data });
+    expect((await reopened.request('scribe/epilogue', { questId: 'q1' })).epilogue).toEqual(ending);
+  });
+});
