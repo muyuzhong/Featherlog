@@ -1,5 +1,7 @@
 import type { MainContext, PluginManifest } from '@featherlog/contracts';
 import { createKernel, type MainPlugin } from '@featherlog/kernel';
+import characterManifest from '@featherlog/plugin-character/manifest.json';
+import { setup as characterMain } from '@featherlog/plugin-character/main';
 import questManifest from '@featherlog/plugin-quest/manifest.json';
 import notesManifestJson from '@featherlog/plugin-notes/manifest.json';
 import { setup as notesMain } from '@featherlog/plugin-notes/main';
@@ -34,6 +36,7 @@ const mainPlugins: MainPlugin[] = [
   { manifest, setup: questMain as (ctx: MainContext) => Promise<void> },
   // The real notes plugin: 手记 and 随笔 are kept in the playground's storage like quests are.
   { manifest: notesManifest, setup: notesMain },
+  { manifest: characterManifest, setup: characterMain },
 ];
 const uiPlugins: UiPlugin[] = [
   { manifest, setup: questUi },

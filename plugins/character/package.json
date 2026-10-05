@@ -1,0 +1,15 @@
+{
+  "name": "@featherlog/plugin-character",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./manifest.json": "./manifest.json",
+    "./main": "./src/main/index.ts"
+  },
+  "scripts": { "typecheck": "tsc --noEmit -p tsconfig.main.json" },
+  "devDependencies": {
+    "@featherlog/contracts": "workspace:*",
+    "@featherlog/kernel": "workspace:*"
+  }
+}

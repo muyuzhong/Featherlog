@@ -34,6 +34,9 @@ importers:
       '@featherlog/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@featherlog/plugin-character':
+        specifier: workspace:*
+        version: link:../../plugins/character
       '@featherlog/plugin-notes':
         specifier: workspace:*
         version: link:../../plugins/notes
@@ -90,6 +93,9 @@ importers:
       '@featherlog/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@featherlog/plugin-character':
+        specifier: workspace:*
+        version: link:../../plugins/character
       '@featherlog/plugin-notes':
         specifier: workspace:*
         version: link:../../plugins/notes
@@ -132,6 +138,15 @@ importers:
       vite:
         specifier: ^7.3.6
         version: 7.3.6(@types/node@26.6.3)(jiti@2.7.0)(lightningcss@1.33.0)
+
+  plugins/character:
+    devDependencies:
+      '@featherlog/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@featherlog/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
 
   plugins/notes:
     dependencies:
