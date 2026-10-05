@@ -45,6 +45,22 @@ export function createFlashcardsStore(bus: UiBus, sound: UiSound) {
       console.error('flashcards/next failed', cause);
     }
   };
+  /**
+   * Bring the counts and the card up to date without losing the reader's place:
+   * a card whose answer is showing stays until it is graded; otherwise the card
+   * the schedule wants now (new ones due, a new day) takes its place.
+   */
+  const refresh = async () => {
+    try {
+      const { card, today } = await bus.request('flashcards/next', {});
+      const shown = snapshot.current;
+      if (shown && card?.id === shown.id) set({ current: card, today });
+      else if (shown && snapshot.flipped) set({ today });
+      else set({ current: card, flipped: false, today });
+    } catch (cause) {
+      console.error('flashcards/next failed', cause);
+    }
+  };
   let listing = 0;
   const list = async () => {
     const mine = ++listing;
@@ -63,7 +79,7 @@ export function createFlashcardsStore(bus: UiBus, sound: UiSound) {
       // The scroll's card was edited on the deck page: show the new words, keep the side it is on.
       if (snapshot.current?.id === card.id) set({ current: card });
       // A card that was not there before (or nothing was due) may be the one to show now.
-      if (snapshot.current === null) void next();
+      void refresh();
       void list();
     }),
     bus.on('flashcards/deleted', ({ id }) => {
@@ -71,7 +87,7 @@ export function createFlashcardsStore(bus: UiBus, sound: UiSound) {
       void list();
     }),
     bus.on('flashcards/imported', () => {
-      if (snapshot.current === null) void next();
+      void refresh();
       void list();
     }),
     // Graded in the other window: that card is done here too.
@@ -103,8 +119,8 @@ export function createFlashcardsStore(bus: UiBus, sound: UiSound) {
       set({ today });
       await next();
     },
-    /** Look again: something may have come due since the scroll last asked. */
-    refresh: () => void next(),
+    /** Look again: cards come due, and days turn, while the scroll sits there. */
+    refresh: () => void refresh(),
     setFilter(patch: Partial<Snapshot['filter']>) {
       set({ filter: { ...snapshot.filter, ...patch } });
       void list();

@@ -14,6 +14,9 @@ const GRADES: { grade: FlashcardGrade; label: string; key: string }[] = [
 export function ReviewCard({ store, host }: { store: FlashcardsStore; host: PreviewHost }) {
   const { current, flipped, today } = useFlashcards(store);
   const root = useRef<HTMLDivElement>(null);
+  // Set once the reader clicks or types in the card. A card merely hovered must not take
+  // focus, or it would hold the preview open after the pointer leaves.
+  const engaged = useRef(false);
 
   useLayoutEffect(() => {
     const el = root.current;
@@ -22,10 +25,22 @@ export function ReviewCard({ store, host }: { store: FlashcardsStore; host: Prev
     observer.observe(el);
     return () => observer.disconnect();
   }, [host]);
-  // Cards come due while the scroll sits there; look again each time the card is shown.
-  useEffect(() => host.onShow(store.refresh), [host, store]);
+  // Cards come due and days turn while the scroll sits there: look again whenever the
+  // card appears. The shell mounts the preview afresh on each hover, so that is mount too.
+  useEffect(() => {
+    store.refresh();
+    return host.onShow(store.refresh);
+  }, [host, store]);
+  // Turning the card over removes the button that had focus, and grading swaps the card:
+  // keep focus on the card so 1/2/3 still reach it, unless it went somewhere else on purpose.
+  useEffect(() => {
+    if (!engaged.current) return;
+    const active = document.activeElement;
+    if (!active || active === document.body || root.current?.contains(active)) root.current?.focus({ preventScroll: true });
+  }, [flipped, current?.id]);
 
   const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    engaged.current = true;
     if (event.key === ' ' && !flipped) {
       event.preventDefault();
       store.flip();
@@ -36,8 +51,9 @@ export function ReviewCard({ store, host }: { store: FlashcardsStore; host: Prev
   };
 
   return (
-    // Focusable so Space and 1/2/3 work once the card has been clicked.
-    <div ref={root} className={styles.card} tabIndex={-1} onKeyDown={onKey} onPointerDown={() => root.current?.focus()}>
+    // Focusable so Space and 1/2/3 work once the card has been clicked; while it has
+    // focus the scroll keeps it open (data-hold-open, design §7.2).
+    <div ref={root} className={styles.card} tabIndex={-1} data-hold-open onKeyDown={onKey} onPointerDown={() => (engaged.current = true)}>
       <AnimatePresence mode="wait" initial={false}>
         {current === undefined ? null : current === null ? (
           <motion.div key="none" className={styles.rest} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
