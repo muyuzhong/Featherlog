@@ -232,3 +232,24 @@ it.each(['missing', 'mismatch', 'history', 'duplicate', 'version'])('preserves c
   await expect(f.open()).rejects.toMatchObject({ code: 'quest/invalid-input' });
   expect(f.data).toEqual(saved);
 });
+
+it('preserves attributes through legacy migration and indexed reloads', async () => {
+  const initial = legacy();
+  initial.quests[0]!.attributes = ['body', 'mind'];
+  const f = fixture(initial);
+  expect((await f.open()).state).toEqual(initial);
+  expect((await f.open()).state).toEqual(initial);
+});
+
+it.each([1, 2])('rejects corrupt stored attributes in schemaVersion=%i without writes', async version => {
+  const f = fixture();
+  if (version === 2) await f.open();
+  const state = f.data.get('state') as { quests: Array<{ key?: string; attributes?: unknown }> };
+  const reference = state.quests[0]!;
+  const quest = version === 1 ? reference
+    : (f.data.get(reference.key!) as { quest: { attributes?: unknown } }).quest;
+  quest.attributes = ['learning', 'learning'];
+  const before = structuredClone(f.data);
+  await expect(f.open()).rejects.toMatchObject({ code: 'quest/invalid-input' });
+  expect(f.data).toEqual(before);
+});
