@@ -1,5 +1,6 @@
 import type { ObjectiveDraft, Quest, ScribeEpilogue, ScribeLine } from '@featherlog/contracts';
 import { Fragment, useEffect, useRef, useState } from 'react';
+import { attributeName } from './attributes';
 import { ScribeWords } from './ScribeBits';
 import { useQuestNotes, type NotesLink } from './notes-link';
 import { QuestNotes } from './QuestNotes';
@@ -174,6 +175,7 @@ function Ledger({ quest, today, notes }: { quest: Quest; today: string; notes: n
     rows.push(['目标', `${cn(done)} / ${cn(objectives.length)}`]);
   }
   if (quest.deadline && quest.status === 'active') rows.push(['限期', cnDate(quest.deadline)]);
+  if (quest.attributes?.length) rows.push(['属性', quest.attributes.map(attributeName).join('、')]);
   if (notes > 0) rows.push(['手记', `${cnCount(notes)}则`]);
   rows.push(['启程', `${cnDate(quest.createdAt)} · 第${cn(dayNumber(quest.createdAt, today))}日`]);
   if (quest.completedAt) rows.push(['功成', cnDate(quest.completedAt)]);

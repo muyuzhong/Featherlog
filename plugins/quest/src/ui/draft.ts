@@ -1,4 +1,4 @@
-import type { ChapterDraft, ObjectiveDraft, Quest, QuestInput, QuestKind, QuestPatch, Recurrence } from '@featherlog/contracts';
+import type { ChapterDraft, ObjectiveDraft, Quest, QuestAttribute, QuestInput, QuestKind, QuestPatch, Recurrence } from '@featherlog/contracts';
 
 /*
  * The editor's working copy of a quest. Numbers stay strings while being typed;
@@ -42,6 +42,8 @@ export type Draft = {
   quotaOn: boolean;
   quotaTarget: string;
   quotaUnit: string;
+  /** In the order chosen: an odd share of 历练 goes to the first (design §16.2). */
+  attributes: QuestAttribute[];
 };
 
 export const LIMITS = { title: 200, name: 40, story: 2000 };
@@ -65,7 +67,14 @@ export function blankDraft(kind: QuestKind): Draft {
     quotaOn: false,
     quotaTarget: '',
     quotaUnit: '',
+    attributes: [],
   };
+}
+
+/** Choosing an attribute again lets it go; a third is refused (design §8.2: at most two). */
+export function toggleAttribute(chosen: QuestAttribute[], attribute: QuestAttribute): QuestAttribute[] {
+  if (chosen.includes(attribute)) return chosen.filter((a) => a !== attribute);
+  return chosen.length < 2 ? [...chosen, attribute] : chosen;
 }
 
 /** Switching kind while creating keeps what was written, reshaped for the new kind. */
@@ -113,6 +122,7 @@ export function draftFromQuest(quest: Quest): Draft {
     quotaOn: quest.quota !== undefined,
     quotaTarget: quest.quota ? String(quest.quota.target) : '',
     quotaUnit: quest.quota?.unit ?? '',
+    attributes: [...(quest.attributes ?? [])],
   };
 }
 
@@ -151,6 +161,7 @@ export function draftFromInput(input: QuestInput): Draft {
     quotaOn: input.quota !== undefined,
     quotaTarget: input.quota ? String(input.quota.target) : '',
     quotaUnit: input.quota?.unit ?? '',
+    attributes: [...new Set(input.attributes ?? [])].slice(0, 2),
   };
 }
 
@@ -260,6 +271,7 @@ export function toInput(draft: Draft): QuestInput {
     ...(draft.kind !== 'daily' ? { chapters: chapterDrafts(draft) } : {}),
     ...(draft.kind !== 'daily' && draft.deadline ? { deadline: draft.deadline } : {}),
     ...(draft.kind === 'daily' ? { recurrence: recurrence(draft), ...(q ? { quota: q } : {}) } : {}),
+    ...(draft.attributes.length ? { attributes: [...draft.attributes] } : {}),
   };
 }
 
@@ -278,6 +290,7 @@ export function toEdit(quest: Quest, draft: Draft): { patch?: QuestPatch; chapte
   if (name !== quest.name) patch.name = name ?? null;
   const story = optional(draft.story);
   if (story !== quest.story) patch.story = story ?? null;
+  if (!same(draft.attributes, quest.attributes ?? [])) patch.attributes = draft.attributes.length ? [...draft.attributes] : null;
   if (quest.kind === 'daily') {
     const r = recurrence(draft);
     if (!same(r, quest.recurrence)) patch.recurrence = r;
