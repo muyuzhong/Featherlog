@@ -1,6 +1,6 @@
 pkgbase = featherlog-bin
 	pkgdesc = A personal quest journal with a floating scroll (羽记)
-	pkgver = 0.4.0
+	pkgver = 0.5.0
 	pkgrel = 1
 	url = https://github.com/muyuzhong/Featherlog
 	arch = x86_64
@@ -36,9 +36,9 @@ pkgbase = featherlog-bin
 	conflicts = featherlog
 	options = !strip
 	options = !debug
-	source = Featherlog-0.4.0-x86_64.AppImage::https://github.com/muyuzhong/Featherlog/releases/download/v0.4.0/Featherlog-0.4.0-x86_64.AppImage
-	source = LICENSE-0.4.0::https://raw.githubusercontent.com/muyuzhong/Featherlog/v0.4.0/LICENSE
-	sha256sums = a21cb22158c260428ea30bf0f7163e8337c324a0fad2320f38c58732152b6ad0
+	source = Featherlog-0.5.0-x86_64.AppImage::https://github.com/muyuzhong/Featherlog/releases/download/v0.5.0/Featherlog-0.5.0-x86_64.AppImage
+	source = LICENSE-0.5.0::https://raw.githubusercontent.com/muyuzhong/Featherlog/v0.5.0/LICENSE
+	sha256sums = 9adc61daaa4d8b94ae7ef9f47fe96ad4d371a3956a3b6de7c22b01a306dd0fd7
 	sha256sums = 869313596787f2dfd98d34c7c9d3c000f263bfe3b09162654de7aa1d054e3cda
 
 pkgname = featherlog-bin
