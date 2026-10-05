@@ -1,6 +1,6 @@
 import type { Quest } from '@featherlog/contracts';
 import { describe, expect, it } from 'vitest';
-import { blankDraft, blankObjective, draftFromInput, draftFromQuest, problem, toEdit, toInput, withKind, withSplit, type Draft } from './draft';
+import { blankDraft, blankObjective, draftFromInput, draftFromQuest, problem, toEdit, toggleAttribute, toInput, withKind, withSplit, type Draft } from './draft';
 
 const derived = { chapterIndex: 0, objectiveIndex: 0, ratio: 0, chapterRatio: 0, streak: 0, dueToday: false, overdue: false };
 
@@ -251,5 +251,37 @@ describe('chapter deadlines (design §8.2)', () => {
   it('takes chapter deadlines from a proposal', () => {
     const draft = draftFromInput({ kind: 'main', title: '读书', chapters: [{ title: '人月神话', deadline: '2026-10-31', objectives: [{ text: '读完' }] }] });
     expect(draft.chapters[0]!.deadline).toBe('2026-10-31');
+  });
+});
+
+describe('attributes (design §8.2, §16.2)', () => {
+  it('chooses at most two, in the order chosen, and lets one go when chosen again', () => {
+    expect(toggleAttribute([], 'mind')).toEqual(['mind']);
+    expect(toggleAttribute(['mind'], 'learning')).toEqual(['mind', 'learning']);
+    expect(toggleAttribute(['mind', 'learning'], 'body')).toEqual(['mind', 'learning']);
+    expect(toggleAttribute(['mind', 'learning'], 'mind')).toEqual(['learning']);
+  });
+
+  it('writes attributes only when some are chosen, for every kind', () => {
+    const side = write(blankDraft('side'), { title: '整理书架' });
+    expect(toInput(side)).not.toHaveProperty('attributes');
+    expect(toInput({ ...side, attributes: ['craft'] }).attributes).toEqual(['craft']);
+    const daily = write(blankDraft('daily'), { title: '晨跑', attributes: ['body', 'mind'] });
+    expect(toInput(daily).attributes).toEqual(['body', 'mind']);
+  });
+
+  it('patches attributes only when they change, and clears them with null', () => {
+    const q = quest({ attributes: ['learning'] });
+    const draft = draftFromQuest(q);
+    expect(draft.attributes).toEqual(['learning']);
+    expect(toEdit(q, draft)).toEqual({});
+    expect(toEdit(q, { ...draft, attributes: ['learning', 'mind'] }).patch).toEqual({ attributes: ['learning', 'mind'] });
+    expect(toEdit(q, { ...draft, attributes: [] }).patch).toEqual({ attributes: null });
+    expect(toEdit(quest(), draftFromQuest(quest()))).toEqual({});
+  });
+
+  it('takes the scribe\'s suggestion, at most two and no repeats', () => {
+    const draft = draftFromInput({ kind: 'side', title: '读书', attributes: ['learning', 'learning', 'mind', 'craft'] });
+    expect(draft.attributes).toEqual(['learning', 'mind']);
   });
 });

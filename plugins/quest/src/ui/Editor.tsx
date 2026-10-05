@@ -8,12 +8,14 @@ import {
   LIMITS,
   problem,
   toEdit,
+  toggleAttribute,
   toInput,
   withKind,
   type ChapterRow,
   type Draft,
   type ObjectiveRow,
 } from './draft';
+import { ATTRIBUTES } from './attributes';
 import { DateField } from './DateField';
 import { InkBox, InkCheck } from './ink';
 import { capital } from './numerals';
@@ -172,6 +174,30 @@ export function Editor({ store, quest, kind, onDone, seed, scribeNote }: Props) 
           onChange={(e) => change({ title: e.target.value })}
         />
         <p className={styles.titleHint}>{draft.title ? '真实目标' : `真实目标，例如「${EXAMPLE[draft.kind]}」`}</p>
+
+        <div className={`${styles.field} ${styles.attributeField}`}>
+          <span className={styles.fieldLabel}>属性</span>
+          <span className={styles.attributes} role="group" aria-label="属性">
+            {ATTRIBUTES.map(({ attribute, name, seal }) => {
+              const on = draft.attributes.includes(attribute);
+              const full = !on && draft.attributes.length >= 2;
+              return (
+                <button
+                  key={attribute}
+                  aria-pressed={on}
+                  disabled={full}
+                  title={full ? '至多两项' : undefined}
+                  className={on ? styles.attributeOn : ''}
+                  onClick={() => change({ attributes: toggleAttribute(draft.attributes, attribute) })}
+                >
+                  <span className={styles.seal}>{seal}</span>
+                  {name}
+                </button>
+              );
+            })}
+          </span>
+          <span className={styles.attributeHint}>{draft.attributes.length ? '练这些，历练记在角色页' : '这件事练什么？可选一到两项'}</span>
+        </div>
 
         {/* A daily is read by its goal alone; the journal never shows its name or briefing. */}
         {draft.kind !== 'daily' && (
