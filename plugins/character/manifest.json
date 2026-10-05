@@ -1,0 +1,38 @@
+{
+  "id": "character",
+  "name": "角色",
+  "version": "0.1.0",
+  "description": "角色页：任务练出的四项属性与境界、称号，以及一路走来的编年。",
+  "main": "src/main/index.ts",
+  "ui": "src/ui/index.tsx",
+  "emits": ["character/changed", "character/milestone"],
+  "listens": [
+    "kernel/ready",
+    "quest/created",
+    "quest/updated",
+    "quest/objective-completed",
+    "quest/objective-reopened",
+    "quest/chapter-completed",
+    "quest/completed",
+    "quest/uncompleted",
+    "quest/counted",
+    "quest/deleted",
+    "scribe/epilogue-written",
+    "character/changed",
+    "character/milestone"
+  ],
+  "handles": ["character/sheet", "character/chronicle", "character/wear"],
+  "requests": [
+    "quest/list",
+    "quest/period",
+    "shell/notify",
+    "shell/open-panel",
+    "scribe/epilogue",
+    "character/sheet",
+    "character/chronicle",
+    "character/wear"
+  ],
+  "contributes": {
+    "panelTabs": [{ "id": "character/sheet", "title": "角色", "icon": "user-round", "order": 3 }]
+  }
+}

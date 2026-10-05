@@ -79,6 +79,8 @@ export interface ScribeRecap {
 export interface ScribeEpilogue {
   questId: string;
   text: string;
+  /** Main quests only: a title 翎 inscribes for the player (design §16.4), at most 8 characters. */
+  title?: string;
   writtenAt: IsoDateTime;
 }
 

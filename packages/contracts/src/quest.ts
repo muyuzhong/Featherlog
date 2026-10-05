@@ -11,6 +11,12 @@ export type QuestStatus = 'active' | 'completed' | 'archived';
 
 export type QuestPriority = 'none' | 'low' | 'medium' | 'high';
 
+/**
+ * What a quest trains, for the character page (design §16): 学识, 体魄, 心性, 技艺.
+ * The quest plugin only stores and validates them; growth is the character plugin's.
+ */
+export type QuestAttribute = 'learning' | 'body' | 'mind' | 'craft';
+
 export interface Count {
   current: number;
   target: number;
@@ -97,6 +103,8 @@ export interface Quest {
   quota?: { target: number; unit?: string };
   /** daily only. */
   cycle?: QuestCycle;
+  /** One or two, no repeats; absent when none was chosen. */
+  attributes?: QuestAttribute[];
   /** Manual sort key within its kind, ascending. */
   order: number;
   createdAt: IsoDateTime;
@@ -136,11 +144,13 @@ export interface QuestInput {
   recurrence?: Recurrence;
   /** daily only. */
   quota?: { target: number; unit?: string };
+  /** One or two, no repeats. An empty array means none. */
+  attributes?: QuestAttribute[];
 }
 
 /** Omitted = unchanged, `null` = clear. Structure is edited with "quest/set-chapters". */
 export type QuestPatch = {
-  [K in 'title' | 'name' | 'story' | 'priority' | 'deadline' | 'scheduledFor' | 'recurrence' | 'quota']?:
+  [K in 'title' | 'name' | 'story' | 'priority' | 'deadline' | 'scheduledFor' | 'recurrence' | 'quota' | 'attributes']?:
     | QuestInput[K]
     | null;
 } & { revealed?: boolean };
