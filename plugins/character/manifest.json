@@ -17,6 +17,8 @@
     "quest/uncompleted",
     "quest/counted",
     "quest/deleted",
+    "quest/tracked",
+    "quest/period-rolled",
     "scribe/epilogue-written",
     "character/changed",
     "character/milestone"

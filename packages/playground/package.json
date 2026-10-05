@@ -17,7 +17,8 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "@featherlog/plugin-scribe": "workspace:*",
-    "@featherlog/plugin-notes": "workspace:*"
+    "@featherlog/plugin-notes": "workspace:*",
+    "@featherlog/plugin-character": "workspace:*"
   },
   "devDependencies": {
     "@featherlog/contracts": "workspace:*",
