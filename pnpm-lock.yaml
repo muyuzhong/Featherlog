@@ -21,6 +21,15 @@ importers:
         specifier: ^5.0.2
         version: 5.0.2(@types/node@26.6.3)(@vitest/coverage-v8@5.0.2)(vite@8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0))
 
+  examples/flashcards:
+    devDependencies:
+      '@featherlog/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@featherlog/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+
   packages/contracts: {}
 
   packages/kernel:
@@ -37,6 +46,9 @@ importers:
       '@featherlog/plugin-character':
         specifier: workspace:*
         version: link:../../plugins/character
+      '@featherlog/plugin-flashcards':
+        specifier: workspace:*
+        version: link:../../examples/flashcards
       '@featherlog/plugin-notes':
         specifier: workspace:*
         version: link:../../plugins/notes
@@ -96,6 +108,9 @@ importers:
       '@featherlog/plugin-character':
         specifier: workspace:*
         version: link:../../plugins/character
+      '@featherlog/plugin-flashcards':
+        specifier: workspace:*
+        version: link:../../examples/flashcards
       '@featherlog/plugin-notes':
         specifier: workspace:*
         version: link:../../plugins/notes
