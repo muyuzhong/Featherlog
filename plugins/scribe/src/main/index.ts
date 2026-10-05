@@ -587,13 +587,18 @@ export async function setup(ctx: MainContext): Promise<void> {
     else schedule();
   });
   ctx.secrets.onChange(key => { if (key === 'apiKey') settingChange(); });
-  ctx.bus.on('kernel/ready', () => { queue(async () => {
-    const list = await quests();
-    await persist(draft => {
-      for (const quest of list) draft.peaks[quest.id] = Math.max(draft.peaks[quest.id] ?? 0, quest.derived.streak);
+  let ready = false;
+  ctx.bus.on('kernel/ready', () => {
+    if (ready) return;
+    ready = true;
+    queue(async () => {
+      const list = await quests();
+      await persist(draft => {
+        for (const quest of list) draft.peaks[quest.id] = Math.max(draft.peaks[quest.id] ?? 0, quest.derived.streak);
+      });
+      await changed(); await checkTime();
     });
-    await changed(); await checkTime();
-  }); });
+  });
   ctx.bus.on('shell/view-changed', (payload, envelope) => {
     if (payload.view !== 'panel') { panelOpen = false; schedule(); return; }
     if (!local(envelope)) return;

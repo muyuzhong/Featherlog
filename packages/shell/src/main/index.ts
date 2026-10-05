@@ -4,6 +4,7 @@ import type { BrowserWindow, IpcMainEvent, IpcMainInvokeEvent, WebContents } fro
 import type { Clock, WindowKind } from '@featherlog/contracts';
 import { createKernel } from '@featherlog/kernel';
 import { plugins } from './plugins';
+import { registerPluginHost } from './plugin-host';
 import { JsonFiles, pluginStorage } from './storage';
 import { loadSettings } from './settings';
 import { Secrets, registerSecretIpc } from './secrets';
@@ -89,6 +90,7 @@ if (!app.requestSingleInstanceLock()) {
         else log.info(message.type, message.payload);
       }
     });
+    const pluginHost = registerPluginHost(kernel, plugins, settings);
     const bus = kernel.createBus('shell');
     let windows: Windows;
     const shell = registerShell(bus, () => windows.openPanel(), clock, () => app.quit());
@@ -154,6 +156,7 @@ if (!app.requestSingleInstanceLock()) {
       });
     shutdown = async () => {
       stopUpdates();
+      await pluginHost.dispose();
       for (const plugin of [...plugins].reverse()) kernel.unload(plugin.manifest.id);
       bridge.dispose();
       offSettings();
@@ -169,7 +172,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     if (process.platform === 'darwin') app.dock?.hide();
     log.info('Starting Featherlog', { platform: process.platform, compatMode, selected });
-    await loadPlugins(kernel, plugins, app.getVersion(), userData);
+    await pluginHost.start(selected => loadPlugins(kernel, selected, app.getVersion(), userData));
     if (quitting) return;
     await windows.start();
     openPanel = () => {

@@ -191,3 +191,25 @@ it('preserves the original when backup fails and keeps manifest errors outside r
   expect(await readdir(f.root)).toEqual(['settings.json']);
   expect(f.log.warn).not.toHaveBeenCalled();
 });
+
+it('persists enabled plugin ids through the dedicated writer and rejects generic writes', async () => {
+  const f = await fixture();
+  expect(f.settings.enabledPlugins()).toEqual([]);
+  await expect(f.settings.set('shell', 'enabledPlugins', ['example'])).rejects.toMatchObject({ code: 'shell/invalid-setting' });
+  await Promise.all([f.settings.setEnabledPlugins(['example', 'future', 'example']), f.settings.set('example', 'hour', 9)]);
+  const saved = JSON.parse(await readFile(join(f.root, 'settings.json'), 'utf8')) as Json;
+  const reloaded = new Settings(f.root, f.manifests, saved, f.files, f.log);
+  expect(reloaded.enabledPlugins()).toEqual(['example', 'future']);
+  const copy = reloaded.enabledPlugins(); copy.push('mutation');
+  expect(reloaded.enabledPlugins()).toEqual(['example', 'future']);
+  await reloaded.setEnabledPlugins([]);
+  expect(reloaded.forPlugin('example').get('hour')).toBe(9);
+  expect(reloaded.enabledPlugins()).toEqual([]);
+});
+
+it.each([null, 'example', [1]])('rejects malformed persisted enabledPlugins %j', enabledPlugins => {
+  return fixture().then(f => {
+    expect(() => new Settings(f.root, f.manifests, { shell: { enabledPlugins }, plugins: {} }, f.files, f.log))
+      .toThrow(expect.objectContaining({ code: 'shell/storage-corrupt' }));
+  });
+});

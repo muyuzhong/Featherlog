@@ -1,5 +1,7 @@
 import type { Badge, Json, ShellState, UnfoldSide, UpdateState } from '@featherlog/contracts';
-import type { Kernel } from '@featherlog/kernel';
+import { registerPluginHost } from '@featherlog/shell/main/plugin-host';
+import type { SettingsHost } from './settings';
+import type { Kernel, MainPlugin } from '@featherlog/kernel';
 
 type Dock = { width: number; height: number; expanded: boolean };
 /** Where the user has dragged the scroll to, in the simulated desktop. */
@@ -19,7 +21,8 @@ const NEXT = { version: '0.2.0', notes: '· 任务日志可以直接新建和修
  * What the Electron shell's main process does for shell/* (design §6.5),
  * plus the window state the playground draws: panel open, dock size.
  */
-export function createHostShell(kernel: Kernel) {
+export function createHostShell(kernel: Kernel, plugins: MainPlugin[], settings: SettingsHost) {
+  const pluginHost = registerPluginHost(kernel, plugins, settings);
   const bus = kernel.createBus('shell');
   let state: ShellState = { view: 'collapsed', badges: {}, panel: {} };
   let panelOpen = false;
@@ -105,6 +108,7 @@ export function createHostShell(kernel: Kernel) {
 
   return {
     bus,
+    plugins: pluginHost,
     getSnapshot: () => snapshot,
     subscribe(listener: () => void) {
       listeners.add(listener);

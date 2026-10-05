@@ -70,6 +70,13 @@ export class Settings {
         if (values === undefined) continue;
         if (!record(values)) invalid('Invalid settings scope', 'shell/storage-corrupt');
         for (const [key, value] of Object.entries(values)) {
+          if (scope === 'shell' && key === 'enabledPlugins') {
+            if (!Array.isArray(value) || !value.every(id => typeof id === 'string')) {
+              invalid('Invalid enabled plugin ids', 'shell/storage-corrupt');
+            }
+            this.values.shell!.enabledPlugins = [...new Set(value)];
+            continue;
+          }
           // Preserve forward compatibility with settings removed from newer manifests.
           if (!Object.hasOwn(this.schemas.get(scope)!, key)) continue;
           const property = this.schemas.get(scope)![key];
@@ -132,10 +139,24 @@ export class Settings {
     return () => { this.listeners.delete(listener); };
   }
 
+  enabledPlugins(): string[] {
+    return [...(this.values.shell!.enabledPlugins as string[] | undefined ?? [])];
+  }
+
+  setEnabledPlugins(ids: string[]): Promise<void> {
+    return this.save('shell', 'enabledPlugins', [...new Set(ids)], true);
+  }
+
   set(scope: string, key: string, value: Json): Promise<void> {
+    return this.save(scope, key, value);
+  }
+
+  private save(scope: string, key: string, value: Json, pluginIds = false): Promise<void> {
     const snapshot = structuredClone(value);
     const operation = this.queue.then(async () => {
-      this.validate(scope, key, snapshot);
+      if (pluginIds) {
+        if (!Array.isArray(snapshot) || !snapshot.every(id => typeof id === 'string')) invalid('Invalid enabled plugin ids');
+      } else this.validate(scope, key, snapshot);
       if (JSON.stringify(this.values[scope]![key]) === JSON.stringify(snapshot)) return;
       const next = this.all();
       next[scope]![key] = snapshot;
