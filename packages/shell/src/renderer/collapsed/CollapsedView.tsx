@@ -34,9 +34,14 @@ export function CollapsedView({ registry, icons, badges, unfold = 'left', dragga
 
   // A note being written in stays open: the pointer drifting off it (or the window
   // resizing under it) must not fold it away mid-sentence. Focus leaving closes it.
+  // A preview can ask for the same with data-hold-open (design §7.2), e.g. a card being reviewed.
   const writing = () => {
     const active = document.activeElement;
-    return !!active && !!root.current?.contains(active) && (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement);
+    return (
+      !!active &&
+      !!root.current?.contains(active) &&
+      (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || !!active.closest('[data-hold-open]'))
+    );
   };
   const open = (icon: CollapsedIconContribution) => {
     window.clearTimeout(leaveTimer.current);

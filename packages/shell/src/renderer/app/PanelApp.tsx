@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { PanelView, SETTINGS_TAB } from '../panel/PanelView';
 import { SettingsPage } from '../settings/SettingsPage';
 import type { WindowRuntime } from './runtime';
+import { useManifests } from './use-plugins';
 import { useShellState } from './shell-state';
 import styles from './App.module.css';
 
 /** The panel window: the leather-bound frame hosting plugin tabs. */
 export function PanelApp({ runtime }: { runtime: WindowRuntime }) {
-  const { preload, registry, shellBus, manifests } = runtime;
+  const { preload, registry, shellBus } = runtime;
+  const manifests = useManifests(runtime);
   const shell = useShellState(shellBus);
   const tabs = manifests.flatMap((m) => m.contributes?.panelTabs ?? []);
   const [tab, setTab] = useState<string | undefined>();

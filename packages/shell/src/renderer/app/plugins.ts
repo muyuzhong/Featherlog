@@ -3,6 +3,8 @@ import characterManifest from '@featherlog/plugin-character/manifest.json';
 import { setup as characterUi } from '@featherlog/plugin-character/ui';
 import questManifest from '@featherlog/plugin-quest/manifest.json';
 import { setup as questUi } from '@featherlog/plugin-quest/ui';
+import flashcardsManifest from '@featherlog/plugin-flashcards/manifest.json';
+import { setup as flashcardsUi } from '@featherlog/plugin-flashcards/ui';
 import notesManifest from '@featherlog/plugin-notes/manifest.json';
 import { setup as notesUi } from '@featherlog/plugin-notes/ui';
 import scribeManifest from '@featherlog/plugin-scribe/manifest.json';
@@ -18,4 +20,6 @@ export const uiPlugins: UiPlugin[] = [
   { manifest: scribeManifest as PluginManifest, setup: scribeUi },
   { manifest: notesManifest as PluginManifest, setup: notesUi },
   { manifest: characterManifest as PluginManifest, setup: characterUi },
+  // An optional example plugin (design §17): only set up while the user has it turned on.
+  { manifest: flashcardsManifest as PluginManifest, setup: flashcardsUi },
 ];
