@@ -2,6 +2,7 @@ import type { MainContext, PluginManifest } from '@featherlog/contracts';
 import { createKernel, type MainPlugin } from '@featherlog/kernel';
 import characterManifest from '@featherlog/plugin-character/manifest.json';
 import { setup as characterMain } from '@featherlog/plugin-character/main';
+import { setup as characterUi } from '@featherlog/plugin-character/ui';
 import questManifest from '@featherlog/plugin-quest/manifest.json';
 import notesManifestJson from '@featherlog/plugin-notes/manifest.json';
 import { setup as notesMain } from '@featherlog/plugin-notes/main';
@@ -42,6 +43,7 @@ const uiPlugins: UiPlugin[] = [
   { manifest, setup: questUi },
   { manifest: scribeManifest, setup: scribeUi },
   { manifest: notesManifest, setup: notesUi },
+  { manifest: characterManifest as PluginManifest, setup: characterUi },
 ];
 
 const settings = createSettings([manifest, scribeManifest, notesManifest]);

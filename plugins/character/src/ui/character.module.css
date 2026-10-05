@@ -1,0 +1,461 @@
+.book,
+.book * {
+  box-sizing: border-box;
+}
+
+/* The same open book as the journal. */
+.book {
+  position: absolute;
+  inset: 2px 26px 22px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  max-width: 1240px;
+  max-height: 780px;
+  margin: 0 auto;
+}
+
+.pageWrap {
+  min-width: 0;
+  min-height: 0;
+  filter: drop-shadow(0 14px 20px rgba(8, 4, 1, 0.5)) drop-shadow(0 2px 3px rgba(8, 4, 1, 0.45));
+}
+
+.pageWrap:first-child {
+  margin-right: -8px;
+}
+
+.pageWrap:nth-child(2) {
+  margin-left: -8px;
+}
+
+.page {
+  height: 100%;
+  min-height: 0;
+}
+
+.left {
+  display: flex;
+  flex-direction: column;
+  padding: 44px 54px 26px 50px;
+}
+
+.right {
+  padding: 40px 50px 26px 60px;
+  background-position: 0 0, 377px 211px;
+}
+
+.gutter {
+  position: absolute;
+  top: 1%;
+  bottom: 1%;
+  left: 50%;
+  width: 90px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, rgba(70, 40, 14, 0.1) 30%, rgba(50, 26, 8, 0.34) 47%, rgba(30, 14, 4, 0.5) 50%, rgba(50, 26, 8, 0.34) 53%, rgba(70, 40, 14, 0.1) 70%, transparent 100%);
+  mix-blend-mode: multiply;
+}
+
+
+.left {
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.right {
+  display: flex;
+  flex-direction: column;
+}
+
+.head {
+  text-align: center;
+}
+
+.head h1 {
+  margin: 0;
+  font: 32px/1.2 var(--fl-font-title);
+  font-weight: normal;
+  letter-spacing: 0.55em;
+  padding-left: 0.55em;
+}
+
+.head p {
+  margin: 8px 0 18px;
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+/* ---- the person ---- */
+.person {
+  text-align: center;
+}
+
+.kicker {
+  margin: 0;
+  font: 14px var(--fl-font-display);
+  color: var(--fl-rubric);
+  letter-spacing: 0.6em;
+  padding-left: 0.6em;
+}
+
+.person h1 {
+  margin: 6px 0 0;
+  font: 38px/1.25 var(--fl-font-title);
+  font-weight: normal;
+  letter-spacing: 0.3em;
+  padding-left: 0.3em;
+  color: var(--fl-ink);
+}
+
+.person h1.nameless {
+  color: var(--fl-ink-faded);
+}
+
+.personNote {
+  margin: 6px 0 22px;
+  font: 14px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+/* ---- attributes ---- */
+.attributes {
+  display: grid;
+  gap: 14px;
+}
+
+.attribute {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.attribute:hover {
+  background: var(--fl-ink-wash);
+}
+
+.seal {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1.5px var(--fl-ink-ghost);
+  font: 24px/1 var(--fl-font-display);
+  color: var(--fl-ink-ghost);
+  transform: rotate(-3deg);
+}
+
+.sealOn {
+  background: var(--fl-rubric);
+  box-shadow: inset 0 0 0 2px rgba(255, 236, 200, 0.18), 0 1px 2px rgba(60, 20, 8, 0.3);
+  color: var(--fl-paper-light);
+}
+
+.attributeBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.attributeLine {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.attributeName {
+  font: 19px var(--fl-font-display);
+  color: var(--fl-ink);
+  letter-spacing: 0.15em;
+}
+
+.rank {
+  font: 17px var(--fl-font-hand);
+  color: var(--fl-rubric);
+}
+
+.rankNone {
+  font: 17px var(--fl-font-hand);
+  color: var(--fl-ink-ghost);
+}
+
+/* Numbers only on hover (design §16.7): growth is read as a rank, not a score. */
+.points {
+  margin-left: auto;
+  font: 13px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.attribute:hover .points {
+  opacity: 1;
+}
+
+.bar {
+  position: relative;
+  height: 4px;
+  margin-top: 7px;
+  border-radius: 2px;
+  background: rgba(60, 36, 14, 0.12);
+  overflow: hidden;
+}
+
+.bar span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(138, 43, 29, 0.55), var(--fl-rubric));
+  transition: width 0.9s var(--fl-ease-ink);
+}
+
+.unassigned {
+  margin: 12px 0 0;
+  font: 13.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  text-align: center;
+}
+
+.dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fl-rubric);
+  box-shadow: 0 0 0 2px var(--fl-rubric-wash);
+  align-self: center;
+}
+
+/* ---- titles ---- */
+.titlesSection {
+  margin-top: 8px;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 22px 0 10px;
+  font: 15px var(--fl-font-display);
+  font-weight: normal;
+  color: var(--fl-rubric);
+  letter-spacing: 0.4em;
+}
+
+.sectionTitle::after {
+  content: '';
+  flex: 1;
+  order: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(138, 43, 29, 0.28), transparent);
+  transform: translateY(-4px);
+}
+
+.sectionTitle small {
+  order: 2;
+  font: 13px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  letter-spacing: 0;
+}
+
+.titles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.title,
+.locked {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 10px 8px;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.title {
+  border: 0;
+  background: rgba(255, 246, 222, 0.32);
+  box-shadow: inset 0 0 0 1px rgba(80, 50, 20, 0.22);
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.title:hover {
+  background: rgba(255, 246, 222, 0.55);
+}
+
+.titleWorn {
+  box-shadow: inset 0 0 0 1.5px rgba(138, 43, 29, 0.6);
+  background: var(--fl-rubric-wash);
+}
+
+.titleName {
+  font: 17px var(--fl-font-display);
+  color: var(--fl-ink);
+  letter-spacing: 0.08em;
+}
+
+.titleGift .titleName {
+  color: var(--fl-ink-scribe);
+}
+
+.titleHint {
+  max-width: 100%;
+  font: 12px/1.4 var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+}
+
+.locked {
+  box-shadow: inset 0 0 0 1px rgba(80, 50, 20, 0.1);
+}
+
+.locked .titleName {
+  color: var(--fl-ink-ghost);
+}
+
+.locked .titleHint {
+  color: var(--fl-ink-ghost);
+}
+
+.worn {
+  position: absolute;
+  top: -7px;
+  right: -5px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--fl-wax);
+  box-shadow: 0 1px 2px rgba(40, 10, 4, 0.4);
+  font: 12px/1 var(--fl-font-display);
+  color: var(--fl-paper-light);
+  transform: rotate(8deg);
+}
+
+.title .dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+/* ---- chronicle ---- */
+.chronicle {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.empty {
+  margin: 40px 0 0;
+  font: 15px/1.8 var(--fl-font-hand);
+  color: var(--fl-ink-ghost);
+  text-align: center;
+}
+
+.month {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 14px 0 6px;
+  font: 15px var(--fl-font-display);
+  font-weight: normal;
+  color: var(--fl-rubric);
+  letter-spacing: 0.3em;
+}
+
+.month::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(138, 43, 29, 0.28), transparent);
+  transform: translateY(-4px);
+}
+
+.entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.entry {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px dotted rgba(80, 50, 20, 0.16);
+  font: 15.5px/1.6 var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+}
+
+.day {
+  font-size: 13.5px;
+  color: var(--fl-ink-faded);
+  padding-top: 1px;
+}
+
+.what {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 6px;
+  min-width: 0;
+}
+
+.what b {
+  font-weight: normal;
+  color: var(--fl-ink);
+}
+
+.milestone .what b {
+  color: var(--fl-rubric);
+}
+
+.questLink {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--fl-ink);
+  cursor: pointer;
+}
+
+.questLink:hover {
+  color: var(--fl-rubric);
+}
+
+.epilogue {
+  flex-basis: 100%;
+  margin-top: 2px;
+  font: 14px/1.6 var(--fl-font-hand);
+  color: var(--fl-ink-scribe-faded);
+}
+
+.epilogue::before {
+  content: '翎：';
+  color: var(--fl-ink-scribe);
+}
+
+.more {
+  display: block;
+  margin: 14px auto 0;
+  padding: 4px 10px;
+  border: 0;
+  background: none;
+  font: 14.5px var(--fl-font-hand);
+  color: var(--fl-ink-faded);
+  cursor: pointer;
+}
+
+.more:hover {
+  color: var(--fl-rubric);
+}

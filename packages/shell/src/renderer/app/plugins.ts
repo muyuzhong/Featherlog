@@ -1,4 +1,6 @@
 import type { PluginManifest } from '@featherlog/contracts';
+import characterManifest from '@featherlog/plugin-character/manifest.json';
+import { setup as characterUi } from '@featherlog/plugin-character/ui';
 import questManifest from '@featherlog/plugin-quest/manifest.json';
 import { setup as questUi } from '@featherlog/plugin-quest/ui';
 import notesManifest from '@featherlog/plugin-notes/manifest.json';
@@ -15,4 +17,5 @@ export const uiPlugins: UiPlugin[] = [
   { manifest: questManifest as PluginManifest, setup: questUi },
   { manifest: scribeManifest as PluginManifest, setup: scribeUi },
   { manifest: notesManifest as PluginManifest, setup: notesUi },
+  { manifest: characterManifest as PluginManifest, setup: characterUi },
 ];
