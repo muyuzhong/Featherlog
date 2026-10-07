@@ -67,6 +67,19 @@ export function CollapsedView({ registry, icons, badges, unfold = 'left', dragga
     window.addEventListener('blur', blurred);
     return () => window.removeEventListener('blur', blurred);
   });
+  // A preview is drawn by its plugin in a React root of its own, and React's synthetic
+  // enter/leave reads a move into another root as leaving this one: the note folded
+  // shortly after the pointer came to rest on it. The DOM's own events go by containment.
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    el.addEventListener('mouseenter', stay);
+    el.addEventListener('mouseleave', leave);
+    return () => {
+      el.removeEventListener('mouseenter', stay);
+      el.removeEventListener('mouseleave', leave);
+    };
+  });
 
   const progress = ordered.map((icon) => badges[icon.id]).find((b): b is Extract<Badge, { kind: 'progress' }> => b?.kind === 'progress');
   const pulse = useProgressPulse(progress?.value);
@@ -75,8 +88,6 @@ export function CollapsedView({ registry, icons, badges, unfold = 'left', dragga
     <div
       ref={root}
       className={`${styles.root} ${unfold === 'right' ? styles.unfoldRight : ''}`}
-      onMouseLeave={leave}
-      onMouseEnter={stay}
       onBlur={(event) => {
         if (!hovering.current && !event.currentTarget.contains(event.relatedTarget as Node | null)) close();
       }}
