@@ -50,12 +50,16 @@
 
         <!-- Column heads -->
         <g class="brush" fill="#8a2b1d" font-size="22" letter-spacing="8">
-          <text x="210" y="70" text-anchor="middle">主 进 程</text>
-          <text x="990" y="70" text-anchor="middle">渲 染 进 程</text>
+          <text x="194" y="70" text-anchor="middle">主 进 程</text>
+          <text x="1006" y="70" text-anchor="middle">渲 染 进 程</text>
         </g>
         <g stroke="#8a2b1d" stroke-opacity="0.3" stroke-width="1.2" fill="none">
-          <path d="M120 86 C 170 84, 250 87, 300 85" />
-          <path d="M900 86 C 950 84, 1030 87, 1080 85" />
+          <path d="M104 86 C 154 84, 234 87, 284 85" />
+          <path d="M916 86 C 966 84, 1046 87, 1096 85" />
+        </g>
+        <g class="hand" fill="#5b4430" font-size="14" letter-spacing="1" text-anchor="middle">
+          <text x="194" y="108">外壳与各插件的主进程半边</text>
+          <text x="1006" y="108">每个窗口里装着各插件的界面半边</text>
         </g>
 
         <!-- Links: in-process on the left, IPC (dashed) on the right -->
@@ -70,22 +74,28 @@
           <text x="760" y="396" text-anchor="middle">IPC</text>
         </g>
 
+        <!-- Plugins are many: two more sheets peek out behind their box -->
+        <g fill="rgba(255,248,230,0.22)" stroke="#2a1c11" stroke-opacity="0.45" stroke-width="1.4" stroke-linejoin="round">
+          <path d="M36 346 C 136 343, 246 345, 324 348 C 326 372, 327 419, 323 446 C 236 449, 126 448, 37 445 C 34 419, 35 372, 36 346 Z" />
+          <path d="M43 339 C 143 336, 253 338, 331 341 C 333 365, 334 412, 330 439 C 243 442, 133 441, 44 438 C 41 412, 42 365, 43 339 Z" />
+        </g>
+
         <!-- Boxes: wobbly ink frames -->
         <g fill="rgba(255,248,230,0.35)" stroke="#2a1c11" stroke-width="1.7" stroke-linejoin="round">
-          <path d="M84 126 C 170 122, 260 124, 338 127 C 341 150, 340 200, 337 226 C 250 229, 160 228, 85 225 C 82 200, 81 150, 84 126 Z" />
-          <path d="M84 332 C 170 329, 260 331, 338 334 C 340 358, 341 405, 337 432 C 250 435, 160 434, 85 431 C 82 405, 83 358, 84 332 Z" />
-          <path d="M862 126 C 950 122, 1040 124, 1116 127 C 1119 150, 1118 200, 1115 226 C 1030 229, 940 228, 863 225 C 860 200, 859 150, 862 126 Z" />
-          <path d="M862 332 C 950 329, 1040 331, 1116 334 C 1118 358, 1119 405, 1115 432 C 1030 435, 940 434, 863 431 C 860 405, 861 358, 862 332 Z" />
+          <path d="M50 126 C 150 122, 260 124, 338 127 C 341 150, 340 200, 337 226 C 250 229, 140 228, 51 225 C 48 200, 47 150, 50 126 Z" />
+          <path d="M50 332 C 150 329, 260 331, 338 334 C 340 358, 341 405, 337 432 C 250 435, 140 434, 51 431 C 48 405, 49 358, 50 332 Z" />
+          <path d="M862 126 C 950 122, 1060 124, 1150 127 C 1153 150, 1152 200, 1149 226 C 1050 229, 940 228, 863 225 C 860 200, 859 150, 862 126 Z" />
+          <path d="M862 332 C 950 329, 1060 331, 1150 334 C 1152 358, 1153 405, 1149 432 C 1050 435, 940 434, 863 431 C 860 405, 861 358, 862 332 Z" />
         </g>
         <g text-anchor="middle">
-          <text class="brush" x="211" y="168" font-size="30" fill="#2a1c11" letter-spacing="4">外壳</text>
-          <text class="hand" x="211" y="202" font-size="16" fill="#5b4430">窗口 · 存储 · 设置 · 更新</text>
-          <text class="brush" x="211" y="374" font-size="30" fill="#2a1c11" letter-spacing="4">任务插件</text>
-          <text class="hand" x="211" y="408" font-size="16" fill="#5b4430">任务模型 · 周期 · 追踪</text>
-          <text class="brush" x="989" y="168" font-size="30" fill="#2a1c11" letter-spacing="4">收起窗口</text>
-          <text class="hand" x="989" y="202" font-size="16" fill="#5b4430">浮动的卷轴 · 悬停便签</text>
-          <text class="brush" x="989" y="374" font-size="30" fill="#2a1c11" letter-spacing="4">面板窗口</text>
-          <text class="hand" x="989" y="408" font-size="16" fill="#5b4430">任务日志 · 设置</text>
+          <text class="brush" x="194" y="168" font-size="30" fill="#2a1c11" letter-spacing="4">外壳</text>
+          <text class="hand" x="194" y="202" font-size="15" fill="#5b4430">窗口 · 存储 · 设置 · 更新</text>
+          <text class="brush" x="194" y="374" font-size="30" fill="#2a1c11" letter-spacing="4">插件</text>
+          <text class="hand" x="194" y="408" font-size="15" fill="#5b4430">任务 · 翎 · 笔记 · 角色 · 八股</text>
+          <text class="brush" x="1006" y="168" font-size="30" fill="#2a1c11" letter-spacing="4">收起窗口</text>
+          <text class="hand" x="1006" y="202" font-size="15" fill="#5b4430">浮动的卷轴 · 悬停便签与卡片</text>
+          <text class="brush" x="1006" y="374" font-size="30" fill="#2a1c11" letter-spacing="4">面板窗口</text>
+          <text class="hand" x="1006" y="408" font-size="15" fill="#5b4430">日志 · 角色 · 随笔 · 札记 · 设置</text>
         </g>
 
         <!-- The kernel: a wax seal at the centre -->
