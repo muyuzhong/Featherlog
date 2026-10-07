@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "promo": "node promo/record.mjs"
   },
   "dependencies": {
     "@featherlog/kernel": "workspace:*",
