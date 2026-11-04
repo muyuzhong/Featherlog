@@ -70,6 +70,8 @@ class Window extends EventEmitter {
   setBounds = vi.fn((bounds: Rectangle) => { this.bounds = { ...bounds }; });
   setAlwaysOnTop = vi.fn();
   setSize = vi.fn();
+  setMinimumSize = vi.fn();
+  setMaximumSize = vi.fn();
 }
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'featherlog-float-'));
@@ -111,6 +113,8 @@ it('debounces moved positions, persists on detach and restores on attach', async
   await dock.attach(window as unknown as BrowserWindow);
   expect(window.bounds).toEqual({ x: 2200, y: 400, width: 80, height: 320 });
   dock.resize({ width: 240, height: 500 });
+  expect(window.setMinimumSize).toHaveBeenCalledWith(240, 500);
+  expect(window.setMaximumSize).toHaveBeenCalledWith(240, 500);
   expect(window.bounds).toEqual({ x: 2200, y: 310, width: 240, height: 500 });
   await dock.detach();
 });
@@ -131,6 +135,8 @@ it('plain float resizes without positioning or unsupported capability promises',
   expect(dock.side).toBe('right');
   await dock.attach(window as unknown as BrowserWindow);
   dock.resize({ width: 80, height: 320 });
+  expect(window.setMinimumSize).toHaveBeenCalledWith(80, 320);
+  expect(window.setMaximumSize).toHaveBeenCalledWith(80, 320);
   expect(window.setSize).toHaveBeenCalledWith(80, 320);
   expect(window.setBounds).not.toHaveBeenCalled();
   expect(dock.capabilities).toEqual({ anchored: false, keepAbove: false, focusSafe: false });
