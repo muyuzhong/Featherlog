@@ -30,13 +30,15 @@ export class Windows {
     const collapsed = kind === 'collapsed';
     const window = new BrowserWindow({
       ...(collapsed
-        ? { width: bounds.width, height: bounds.height } : bounds),
+        ? { width: bounds.width, height: bounds.height,
+          minWidth: bounds.width, maxWidth: bounds.width,
+          minHeight: bounds.height, maxHeight: bounds.height }
+        : { ...bounds, minWidth: 960, minHeight: 640 }),
       show: false, frame: false, transparent: collapsed,
       backgroundColor: collapsed ? '#00000000' : '#1f150d',
       title: collapsed ? 'featherlog-dock' : '羽记',
       resizable: true, skipTaskbar: collapsed, hasShadow: !collapsed,
       focusable: !collapsed,
-      ...(collapsed ? {} : { minWidth: 960, minHeight: 640 }),
       webPreferences: {
         preload: join(import.meta.dirname, '../preload/index.cjs'),
         contextIsolation: true, sandbox: true, nodeIntegration: false,

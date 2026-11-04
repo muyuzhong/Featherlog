@@ -64,6 +64,12 @@ export function resizedBounds(previous: Rectangle, size: { width: number; height
   };
 }
 
+function lockSize(window: BrowserWindow, size: { width: number; height: number }): void {
+  // Matching min/max bounds mark the surface non-resizable to tiling WMs while keeping setSize working on Wayland.
+  window.setMinimumSize(size.width, size.height);
+  window.setMaximumSize(size.width, size.height);
+}
+
 export class ElectronFloat implements Dock {
   readonly capabilities = { anchored: false, keepAbove: true, focusSafe: true };
   private window?: BrowserWindow;
@@ -135,6 +141,7 @@ export class ElectronFloat implements Dock {
       this.screen.getDisplayMatching(previous).bounds, this.side);
     if (!sameSize || previous.x !== this.resizePosition.x || previous.y !== this.resizePosition.y ||
       previous.width !== size.width || previous.height !== size.height) {
+      lockSize(this.window, size);
       this.window.setBounds(this.resizePosition);
     }
     this.expanded = size.expanded ?? false;
@@ -154,7 +161,10 @@ export class PlainFloat implements Dock {
   private window?: BrowserWindow;
   async attach(window: BrowserWindow): Promise<void> { this.window = window; }
   resize(size: { width: number; height: number; expanded?: boolean }): void {
-    if (this.window && !this.window.isDestroyed()) this.window.setSize(size.width, size.height);
+    if (this.window && !this.window.isDestroyed()) {
+      lockSize(this.window, size);
+      this.window.setSize(size.width, size.height);
+    }
   }
   async detach(): Promise<void> { this.window = undefined; }
 }
