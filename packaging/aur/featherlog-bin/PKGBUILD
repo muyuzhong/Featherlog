@@ -1,6 +1,6 @@
 # Maintainer: muyuzhong (https://github.com/muyuzhong)
 pkgname=featherlog-bin
-pkgver=0.5.0
+pkgver=0.5.1
 pkgrel=1
 pkgdesc='A personal quest journal with a floating scroll (羽记)'
 arch=('x86_64')
@@ -17,7 +17,7 @@ conflicts=('featherlog')
 options=('!strip' '!debug')
 source=("Featherlog-${pkgver}-${CARCH}.AppImage::${url}/releases/download/v${pkgver}/Featherlog-${pkgver}-${CARCH}.AppImage"
         "LICENSE-${pkgver}::https://raw.githubusercontent.com/muyuzhong/Featherlog/v${pkgver}/LICENSE")
-sha256sums=('9adc61daaa4d8b94ae7ef9f47fe96ad4d371a3956a3b6de7c22b01a306dd0fd7'
+sha256sums=('b4d577cfab24a9c6936eab0a6e554ae1b4b40c6d227b2509735dba42ded6bcc2'
             '869313596787f2dfd98d34c7c9d3c000f263bfe3b09162654de7aa1d054e3cda')
 
 prepare() {
