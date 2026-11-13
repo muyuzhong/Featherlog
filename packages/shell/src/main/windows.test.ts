@@ -86,7 +86,8 @@ it('creates secure windows, attaches before showing inactive and preserves the d
   const collapsed = f.created[0]!;
   expect(collapsed.options).toMatchObject({ show: false, frame: false, transparent: true,
     resizable: true, skipTaskbar: true, hasShadow: false, focusable: false,
-    title: 'featherlog-dock', width: 80, height: 320 });
+    title: 'featherlog-dock', width: 80, height: 320,
+    minWidth: 80, maxWidth: 80, minHeight: 320, maxHeight: 320 });
   expect(f.dock.attach).toHaveBeenCalledWith(collapsed);
   expect(f.dock.attach.mock.invocationCallOrder[0]).toBeLessThan(collapsed.showInactive.mock.invocationCallOrder[0]!);
   expect(collapsed.show).not.toHaveBeenCalled();

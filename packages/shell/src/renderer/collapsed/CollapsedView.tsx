@@ -32,6 +32,12 @@ export function CollapsedView({ registry, icons, badges, unfold = 'left', dragga
 
   useEffect(() => onPreviewChange?.(previewId), [previewId, onPreviewChange]);
 
+  useEffect(() => {
+    if (previewId && !icons.some((icon) => icon.id === previewId)) {
+      setPreviewId(null);
+    }
+  }, [icons, previewId]);
+
   // A note being written in stays open: the pointer drifting off it (or the window
   // resizing under it) must not fold it away mid-sentence. Focus leaving closes it.
   const writing = () => {

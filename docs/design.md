@@ -252,6 +252,9 @@ featherlog/
 | `shell/open-panel` | 创建或显示并聚焦面板窗口，记下标签页与参数，发 `shell/view-changed`（`view: "panel"`，带 `tabId`、`params`） |
 | `shell/set-badge` | 记下角标，发 `shell/badge-changed` |
 | `shell/notify` | 发 `shell/notified`（带唯一 `id`），由收起窗口显示 |
+| `shell/plugins` | 返回全部内置与外部插件的 `PluginDescriptor[]` 状态快照（含 `source`、`enabled`、`status`、`uiUrl`、`error`） |
+| `shell/reload-plugins` | 串行重扫并热重载指定或全部外部插件，完成后广播 `shell/plugins-changed` |
+| `shell/set-plugin-enabled` | 启用或停用外部插件，将禁用集合持久化到 `<userData>/external-plugins.json`，并广播 `shell/plugins-changed` |
 
 外壳的界面状态（角标、面板、通知）全部通过总线上的这些事件同步到窗口，不另开私有通道，总线检查器也能看到。
 
@@ -267,6 +270,7 @@ featherlog/
 **存储**（`ctx.storage`，§5.5 的语义）：
 
 - 位置：`<userData>/plugins/<插件 id>/<encodeURIComponent(键)>.json`。
+- 保留键：`manifest` 为外部插件清单保留键，禁止 `get`/`set`/`delete` 读写（报 `shell/invalid-input`）；`keys()` 自动忽略 `manifest.json`，使存储与外部插件文件安全共存。
 - `set`：写 `*.tmp` → `fsync` → `rename`，同一个键的写入串行执行。
 - `get`：文件不存在返回 `undefined`；JSON 解析失败抛错（code `shell/storage-corrupt`），**不覆盖、不删除**原文件。
 - `keys`：列出该插件目录下的键。
@@ -308,6 +312,20 @@ featherlog/
 - 关闭（×、Esc）只隐藏；背景色设为 `#1f150d`，避免显示时闪白。
 
 **安全**（两个窗口都适用）：`contextIsolation: true`、`sandbox: true`、`nodeIntegration: false`；`setWindowOpenHandler` 一律拒绝；阻止 `will-navigate`；渲染层 HTML 带 CSP。
+
+### 6.8 外部插件动态加载与热重载
+
+羽记支持从用户数据目录加载预构建的第三方 ESM 插件，并在运行期无需重启完成热重载：
+
+- **目录约定**：扫描 `<userData>/plugins/<id>/manifest.json`（正式版为 `~/.config/Featherlog/plugins/<id>/`，开发版为 `~/.config/Featherlog-dev/plugins/<id>/`）。不含 `manifest.json` 的目录视为内置插件存储目录并静默跳过。
+- **校验与故障隔离**：校验 `id` 符合小写短横线命名、等于目录名、非保留名（`kernel`/`shell`/`external`）且不与内置插件冲突；单个插件清单错误、入口越界、加载超时（注入 `Clock`）或 `setup(ctx)` 异常只记录日志并向总线注入 `kernel/plugin-failed`，绝不阻塞外壳启动或影响其他插件。
+- **动态设置与状态持久化**：外部插件加载前通过 `Settings.registerPlugin(manifest)` 动态注册 `contributes.settings.schema` 并保留用户已保存的配置；外部插件的禁用状态保存在 `<userData>/external-plugins.json`，停用或卸载时调用 `Settings.unregisterPlugin(id)` 将已存配置留存在内存与磁盘的 `plugins` 中，下次启用或热更新 schema 时无损恢复。
+- **只读沙箱协议与共享运行时**：
+  - 主进程注册特权协议 `featherlog-plugin://<id>/<relPath>`（仅允许 `GET`/`HEAD`），严格规范路径并对比 `realpath`，确保目录与目标文件均严格落在 `<userData>/plugins/<id>/` 内部（阻止 `..` 穿越与越界软链），并禁止读取 `manifest.json`、存储 `*.json`、`*.tmp` 与主进程入口 `main.js`。
+  - 渲染层窗口在 `main.tsx` 最先冻结暴露宿主 `react`、`react-dom`、`react-dom/client`、`react/jsx-runtime`、`motion/react` 至 `globalThis.__FEATHERLOG_SHARED_RUNTIME__`，HTML 通过 `<script type="importmap">` 与带精确 SHA-256 哈希的 CSP 将外部插件 `ui.js` 中的对应依赖映射到 `featherlog-shared://runtime/*.js` 虚拟 ESM 桥，保证主窗口与外部插件复用同一份 React 实例。
+- **防抖监听与热重载顺序**：主进程通过 `fs.watch(..., { recursive: true })` 监听 `<userData>/plugins/`，内置目录写入、`*.json`（除 `manifest.json`）及 `*.tmp` 全部忽略，仅对外部插件目录与 `manifest.json`/`main.js`/`ui.js` 变更做注入 `Clock` 的防抖触发。热重载或点击「设置 → 插件 → 重载外部插件」时：
+  1. 主进程先 `kernel.unload(id)`（清理旧总线 handler、listener 与 `Clock` 定时器）并 `settings.unregisterPlugin(id)`，再以带 `?v=<now>-<seq>` 时间戳版本参数重新 `import` `main.js` 并在超时保护下执行 `kernel.load([plugin])`；
+  2. 通过 `shell/plugins-changed` 通知 `collapsed` 与 `panel` 两个窗口，渲染运行时先释放旧 `UiContext` 与槽位挂载、在独立子容器完成后微任务卸载旧 React 根，再刷新设置快照并用新版本 `uiUrl` 重新 `import` 与挂载新 `ui.js`。
 
 ## 7. 界面插槽
 
@@ -373,7 +391,7 @@ featherlog/
 - 最后一章完成时，任务**自动完成**（`status: completed`），发 `quest/completed`。这是游戏里的"任务完成"时刻，界面据此播放完成仪式。
 - `quest/reopen-objective` 用于撤销：该目标及其后所有目标恢复为未完成；受影响的章节和任务一并恢复。撤销**不丢进度**：其中的计数目标，`current` 降为 `min(current, target - 1)`，而不是清零。
 - `quest/complete` 对主线和支线表示"直接完成"：剩余目标全部完成，再完成任务。
-- `revealed` 为 `false` 时，界面只显示已完成的目标和当前目标，后面的目标显示为"尚未揭晓"；未到达的章节只显示章序号。这只影响显示，不影响数据。
+- 主线的 `revealed` 为 `false` 时，界面只显示已完成的目标和当前目标，后面的目标显示为"尚未揭晓"；未到达的章节只显示章序号。支线在详情页和卷轴预览中始终显示全部目标，不受 `revealed` 影响，也不提供"揭开／收起后续"按钮。这只影响显示，不影响数据与顺序解锁规则。
 
 ### 8.4 追踪
 
@@ -618,7 +636,7 @@ Wayland 下应用不能置顶、也不能定位自己，交给一个**很小的*
 - 游戏接入。
 - 八股弹窗和 Claude Code hooks。
 - 本地 WebSocket 桥（需要校验 Origin 或 token）。
-- 第三方插件的运行时动态加载（v1 只支持仓库内置插件）。
+- 第三方插件的运行时动态加载（本地目录扫描、安全协议与热重载已实现，见 §6.8；在线插件市场与签名校验以后再说）。
 - 界面国际化（v1 界面文案为中文）。
 - 开机自启；代码签名与 macOS 自动更新；AUR 包。
 

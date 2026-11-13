@@ -175,6 +175,92 @@ it('loads missing or valid settings without recovery and does not hide filesyste
   expect(await readdir(f.root)).toEqual(['settings.json']);
 });
 
+it('registers, hot-updates, and unregisters plugin schemas while preserving saved values', async () => {
+  const { root, manifests, files, log } = await fixture();
+  const path = join(root, 'settings.json');
+  await files.write(path, {
+    shell: {},
+    plugins: {
+      ext: { repoPath: '/custom/repo', count: 7, staleKey: 'drop-me', invalidType: 123 },
+    },
+  });
+  const settings = loadSettings(root, manifests, files, log, { now: () => 1, setTimeout: () => () => {} });
+  // Shell write before external plugin registers must still preserve saved external config on disk.
+  await settings.set('shell', 'sound', false);
+  const onDiskBefore = JSON.parse(readFileSync(path, 'utf8')) as { plugins: Record<string, unknown> };
+  expect(onDiskBefore.plugins.ext).toEqual({
+    repoPath: '/custom/repo',
+    count: 7,
+    staleKey: 'drop-me',
+    invalidType: 123,
+  });
+
+  const extV1: PluginManifest = {
+    id: 'ext',
+    name: 'External',
+    version: '1.0.0',
+    contributes: {
+      settings: {
+        schema: {
+          type: 'object',
+          properties: {
+            repoPath: { type: 'string', default: '/default' },
+            count: { type: 'number', default: 1 },
+            invalidType: { type: 'string', default: 'fallback' },
+          },
+        },
+      },
+    },
+  };
+  const listener = vi.fn();
+  settings.onChange(listener);
+  settings.registerPlugin(extV1);
+  expect(settings.forPlugin('ext').get('repoPath')).toBe('/custom/repo');
+  expect(settings.forPlugin('ext').get('count')).toBe(7);
+  expect(settings.forPlugin('ext').get('invalidType')).toBe('fallback');
+  expect(settings.forPlugin('ext').get('staleKey')).toBeUndefined();
+  expect(listener).toHaveBeenCalledWith('ext', 'repoPath', '/custom/repo');
+
+  // Hot-reload schema adds a new field and unregisters cleanly without losing values.
+  settings.unregisterPlugin('ext');
+  expect(settings.all().ext).toBeUndefined();
+  await settings.set('shell', 'sound', true);
+  settings.registerPlugin({
+    ...extV1,
+    contributes: {
+      settings: {
+        schema: {
+          type: 'object',
+          properties: {
+            repoPath: { type: 'string', default: '/default' },
+            count: { type: 'number', default: 1 },
+            branch: { type: 'string', default: 'main' },
+          },
+        },
+      },
+    },
+  });
+  expect(settings.all().ext).toEqual({ repoPath: '/custom/repo', count: 7, branch: 'main' });
+
+  // Invalid manifest defaults reject without corrupting existing registered state.
+  expect(() => settings.registerPlugin({
+    id: 'ext',
+    name: 'External',
+    version: '2.0.0',
+    contributes: {
+      settings: {
+        schema: {
+          type: 'object',
+          properties: { count: { type: 'number', default: 'bad' } },
+        },
+      },
+    },
+  })).toThrow(expect.objectContaining({ code: 'shell/invalid-setting' }));
+  expect(settings.all().ext).toEqual({ repoPath: '/custom/repo', count: 7, branch: 'main' });
+  expect(() => settings.registerPlugin({ id: 'shell', name: 'Bad', version: '1.0.0' }))
+    .toThrow(expect.objectContaining({ code: 'shell/invalid-input' }));
+});
+
 it('preserves the original when backup fails and keeps manifest errors outside recovery', async () => {
   const f = await fixture();
   const path = join(f.root, 'settings.json');

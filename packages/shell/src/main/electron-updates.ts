@@ -12,7 +12,7 @@ export function startUpdates(bus: Bus, clock: Clock, log: Logger, settings: Sett
   files: JsonFiles, quitToInstall: (install: () => void) => void) {
   const mode = updateMode(app.isPackaged, process.platform, process.env.APPIMAGE,
     existsSync(join(dirname(process.execPath), 'Uninstall Featherlog.exe')),
-    existsSync(join(process.resourcesPath, 'package-type')));
+    process.env.FEATHERLOG_NPM === '1' || existsSync(join(process.resourcesPath, 'package-type')));
   let updater: AppUpdater | undefined;
   const createUpdater = async () => {
     const { default: electronUpdater } = await import('electron-updater');

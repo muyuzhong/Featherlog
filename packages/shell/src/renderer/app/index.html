@@ -4,8 +4,9 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
+      content="default-src 'self'; script-src 'self' 'sha256-YhTklpKcQHSxbo700Wbz4ZUBmuLtr7OysOxZNLVa7no=' featherlog-plugin: featherlog-shared:; img-src 'self' data: featherlog-plugin:; style-src 'self' 'unsafe-inline' featherlog-plugin:; font-src 'self' data: featherlog-plugin:"
     />
+    <script type="importmap">{"imports":{"react":"featherlog-shared://runtime/react.js","react-dom":"featherlog-shared://runtime/react-dom.js","react-dom/client":"featherlog-shared://runtime/react-dom-client.js","react/jsx-runtime":"featherlog-shared://runtime/react-jsx-runtime.js","motion/react":"featherlog-shared://runtime/motion-react.js"}}</script>
     <title>羽记</title>
   </head>
   <body>

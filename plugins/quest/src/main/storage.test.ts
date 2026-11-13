@@ -142,6 +142,60 @@ it('leaves readers on the old state until the index write has completed', async 
   expect((await f.open()).state).toEqual(updated(legacy()));
 });
 
+it('bounds concurrent record writes and commits the index only after all records settle', async () => {
+  const initial = legacy();
+  initial.quests = Array.from({ length: 35 }, (_, index) => quest(String(index)));
+  initial.history = {};
+  const f = fixture(initial);
+  const set = vi.mocked(f.storage.set).getMockImplementation()!;
+  let active = 0;
+  let maximum = 0;
+  vi.mocked(f.storage.set).mockImplementation(async (key, value) => {
+    if (key === 'state') {
+      expect(active).toBe(0);
+      return set(key, value);
+    }
+    active++;
+    maximum = Math.max(maximum, active);
+    try { await set(key, value); }
+    finally { active--; }
+  });
+  expect((await f.open()).state).toEqual(initial);
+  expect(maximum).toBe(16);
+  expect((f.data.get('state') as { quests: { id: string }[] }).quests.map(item => item.id))
+    .toEqual(initial.quests.map(item => item.id));
+});
+
+it('waits for late parallel writes before rolling back a failed batch', async () => {
+  const f = fixture();
+  const opened = await f.open();
+  const original = structuredClone(f.data);
+  const set = vi.mocked(f.storage.set).getMockImplementation()!;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let count = 0;
+  vi.mocked(f.storage.set).mockClear();
+  vi.mocked(f.storage.delete).mockClear();
+  vi.mocked(f.storage.set).mockImplementation(async (key, value) => {
+    if (++count === 1) throw new Error('disk full');
+    entered();
+    await pending;
+    await set(key, value);
+  });
+  const saving = opened.save(updated(opened.state));
+  const rejected = expect(saving).rejects.toThrow('disk full');
+  await started;
+  expect(f.storage.delete).not.toHaveBeenCalled();
+  expect(f.storage.set).toHaveBeenCalledTimes(2);
+  expect(f.data).toEqual(original);
+  release();
+  await rejected;
+  expect(f.data).toEqual(original);
+  expect(opened.state).toEqual(legacy());
+});
+
 it('commits despite cleanup failure and removes crash orphans on the next startup', async () => {
   const f = fixture();
   const opened = await f.open();

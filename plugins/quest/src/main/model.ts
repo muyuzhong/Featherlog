@@ -104,7 +104,8 @@ export function chapters(
   valid(Array.isArray(drafts), 'Chapters are required');
   valid(kind === 'main' ? drafts.length > 0 : drafts.length === 1, 'Invalid chapter count');
   const ids = new Set<string>();
-  const oldObjectives = old.flatMap(chapter => chapter.objectives);
+  const oldChapters = new Map(old.map(chapter => [chapter.id, chapter]));
+  const oldObjectives = new Map(old.flatMap(chapter => chapter.objectives.map(item => [item.id, item] as const)));
   const identify = (value: unknown) => {
     const id = value === undefined ? crypto.randomUUID() : text(value, 'id', Infinity, true);
     valid(!ids.has(id), 'Duplicate chapter or objective id');
@@ -123,7 +124,7 @@ export function chapters(
     const objectives = draft.objectives.map((item: unknown) => {
       object(item);
       const objectiveId = identify(item.id);
-      const previous = oldObjectives.find(objective => objective.id === objectiveId);
+      const previous = oldObjectives.get(objectiveId);
       const count = item.count === undefined ? undefined : countDraft(item.count);
       const current = count ? previous?.count?.current ?? 0 : 0;
       const doneAt = previous?.doneAt ?? (count && current >= count.target ? now : undefined);
@@ -137,7 +138,7 @@ export function chapters(
         ...(doneAt ? { doneAt } : {}),
       };
     });
-    const previous = old.find(chapter => chapter.id === id);
+    const previous = oldChapters.get(id);
     return {
       id, title, objectives,
       ...(deadline === undefined ? {} : { deadline }),
@@ -183,7 +184,7 @@ export function patch(quest: StoredQuest, value: unknown): string[] {
   valid(!('kind' in value) && !('chapters' in value), 'Kind is immutable; use set-chapters');
   const keys = ['title', 'name', 'story', 'priority', 'deadline', 'scheduledFor',
     'recurrence', 'quota', 'revealed'] as const;
-  const candidate = structuredClone(quest);
+  const candidate = { ...quest };
   for (const key of keys) {
     if (value[key] === undefined) continue;
     if (value[key] === null) {

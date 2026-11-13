@@ -5,10 +5,11 @@ import type { App } from 'electron';
 export function configureUserData(app: Pick<App, 'isPackaged' | 'getPath' | 'setName' | 'setPath'>) {
   app.setName('Featherlog');
   const root = app.getPath('appData');
-  let directory = join(root, app.isPackaged ? 'Featherlog' : 'Featherlog-dev');
+  const production = app.isPackaged || process.env.FEATHERLOG_NPM === '1';
+  let directory = join(root, production ? 'Featherlog' : 'Featherlog-dev');
   const legacy = join(root, '@featherlog', 'shell');
   let migrationError: unknown;
-  if (app.isPackaged && !existsSync(directory) && existsSync(legacy)) {
+  if (production && !existsSync(directory) && existsSync(legacy)) {
     try {
       renameSync(legacy, directory);
     } catch (cause) {

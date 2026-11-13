@@ -11,7 +11,8 @@
     "test": "vitest run",
     "dev": "pnpm --filter @featherlog/playground dev",
     "app": "pnpm --filter @featherlog/shell app",
-    "build:app": "pnpm --filter @featherlog/shell build:app"
+    "build:app": "pnpm --filter @featherlog/shell build:app",
+    "build:npm": "pnpm build:app && node packages/shell/scripts/build-npm.mjs"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "5.0.2",

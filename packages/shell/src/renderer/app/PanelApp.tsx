@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { PanelView, SETTINGS_TAB } from '../panel/PanelView';
 import { SettingsPage } from '../settings/SettingsPage';
 import type { WindowRuntime } from './runtime';
@@ -7,11 +7,19 @@ import styles from './App.module.css';
 
 /** The panel window: the leather-bound frame hosting plugin tabs. */
 export function PanelApp({ runtime }: { runtime: WindowRuntime }) {
-  const { preload, registry, shellBus, manifests } = runtime;
+  const { preload, registry, shellBus } = runtime;
+  const plugins = useSyncExternalStore(runtime.subscribePlugins, () => runtime.plugins);
+  const manifests = plugins.filter((item) => item.enabled && item.status === 'loaded').map((item) => item.manifest);
   const shell = useShellState(shellBus);
   const tabs = manifests.flatMap((m) => m.contributes?.panelTabs ?? []);
   const [tab, setTab] = useState<string | undefined>();
   const [visible, setVisible] = useState(() => document.visibilityState === 'visible');
+
+  useEffect(() => {
+    if (tab && tab !== SETTINGS_TAB && !tabs.some((item) => item.id === tab)) {
+      setTab(undefined);
+    }
+  }, [tab, tabs]);
 
   // Every "shell/open-panel" brings its tab to the front, even the one it brought last time;
   // the user can switch afterwards. shell.panel is a new object per open.

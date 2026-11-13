@@ -51,6 +51,10 @@
 
 ## 下载安装
 
+也可以在 Node.js 22.12+ 的桌面环境运行 `npx featherlog-app@latest`。首次启动会下载 Electron；数据与安装版共用，更新通过再次运行这条命令完成。npm 上的 `featherlog` 属于其他项目，请使用 `featherlog-app`。
+
+npm 版启动时会自动添加带羽记图标的入口：Linux 应用菜单中的“羽记（npm）”、Windows 开始菜单中的“Featherlog (npm)”、macOS 用户目录下的 `~/Applications/Featherlog (npm).app`。之后点击图标即可启动，无需打开终端。清理 npm 缓存或更换 Node 安装位置后，重新运行上述命令即可修复入口。
+
 从 [**Releases**](https://github.com/muyuzhong/Featherlog/releases/latest) 下载对应的安装包：
 
 | 系统 | 安装包 | 自动更新 |
@@ -131,6 +135,8 @@ pnpm test
 4. 三个平台全部成功，且安装包、blockmap 和 `latest*.yml` 齐全后，CI 自动正式发布并设为 latest，发布说明由 GitHub 自动生成。失败时保留草稿供排查；修复后可重跑工作流。已安装的客户端只会看到正式发布的版本，草稿和预发布版都不会触发更新。
 
 本地打包：`pnpm --filter @featherlog/shell package:app`，产物在 `packages/shell/dist`。
+
+npm 包：先运行 `pnpm typecheck && pnpm test && pnpm build:npm`，再运行 `npm pack ./dist/npm` 检查产物，最后 `npm publish ./dist/npm`。包名为 `featherlog-app`，版本取自同一个外壳 `package.json`；只发布构建产物、启动脚本和授权文件，不发布工作区源码。npm 登录与二次验证由维护者完成；现有 GitHub Release 工作流不自动发布 npm。
 
 </details>
 

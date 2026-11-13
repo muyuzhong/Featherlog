@@ -431,24 +431,69 @@ button:focus-visible,
 
 /* ------------------------------------------------------------ plugins */
 
+.pluginToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 12px;
+}
+
 .plugins {
   list-style: none;
   margin: 0;
   padding: 0 8px;
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .plugins li {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 10px;
+  align-items: center;
+  gap: 4px 10px;
 }
 
 .pluginName {
   font: 17px var(--fl-font-display);
   letter-spacing: 0.08em;
+}
+
+.sourceTag {
+  font: 11.5px var(--fl-font-hand);
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  line-height: 1.4;
+}
+
+.builtinTag {
+  color: var(--fl-ink-faded);
+  border-color: var(--fl-ink-ghost);
+}
+
+.externalTag {
+  color: var(--fl-rubric);
+  background: var(--fl-rubric-wash);
+  border-color: var(--fl-rubric);
+}
+
+.pluginToggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  font: 12.5px var(--fl-font-hand);
+  color: var(--fl-ink-soft);
+  cursor: pointer;
+}
+
+.pluginToggle:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .plugins small {
@@ -461,6 +506,10 @@ button:focus-visible,
   margin: 0;
   font: 13.5px/1.6 var(--fl-font-hand);
   color: var(--fl-ink-faded);
+}
+
+.plugins p.pluginError {
+  color: var(--fl-rubric);
 }
 
 .colophon {

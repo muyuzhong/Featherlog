@@ -62,16 +62,19 @@ export async function setup(ctx: MainContext): Promise<void> {
     if (value === undefined) fail('Note not found', 'notes/not-found');
     return record(value, key);
   };
-  const all = async (): Promise<Note[]> => {
-    // ponytail: lists/counts scan records; add a metadata index if notebook scans become slow.
-    const notes: Note[] = [];
-    for (const key of await ctx.storage.keys()) {
-      if (!key.startsWith(prefix)) continue;
-      notes.push(await get(key.slice(prefix.length)));
+  // Keep only metadata resident; bodies are read on demand and still validated before writes.
+  const index: { id: string; created: number; questId?: string }[] = [];
+  const keys = (await ctx.storage.keys()).filter(key => key.startsWith(prefix));
+  for (let offset = 0; offset < keys.length; offset += 16) {
+    const notes = await Promise.all(keys.slice(offset, offset + 16).map(key => get(key.slice(prefix.length))));
+    for (const note of notes) {
+      const created = instant(note.createdAt);
+      lastCreated = Math.max(lastCreated, created);
+      index.push({ id: note.id, created, ...(note.questId === undefined ? {} : { questId: note.questId }) });
     }
-    return notes;
-  };
-  for (const note of await all()) lastCreated = Math.max(lastCreated, instant(note.createdAt));
+    guard();
+  }
+  index.sort((a, b) => b.created - a.created || b.id.localeCompare(a.id));
   guard();
   const save = async (note: Note) => {
     guard();
@@ -81,11 +84,13 @@ export async function setup(ctx: MainContext): Promise<void> {
     if (!disposed) ctx.bus.emit(type, { note }, { causedBy });
   };
   const detach = async (questId: string, causedBy: string) => {
-    for (const note of await all()) {
-      if (note.questId !== questId) continue;
+    for (const entry of index) {
+      if (entry.questId !== questId) continue;
+      const note = await get(entry.id);
       const next = { ...note, updatedAt: new Date(ctx.clock.now()).toISOString() };
       delete next.questId;
       await save(next);
+      delete entry.questId;
       notify('notes/updated', next, causedBy);
     }
   };
@@ -113,6 +118,7 @@ export async function setup(ctx: MainContext): Promise<void> {
       ...(questId === undefined ? {} : { questId }) };
     await save(note);
     lastCreated = time;
+    index.unshift({ id: note.id, created: time, ...(questId === undefined ? {} : { questId }) });
     notify('notes/created', note, envelope.id);
     return { note };
   });
@@ -131,6 +137,8 @@ export async function setup(ctx: MainContext): Promise<void> {
     const note = await get(identifier(payload.id));
     guard();
     await ctx.storage.delete(`${prefix}${note.id}`);
+    const position = index.findIndex(entry => entry.id === note.id);
+    if (position >= 0) index.splice(position, 1);
     if (!disposed) ctx.bus.emit('notes/deleted', { id: note.id,
       ...(note.questId === undefined ? {} : { questId: note.questId }) }, { causedBy: envelope.id });
     return null;
@@ -143,17 +151,23 @@ export async function setup(ctx: MainContext): Promise<void> {
     const before = payload.before === undefined ? Infinity : instant(payload.before);
     const limit = payload.limit === undefined ? 50 : payload.limit;
     if (!Number.isSafeInteger(limit) || limit < 1) fail('Limit must be a positive integer');
-    const notes = (await all()).filter(note =>
-      (questId === undefined || (questId === null ? note.questId === undefined : note.questId === questId)) &&
-      (query === undefined || note.text.toLowerCase().includes(query)) && instant(note.createdAt) < before)
-      .sort((a, b) => instant(b.createdAt) - instant(a.createdAt) || b.id.localeCompare(a.id));
-    return { notes: notes.slice(0, limit), more: notes.length > limit };
+    const notes: Note[] = [];
+    for (const entry of index) {
+      if (entry.created >= before || (questId !== undefined &&
+        (questId === null ? entry.questId !== undefined : entry.questId !== questId))) continue;
+      if (!query && notes.length === limit) return { notes, more: true };
+      const note = await get(entry.id);
+      if (query && !note.text.toLowerCase().includes(query)) continue;
+      if (notes.length === limit) return { notes, more: true };
+      notes.push(note);
+    }
+    return { notes, more: false };
   });
   register('notes/counts', async payload => {
     if (!Array.isArray(payload.questIds)) fail('Expected quest ids');
     const ids = payload.questIds.map(identifier);
     const counts = Object.fromEntries(ids.map(id => [id, 0]));
-    for (const note of await all()) {
+    for (const note of index) {
       if (note.questId !== undefined && Object.hasOwn(counts, note.questId)) counts[note.questId]!++;
     }
     return { counts };
@@ -162,7 +176,7 @@ export async function setup(ctx: MainContext): Promise<void> {
     await detach(identifier(payload.id), envelope.id);
   }));
   ctx.bus.on('kernel/ready', (_, envelope) => enqueue(async () => {
-    const ids = new Set((await all()).map(note => note.questId).filter(id => id !== undefined));
+    const ids = new Set(index.map(note => note.questId).filter(id => id !== undefined));
     for (const id of ids) {
       try { await ctx.bus.request('quest/get', { id }); }
       catch (cause) {

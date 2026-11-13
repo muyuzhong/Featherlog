@@ -30,6 +30,18 @@ async function fixture() {
   return { root, files, delays, storage: pluginStorage(root, 'quest', files) };
 }
 
+it('reserves the manifest key so external plugin manifests never collide with plugin storage', async () => {
+  const { root, storage } = await fixture();
+  await mkdir(join(root, 'plugins', 'demo'), { recursive: true });
+  await writeFile(join(root, 'plugins', 'demo', 'manifest.json'), JSON.stringify({ id: 'demo' }));
+  await expect(storage.set('manifest', { value: 1 })).rejects.toMatchObject({ code: 'shell/invalid-input' });
+  await expect(storage.get('manifest')).rejects.toMatchObject({ code: 'shell/invalid-input' });
+  await expect(storage.delete('manifest')).rejects.toMatchObject({ code: 'shell/invalid-input' });
+  expect(await storage.keys()).toEqual([]);
+  await storage.set('state', { ok: true });
+  expect(await storage.keys()).toEqual(['state']);
+});
+
 it('isolates scopes, encodes keys, enumerates only JSON and supports deletion', async () => {
   const { root, files, storage } = await fixture();
   await expect(storage.set('invalid', NaN))

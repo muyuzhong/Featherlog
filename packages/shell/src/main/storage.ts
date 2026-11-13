@@ -108,17 +108,20 @@ export class JsonFiles {
 export function pluginStorage(userData: string, id: string, files: JsonFiles): PluginStorage {
   if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(id)) invalid('Invalid storage scope');
   const directory = join(userData, 'plugins', id);
-  const path = (key: string) => join(directory, `${encodeURIComponent(key)}.json`);
+  const path = (key: string) => {
+    if (key === 'manifest') invalid('Reserved storage key: manifest');
+    return join(directory, `${encodeURIComponent(key)}.json`);
+  };
   return {
     async get<T extends Json>(key: string) {
       return await files.read(path(key)) as T | undefined;
     },
-    set: (key, value) => files.write(path(key), value),
-    delete: key => files.delete(path(key)),
+    set: async (key, value) => { await files.write(path(key), value); },
+    delete: async key => { await files.delete(path(key)); },
     async keys() {
       await files.flush();
       try {
-        return (await readdir(directory)).filter(name => name.endsWith('.json'))
+        return (await readdir(directory)).filter(name => name.endsWith('.json') && name !== 'manifest.json')
           .map(name => decodeURIComponent(name.slice(0, -5))).sort();
       } catch (cause) {
         if (missing(cause)) return [];

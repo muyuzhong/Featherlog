@@ -293,14 +293,21 @@ it('restores floating geometry after edge tiling and keeps completed drags on sc
   let changed = () => {};
   let tiled = () => {};
   let finished = () => {};
+  let keepAboveChanged = () => {};
+  let keepBelowChanged = () => {};
+  let minimizedChanged = () => {};
   const area = { x: -2048, y: 100, width: 2048, height: 1152 };
   let geometry = { x: 0, y: 0, width: 98.4, height: 248 };
   let tile: object | null = null;
   const reports: unknown[] = [];
   const window = {
     caption: 'featherlog-dock', output: { geometry: area },
+    keepAbove: false, keepBelow: true, minimized: false,
     frameGeometryChanged: { connect: (callback: () => void) => { changed = callback; } },
     tileChanged: { connect: (callback: () => void) => { tiled = callback; } },
+    keepAboveChanged: { connect: (callback: () => void) => { keepAboveChanged = callback; } },
+    keepBelowChanged: { connect: (callback: () => void) => { keepBelowChanged = callback; } },
+    minimizedChanged: { connect: (callback: () => void) => { minimizedChanged = callback; } },
     interactiveMoveResizeFinished: { connect: (callback: () => void) => { finished = callback; } },
     captionChanged: { connect: () => {} },
     get tile() { return tile; },
@@ -316,6 +323,14 @@ it('restores floating geometry after edge tiling and keeps completed drags on sc
   runInNewContext(floatScript(), { callDBus, workspace: {
     screens: [{ geometry: area }], windowList: () => [window], windowAdded: { connect: () => {} },
   } });
+  expect(window).toMatchObject({ keepAbove: true, keepBelow: false, minimized: false });
+  window.keepAbove = false;
+  keepAboveChanged();
+  window.keepBelow = true;
+  keepBelowChanged();
+  window.minimized = true;
+  minimizedChanged();
+  expect(window).toMatchObject({ keepAbove: true, keepBelow: false, minimized: false });
   window.frameGeometry = { ...geometry, x: -2000, y: 400 };
   const floating = { ...geometry };
   geometry = { ...area, width: area.width / 2 };

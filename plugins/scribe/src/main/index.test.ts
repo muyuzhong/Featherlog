@@ -11,6 +11,11 @@ import * as modelAdapters from './model';
 import { PERSONA } from './writing';
 
 const local = (day = '2026-10-03', hour = 12, minute = 0) => new Date(`${day}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`).getTime();
+function freezeJson(value: Json): void {
+  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return;
+  Object.freeze(value);
+  for (const child of Object.values(value)) freezeJson(child);
+}
 function quest(patch: Partial<Quest> = {}): Quest {
   return { id: 'q1', kind: 'main', title: '学习', status: 'active', priority: 'none', tracked: true,
     revealed: false, chapters: [{ id: 'ch1', title: '开卷', objectives: [{ id: 'o1', text: '读第一节' }, { id: 'o2', text: '写摘要' }] }],
@@ -41,7 +46,7 @@ async function fixture(options: {
   const data = options.data ?? new Map<string, Json>();
   const storage: PluginStorage = {
     async get<T extends Json>(name: string) { return structuredClone(data.get(name)) as T | undefined; },
-    async set(name, value) { data.set(name, structuredClone(value)); },
+    async set(name, value) { freezeJson(value); data.set(name, structuredClone(value)); },
     async keys() { return [...data.keys()]; }, async delete(name) { data.delete(name); },
   };
   const model = vi.fn<ModelClient>(options.client ?? (async () => ({ text: '此步已过。', usage: { inputTokens: 10, outputTokens: 4 } })));
@@ -589,6 +594,26 @@ describe('rule-selected board and logical period cache', () => {
 });
 
 describe('Clock-driven stuck objectives, recaps and epilogues', () => {
+  it('does not rewrite unchanged progress when opening the panel, but persists changes and removals', async () => {
+    const f = await fixture({ consent: false });
+    const writes = vi.spyOn(f.storage, 'set');
+    f.open(); await f.drain();
+    f.open(); await f.drain();
+    expect(writes).not.toHaveBeenCalled();
+    f.setQuests([quest({ chapters: [{ id: 'ch1', title: '开卷', objectives: [
+      { id: 'o1', text: '读', count: { current: 1, target: 5 } },
+    ] }] })]);
+    f.open(); await f.drain();
+    expect(writes).toHaveBeenCalledOnce();
+    expect(f.data.get('state')).toMatchObject({ progress: { q1: { signature: '["o1",1]' } } });
+    f.setQuests([]);
+    f.open(); await f.drain();
+    expect(writes).toHaveBeenCalledTimes(2);
+    expect(f.data.get('state')).toMatchObject({ progress: {} });
+    f.open(); await f.drain();
+    expect(writes).toHaveBeenCalledTimes(2);
+  });
+
   it('proposes splitting at exactly five days, once per progress signature, and does not mutate quests', async () => {
     const f = await fixture({ consent: false });
     f.setTime(local('2026-10-08') - 1); await f.drain(); expect(await f.lines()).toEqual([]);
@@ -687,6 +712,70 @@ describe('Clock-driven stuck objectives, recaps and epilogues', () => {
 });
 
 describe('storage round trips and startup safeguards', () => {
+  it('shares untouched history across writes and never mutates committed snapshots', async () => {
+    const f = await fixture();
+    const set = f.storage.set.bind(f.storage);
+    const snapshots: Record<string, Json>[] = [];
+    vi.spyOn(f.storage, 'set').mockImplementation(async (key, value) => {
+      expect(JSON.parse(JSON.stringify(value))).toEqual(value);
+      snapshots.push(value as Record<string, Json>);
+      await set(key, value);
+    });
+    f.emit('quest/objective-completed', { quest: quest(), chapterId: 'ch1', objectiveId: 'o1' });
+    await f.drain();
+    expect(await f.lines()).toHaveLength(1);
+    const previous = snapshots.at(-1)!;
+    const original = structuredClone(previous);
+    expect(await f.request('scribe/test', {})).toMatchObject({ ok: true });
+    const latest = snapshots.at(-1)!;
+    expect(latest.lines).toBe(previous.lines);
+    expect(latest.activity).toBe(previous.activity);
+    expect(latest.progress).toBe(previous.progress);
+    expect(latest.usage).not.toBe(previous.usage);
+    expect(previous).toEqual(original);
+    f.setQuests([]); f.open(); await f.drain();
+    expect(snapshots.at(-1)!.progress).toEqual({});
+    expect(previous.progress).not.toEqual({});
+    expect(f.log.warn).not.toHaveBeenCalled();
+  });
+
+  it('keeps consent, usage and progress unchanged when their storage write fails', async () => {
+    const f = await fixture();
+    const original = structuredClone(f.data.get('state'));
+    const writes = vi.spyOn(f.storage, 'set');
+    writes.mockRejectedValueOnce(new Error('Disk full'));
+    await expect(f.request('scribe/consent', { granted: false })).rejects.toMatchObject({ code: 'handler-error' });
+    expect((await f.request('scribe/state', {})).consented).toBe(true);
+    writes.mockRejectedValueOnce(new Error('Disk full'));
+    expect(await f.request('scribe/test', {})).toMatchObject({ ok: false });
+    expect((await f.request('scribe/state', {})).usage.calls).toBe(0);
+    expect(f.model).not.toHaveBeenCalled();
+    f.setQuests([]);
+    writes.mockRejectedValueOnce(new Error('Disk full'));
+    f.open(); await f.drain();
+    expect(f.data.get('state')).toEqual(original);
+    writes.mockClear();
+    f.open(); await f.drain();
+    expect(writes).toHaveBeenCalledOnce();
+    expect(f.data.get('state')).toMatchObject({ progress: {} });
+  });
+
+  it('returns only the newest matching lines without losing older history', async () => {
+    const seed = await fixture({ enabled: false });
+    seed.kernel.unload('scribe');
+    const stored = seed.data.get('state') as Record<string, Json>;
+    const lines = Array.from({ length: 1000 }, (_, i) => ({
+      id: String(i), text: '此步已过。', topic: 'objective', origin: 'builtin',
+      at: new Date(local() + i).toISOString(), questId: i % 3 ? 'q1' : 'q2',
+    }));
+    stored.lines = lines;
+    const f = await fixture({ data: seed.data, enabled: false });
+    expect(await f.request('scribe/lines', { limit: 2 })).toEqual({ lines: [lines[999], lines[998]] });
+    expect(await f.request('scribe/lines', { questId: 'q1', limit: 2 })).toEqual({ lines: [lines[998], lines[997]] });
+    expect(await f.request('scribe/lines', { questId: 'missing' })).toEqual({ lines: [] });
+    expect((f.data.get('state') as Record<string, Json>).lines).toHaveLength(1000);
+  });
+
   it('retains lines, boards, recaps, endings and provenance history after reopening', async () => {
     const f = await fixture();
     f.emit('quest/objective-completed', { quest: quest(), chapterId: 'ch1', objectiveId: 'o1' }); await f.drain();

@@ -11,10 +11,20 @@ function adopt(w) {
   if (w.caption !== title || managed.indexOf(w) >= 0) return;
   managed.push(w);
   w.keepAbove = true;
+  w.keepBelow = false;
   w.onAllDesktops = true;
   w.skipTaskbar = true;
   w.skipPager = true;
   w.skipSwitcher = true;
+  w.keepAboveChanged?.connect(() => {
+    if (!w.keepAbove) w.keepAbove = true;
+  });
+  w.keepBelowChanged?.connect(() => {
+    if (w.keepBelow) w.keepBelow = false;
+  });
+  w.minimizedChanged?.connect(() => {
+    if (w.minimized) w.minimized = false;
+  });
   const output = workspace.screens.reduce((a, b) =>
     a.geometry.x + a.geometry.width > b.geometry.x + b.geometry.width ? a : b);
   const area = output.geometry;

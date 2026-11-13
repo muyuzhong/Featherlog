@@ -36,6 +36,7 @@ export function loadSettings(userData: string, manifests: PluginManifest[], file
 export class Settings {
   private schemas = new Map<string, Record<string, unknown>>([['shell', shellSchema]]);
   private values: Record<string, Record<string, Json>> = Object.create(null);
+  private preservedPlugins: Record<string, Record<string, Json>> = Object.create(null);
   private listeners = new Set<Listener>();
   private queue = Promise.resolve();
 
@@ -47,23 +48,24 @@ export class Settings {
     private log: Logger,
   ) {
     for (const manifest of manifests) {
-      const schema = manifest.contributes?.settings?.schema;
-      this.schemas.set(manifest.id, record(schema) && record(schema.properties)
-        ? schema.properties : {});
+      this.schemas.set(manifest.id, this.schemaProperties(manifest));
     }
     for (const [scope, schema] of this.schemas) {
-      const values: Record<string, Json> = Object.create(null);
-      for (const [key, property] of Object.entries(schema)) {
-        if (record(property) && property.writeOnly !== true && property.default !== undefined) {
-          this.validate(scope, key, property.default);
-          values[key] = structuredClone(property.default) as Json;
-        }
-      }
-      this.values[scope] = values;
+      this.values[scope] = this.buildDefaults(scope, schema);
     }
     if (saved !== undefined) {
       if (!record(saved) || !record(saved.shell) || !record(saved.plugins)) {
         invalid('Invalid settings file', 'shell/storage-corrupt');
+      }
+      for (const [pluginId, pluginValues] of Object.entries(saved.plugins)) {
+        if (this.schemas.has(pluginId)) continue;
+        if (!record(pluginValues)) invalid('Invalid settings scope', 'shell/storage-corrupt');
+        const preserved: Record<string, Json> = Object.create(null);
+        for (const [key, value] of Object.entries(pluginValues)) {
+          if (!isJson(value)) invalid(`Invalid setting ${pluginId}/${key}`, 'shell/invalid-setting');
+          preserved[key] = structuredClone(value) as Json;
+        }
+        this.preservedPlugins[pluginId] = preserved;
       }
       for (const scope of this.schemas.keys()) {
         const values = scope === 'shell' ? saved.shell : saved.plugins[scope];
@@ -81,8 +83,35 @@ export class Settings {
     }
   }
 
-  private validate(scope: string, key: string, value: unknown): void {
-    const schema = this.schemas.get(scope);
+  private schemaProperties(manifest: PluginManifest): Record<string, unknown> {
+    const schema = manifest.contributes?.settings?.schema;
+    return record(schema) && record(schema.properties) ? schema.properties : {};
+  }
+
+  private buildDefaults(scope: string, schema: Record<string, unknown>): Record<string, Json> {
+    const values: Record<string, Json> = Object.create(null);
+    for (const [key, property] of Object.entries(schema)) {
+      if (record(property) && property.writeOnly !== true && property.default !== undefined) {
+        this.validate(scope, key, property.default, schema);
+        values[key] = structuredClone(property.default) as Json;
+      }
+    }
+    return values;
+  }
+
+  private emitChange(scope: string, key: string, value: Json): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(scope, key, structuredClone(value));
+      } catch (cause) {
+        this.log.error('Settings listener failed', cause);
+      }
+    }
+  }
+
+  private validate(scope: string, key: string, value: unknown,
+    schemaOverride?: Record<string, unknown>): void {
+    const schema = schemaOverride ?? this.schemas.get(scope);
     const property = schema && Object.hasOwn(schema, key) ? schema[key] : undefined;
     let valid = record(property) && property.writeOnly !== true && isJson(value);
     if (valid && record(property)) {
@@ -132,6 +161,45 @@ export class Settings {
     return () => { this.listeners.delete(listener); };
   }
 
+  registerPlugin(manifest: PluginManifest): void {
+    if (manifest.id === 'shell') invalid('Reserved settings scope: shell');
+    const schema = this.schemaProperties(manifest);
+    const next = this.buildDefaults(manifest.id, schema);
+    const previous = this.values[manifest.id];
+    const source = previous ?? this.preservedPlugins[manifest.id];
+    if (source) {
+      for (const [key, value] of Object.entries(source)) {
+        if (!Object.hasOwn(schema, key)) continue;
+        const property = schema[key];
+        if (record(property) && property.writeOnly === true) continue;
+        try {
+          this.validate(manifest.id, key, value, schema);
+          next[key] = structuredClone(value) as Json;
+        } catch (cause) {
+          this.log.warn('Ignoring invalid preserved plugin setting', { scope: manifest.id, key, cause });
+        }
+      }
+    }
+    this.schemas.set(manifest.id, schema);
+    this.values[manifest.id] = next;
+    delete this.preservedPlugins[manifest.id];
+    for (const [key, value] of Object.entries(next)) {
+      if (!previous || !Object.hasOwn(previous, key) ||
+        JSON.stringify(previous[key]) !== JSON.stringify(value)) {
+        this.emitChange(manifest.id, key, value);
+      }
+    }
+  }
+
+  unregisterPlugin(id: string): void {
+    if (id === 'shell') return;
+    if (this.values[id]) {
+      this.preservedPlugins[id] = structuredClone(this.values[id]);
+    }
+    this.schemas.delete(id);
+    delete this.values[id];
+  }
+
   set(scope: string, key: string, value: Json): Promise<void> {
     const snapshot = structuredClone(value);
     const operation = this.queue.then(async () => {
@@ -140,15 +208,16 @@ export class Settings {
       const next = this.all();
       next[scope]![key] = snapshot;
       const { shell, ...plugins } = next;
-      await this.files.write(join(this.userData, 'settings.json'), { shell: shell!, plugins });
-      this.values = next;
-      for (const listener of this.listeners) {
-        try {
-          listener(scope, key, structuredClone(snapshot));
-        } catch (cause) {
-          this.log.error('Settings listener failed', cause);
-        }
+      await this.files.write(join(this.userData, 'settings.json'), {
+        shell: shell!,
+        plugins: { ...this.preservedPlugins, ...plugins },
+      });
+      if (this.values[scope]) {
+        this.values[scope]![key] = snapshot;
+      } else if (scope !== 'shell' && this.preservedPlugins[scope]) {
+        this.preservedPlugins[scope]![key] = snapshot;
       }
+      this.emitChange(scope, key, snapshot);
     });
     this.queue = operation.catch(() => {});
     return operation;

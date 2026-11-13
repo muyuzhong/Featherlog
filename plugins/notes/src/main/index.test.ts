@@ -162,6 +162,57 @@ describe('text, association and CRUD', () => {
 });
 
 describe('listing, cursor and counts', () => {
+  it('bounds startup reads while rebuilding metadata without persisting an extra index', async () => {
+    const data = new Map(Array.from({ length: 35 }, (_, i) => [`note:${i}`, saved(note(String(i)))] as const));
+    const f = await fixture({ data });
+    f.kernel.unload('notes');
+    vi.mocked(f.storage.get).mockRestore();
+    const get = f.storage.get.bind(f.storage);
+    let active = 0;
+    let maximum = 0;
+    vi.spyOn(f.storage, 'get').mockImplementation(async <T extends Json>(key: string) => {
+      active++;
+      maximum = Math.max(maximum, active);
+      try { return await get<T>(key); }
+      finally { active--; }
+    });
+    await f.kernel.load([{ manifest: { id: 'notes', name: 'Notes', version: '0.1.0' }, setup }]);
+    expect(maximum).toBe(16);
+    expect((await f.request('notes/list', {})).notes).toHaveLength(35);
+    expect(f.storage.set).not.toHaveBeenCalled();
+    expect(f.storage.delete).not.toHaveBeenCalled();
+  });
+
+  it('reads only the requested page and counts from metadata without loading bodies', async () => {
+    const data = new Map(Array.from({ length: 1000 }, (_, i) => {
+      const item = note(String(i), { createdAt: new Date(start + i).toISOString(),
+        questId: i % 2 ? 'q1' : 'q2' });
+      return [`note:${item.id}`, saved(item)] as const;
+    }));
+    const f = await fixture({ data });
+    vi.mocked(f.storage.get).mockClear(); vi.mocked(f.storage.keys).mockClear();
+    expect((await f.request('notes/list', { questId: 'q1', limit: 3 })).notes.map(item => item.id))
+      .toEqual(['999', '997', '995']);
+    expect(f.storage.get).toHaveBeenCalledTimes(3);
+    vi.mocked(f.storage.get).mockClear();
+    expect(await f.request('notes/counts', { questIds: ['q1', 'q2'] })).toEqual({ counts: { q1: 500, q2: 500 } });
+    expect(f.storage.get).not.toHaveBeenCalled();
+    expect(f.storage.keys).not.toHaveBeenCalled();
+    expect((await f.request('notes/list', { questId: 'q1', query: 'page', limit: 3 })).more).toBe(true);
+    expect(f.storage.get).toHaveBeenCalledTimes(4);
+    vi.mocked(f.storage.get).mockClear();
+    expect((await f.request('notes/list', { questId: 'missing', query: 'page' })).more).toBe(false);
+    expect(f.storage.get).not.toHaveBeenCalled();
+  });
+
+  it('orders loaded metadata by instant and then id, regardless of storage key order', async () => {
+    const a = note('a', { createdAt: '2026-10-04T20:00:00+08:00' });
+    const b = note('b');
+    const c = note('c', { createdAt: new Date(start - 1).toISOString() });
+    const f = await fixture({ data: new Map([['note:c', saved(c)], ['note:a', saved(a)], ['note:b', saved(b)]]) });
+    expect((await f.request('notes/list', {})).notes).toEqual([b, a, c]);
+  });
+
   it('pages newest first with a strict before cursor, default 50, and accurate more', async () => {
     const f = await fixture();
     const created: Note[] = [];
@@ -241,7 +292,11 @@ describe('deletion, persistence and concurrent writes', () => {
     const a = await f.create('第一则\n正文', 'q1'); const b = await f.create('第二则', 'q1');
     const other = await f.create('另一任务', 'q2'); const essay = await f.create('随笔');
     f.setTime(start + 1000); f.messages.length = 0;
+    vi.mocked(f.storage.get).mockClear();
     await f.deleteQuest('q1');
+    await f.request('notes/counts', { questIds: ['q1'] });
+    expect(vi.mocked(f.storage.get).mock.calls.map(([key]) => key).sort())
+      .toEqual([`note:${a.id}`, `note:${b.id}`].sort());
     const list = await f.request('notes/list', { questId: null });
     expect(list.notes.map(note => note.text)).toEqual([essay.text, b.text, a.text]);
     expect((await f.request('notes/get', { id: other.id })).note).toEqual(other);
@@ -268,6 +323,7 @@ describe('deletion, persistence and concurrent writes', () => {
     });
     await f.deleteQuest('q1'); await f.request('notes/list', {});
     expect(f.events().filter(event => event.type === 'notes/updated')).toHaveLength(1);
+    expect(await f.request('notes/counts', { questIds: ['q1'] })).toEqual({ counts: { q1: 2 } });
     f.kernel.unload('notes');
     const reopened = await fixture({ data: f.data, questIds: ['q2'] });
     expect((await reopened.request('notes/list', { questId: null })).notes).toHaveLength(3);
@@ -356,6 +412,7 @@ describe('deletion, persistence and concurrent writes', () => {
     await expect(f.request('notes/delete', { id: a.id })).rejects.toMatchObject({ code: 'handler-error' });
     expect(f.data.get(`note:${a.id}`)).toEqual(saved(updated)); expect(f.events()).toEqual([]);
     expect((await f.request('notes/get', { id: a.id })).note).toEqual(updated);
+    expect((await f.request('notes/list', {})).notes).toEqual([updated]);
     await f.request('notes/update', { id: a.id, text: '重试成功' });
   });
 
@@ -364,6 +421,7 @@ describe('deletion, persistence and concurrent writes', () => {
     vi.mocked(f.storage.set).mockRejectedValueOnce(new Error('Disk full'));
     await expect(f.create()).rejects.toMatchObject({ code: 'handler-error' });
     expect(f.events()).toEqual([]); expect(f.data.size).toBe(0);
+    expect((await f.request('notes/list', {})).notes).toEqual([]);
     expect((await f.create()).createdAt).toBe(new Date(start).toISOString());
   });
 

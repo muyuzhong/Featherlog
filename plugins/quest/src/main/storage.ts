@@ -1,6 +1,6 @@
 import type { Json, Logger, PluginStorage } from '@featherlog/contracts';
 import { input, object, valid } from './model';
-import type { State } from './model';
+import type { State, StoredQuest } from './model';
 
 type Reference = { id: string; key: string };
 const recordKey = /^record:[0-9a-f-]{36}$/;
@@ -66,9 +66,11 @@ export async function openState(storage: PluginStorage, log: Logger, period: str
   validateState(loaded);
   let state = loaded;
   const remove = async (keys: string[]) => {
-    for (const key of keys) {
-      try { await storage.delete(key); }
-      catch (cause) { log.warn('Could not remove unused quest record', { key, cause }); }
+    for (let offset = 0; offset < keys.length; offset += 16) {
+      await Promise.all(keys.slice(offset, offset + 16).map(async key => {
+        try { await storage.delete(key); }
+        catch (cause) { log.warn('Could not remove unused quest record', { key, cause }); }
+      }));
     }
   };
   const save = async (next: State) => {
@@ -76,16 +78,26 @@ export async function openState(storage: PluginStorage, log: Logger, period: str
     const keys = new Map(references.map(reference => [reference.id, reference.key]));
     const staged: string[] = [];
     const updated: Reference[] = [];
+    const records: { key: string; quest: StoredQuest }[] = [];
     try {
       for (const quest of next.quests) {
         let key = keys.get(quest.id);
         if (!key || previous.get(quest.id) !== quest ||
           state.history[quest.id] !== next.history[quest.id]) {
           key = `record:${crypto.randomUUID()}`;
-          staged.push(key);
-          await storage.set(key, { quest, history: next.history[quest.id] ?? [] } as unknown as Json);
+          records.push({ key, quest });
         }
         updated.push({ id: quest.id, key });
+      }
+      for (let offset = 0; offset < records.length; offset += 16) {
+        // Settle the whole batch before rollback so late writes cannot recreate removed records.
+        const results = await Promise.allSettled(records.slice(offset, offset + 16).map(async ({ key, quest }) => {
+          staged.push(key);
+          await storage.set(key, { quest, history: next.history[quest.id] ?? [] } as unknown as Json);
+        }));
+        for (const result of results) {
+          if (result.status === 'rejected') throw result.reason;
+        }
       }
       // Only this atomic replacement makes the immutable records visible together.
       // ponytail: the index is O(quest count); use a database if this small write becomes costly.

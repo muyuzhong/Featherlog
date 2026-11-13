@@ -2,6 +2,7 @@ import type {
   Dispose,
   FeatherlogPreload,
   Json,
+  PluginDescriptor,
   PluginManifest,
   PluginSettings,
   UiBus,
@@ -22,9 +23,13 @@ export interface WindowRuntime {
   readonly registry: SlotRegistry;
   /** The shell's own bus, sending as "shell". */
   readonly shellBus: UiBus;
+  readonly plugins: readonly PluginDescriptor[];
   readonly manifests: PluginManifest[];
   /** This window's sound player, shared by the shell and every plugin. */
   readonly sound: UiSound;
+  subscribePlugins(listener: () => void): Dispose;
+  reloadExternalPlugins(id?: string): Promise<void>;
+  setPluginEnabled(id: string, enabled: boolean): Promise<void>;
   setting<T extends Json>(scope: string, key: string): T | undefined;
   onSettingChange(listener: (scope: string, key: string, value: Json) => void): Dispose;
   dispose(): void;
@@ -61,7 +66,20 @@ export async function createRuntime(preload: FeatherlogPreload, plugins: UiPlugi
   const shellBus = createUiBus(preload.bus, 'shell');
   disposers.push(shellBus.dispose);
 
-  for (const plugin of plugins) {
+  const pluginListeners = new Set<() => void>();
+  const subscribePlugins = (listener: () => void): Dispose => {
+    pluginListeners.add(listener);
+    return () => pluginListeners.delete(listener);
+  };
+  let pluginsSnapshot: readonly PluginDescriptor[] = plugins.map((p) => ({
+    manifest: p.manifest,
+    source: 'builtin' as const,
+    enabled: true,
+    status: 'loaded' as const,
+  }));
+  let disposed = false;
+
+  const mountUiPlugin = async (plugin: UiPlugin): Promise<Dispose> => {
     const id = plugin.manifest.id;
     const bus = createUiBus(preload.bus, id);
     const slots = registry.providerFor(id);
@@ -79,24 +97,143 @@ export async function createRuntime(preload: FeatherlogPreload, plugins: UiPlugi
       log: prefixed(id),
       onDispose: (callback) => void own.push(callback),
     };
-    disposers.push(() => own.reverse().forEach(run));
+    const cleanup = () => own.splice(0).reverse().forEach(run);
     try {
       await plugin.setup(ctx);
     } catch (cause) {
+      cleanup();
       // One plugin's UI failing must not take the window down with it.
       console.error(`[${id}] UI setup failed`, cause);
     }
+    return cleanup;
+  };
+
+  for (const plugin of plugins) {
+    const cleanup = await mountUiPlugin(plugin);
+    disposers.push(cleanup);
+  }
+
+  const mountedExternals = new Map<string, { uiUrl?: string; dispose: Dispose }>();
+  const refreshSettings = async () => {
+    const fresh = await preload.settings.all();
+    for (const scope of Object.keys(settings)) {
+      if (!Object.hasOwn(fresh, scope)) delete settings[scope];
+    }
+    for (const [scope, nextValues] of Object.entries(fresh)) {
+      const prevValues = settings[scope];
+      settings[scope] = nextValues;
+      for (const [key, value] of Object.entries(nextValues)) {
+        if (!prevValues || JSON.stringify(prevValues[key]) !== JSON.stringify(value)) {
+          settingListeners.forEach((listener) => listener(scope, key, value));
+        }
+      }
+    }
+  };
+
+  let syncQueue: Promise<void> = Promise.resolve();
+  const syncExternalPlugins = async (
+    nextDescriptors: PluginDescriptor[],
+    reloadedIds?: string[],
+    removedIds?: string[],
+  ) => {
+    if (disposed) return;
+    const byId = new Map(nextDescriptors.map((item) => [item.manifest.id, item]));
+    const reloaded = new Set(reloadedIds ?? []);
+    const removed = new Set(removedIds ?? []);
+
+    for (const [id, mounted] of [...mountedExternals.entries()]) {
+      const next = byId.get(id);
+      const shouldUnmount = !next
+        || next.source !== 'external'
+        || !next.enabled
+        || next.status !== 'loaded'
+        || !next.uiUrl
+        || removed.has(id)
+        || reloaded.has(id)
+        || mounted.uiUrl !== next.uiUrl;
+      if (shouldUnmount) {
+        mountedExternals.delete(id);
+        run(mounted.dispose);
+      }
+    }
+
+    await refreshSettings();
+    if (disposed) return;
+
+    for (const item of nextDescriptors) {
+      if (item.source !== 'external' || !item.enabled || item.status !== 'loaded' || !item.uiUrl) continue;
+      if (mountedExternals.has(item.manifest.id)) continue;
+      try {
+        const mod = (await import(/* @vite-ignore */ item.uiUrl)) as { setup?: UiPlugin['setup'] };
+        if (disposed) return;
+        if (typeof mod.setup === 'function') {
+          const dispose = await mountUiPlugin({ manifest: item.manifest, setup: mod.setup });
+          if (disposed) {
+            run(dispose);
+            return;
+          }
+          mountedExternals.set(item.manifest.id, { uiUrl: item.uiUrl, dispose });
+        }
+      } catch (cause) {
+        console.error(`[${item.manifest.id}] External UI load failed`, cause);
+      }
+    }
+
+    pluginsSnapshot = Object.freeze([...nextDescriptors]);
+    pluginListeners.forEach((listener) => listener());
+  };
+
+  const enqueueSync = (
+    nextDescriptors: PluginDescriptor[],
+    reloadedIds?: string[],
+    removedIds?: string[],
+  ): Promise<void> => {
+    const task = syncQueue.then(() => syncExternalPlugins(nextDescriptors, reloadedIds, removedIds));
+    syncQueue = task.catch((cause) => console.error('Plugin sync failed', cause));
+    return task;
+  };
+
+  disposers.push(
+    shellBus.on('shell/plugins-changed', ({ plugins: next, reloadedIds, removedIds }) => {
+      void enqueueSync(next, reloadedIds, removedIds);
+    }),
+  );
+
+  try {
+    const initial = await shellBus.request('shell/plugins', {});
+    await enqueueSync(initial);
+  } catch {
+    // Non-shell hosts (such as playground) do not implement external plugin handlers.
   }
 
   return {
     preload,
     registry,
     shellBus,
-    manifests: plugins.map((p) => p.manifest),
+    get plugins() {
+      return pluginsSnapshot;
+    },
+    get manifests() {
+      return pluginsSnapshot.filter((item) => item.enabled && item.status === 'loaded').map((item) => item.manifest);
+    },
+    subscribePlugins,
+    reloadExternalPlugins: async (id?: string) => {
+      const next = await shellBus.request('shell/reload-plugins', id ? { id } : {});
+      await enqueueSync(next, id ? [id] : undefined);
+    },
+    setPluginEnabled: async (id: string, enabled: boolean) => {
+      const next = await shellBus.request('shell/set-plugin-enabled', { id, enabled });
+      await enqueueSync(next, enabled ? [id] : undefined, enabled ? undefined : [id]);
+    },
     sound,
     setting: <T extends Json>(scope: string, key: string) => settings[scope]?.[key] as T | undefined,
     onSettingChange,
-    dispose: () => disposers.reverse().forEach(run),
+    dispose: () => {
+      disposed = true;
+      for (const mounted of mountedExternals.values()) run(mounted.dispose);
+      mountedExternals.clear();
+      disposers.reverse().forEach(run);
+    },
   };
 }
 

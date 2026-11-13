@@ -1,4 +1,4 @@
-import { app, ipcMain, Menu, screen } from 'electron';
+import { app, ipcMain, Menu, protocol, screen } from 'electron';
 import { join } from 'node:path';
 import type { BrowserWindow, IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron';
 import type { Clock, WindowKind } from '@featherlog/contracts';
@@ -17,6 +17,19 @@ import { startUpdates } from './electron-updates';
 import { configureUserData } from './user-data';
 import { invalid, isJson } from './validation';
 import { loadPlugins, showStartupError } from './startup';
+import { ExternalPluginManager, PLUGIN_PROTOCOL } from './external-plugins';
+import { SHARED_PROTOCOL, createSharedProtocolHandler } from './shared-protocol';
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: PLUGIN_PROTOCOL,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
+  },
+  {
+    scheme: SHARED_PROTOCOL,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
+  },
+]);
 
 const clock: Clock = {
   now: () => Date.now(),
@@ -92,6 +105,16 @@ if (!app.requestSingleInstanceLock()) {
     const bus = kernel.createBus('shell');
     let windows: Windows;
     const shell = registerShell(bus, () => windows.openPanel(), clock, () => app.quit());
+    const externalPlugins = new ExternalPluginManager({
+      userData,
+      builtinPlugins: plugins,
+      kernel,
+      shellBus: bus,
+      settings,
+      files,
+      clock,
+      log,
+    });
     const bridge = createBusBridge(kernel, log, !app.isPackaged);
     const peers = new Map<WebContents, WindowKind>();
     const register = (window: BrowserWindow, kind: WindowKind) => {
@@ -154,6 +177,8 @@ if (!app.requestSingleInstanceLock()) {
       });
     shutdown = async () => {
       stopUpdates();
+      externalPlugins.dispose();
+      for (const id of externalPlugins.loadedIds().reverse()) kernel.unload(id);
       for (const plugin of [...plugins].reverse()) kernel.unload(plugin.manifest.id);
       bridge.dispose();
       offSettings();
@@ -163,6 +188,8 @@ if (!app.requestSingleInstanceLock()) {
     };
     await app.whenReady();
     if (quitting) return;
+    protocol.handle(PLUGIN_PROTOCOL, request => externalPlugins.resolveProtocolRequest(request));
+    protocol.handle(SHARED_PROTOCOL, createSharedProtocolHandler());
     stopUpdates = startUpdates(bus, clock, log, settings, files, install => {
       installUpdate = install;
       app.quit();
@@ -170,6 +197,8 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform === 'darwin') app.dock?.hide();
     log.info('Starting Featherlog', { platform: process.platform, compatMode, selected });
     await loadPlugins(kernel, plugins, app.getVersion(), userData);
+    await externalPlugins.loadAll();
+    externalPlugins.startWatching();
     if (quitting) return;
     await windows.start();
     openPanel = () => {

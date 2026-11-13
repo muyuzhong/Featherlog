@@ -125,6 +125,20 @@ it('does not even construct electron-updater in development', async () => {
   stop();
 });
 
+it('leaves npm installations and updates under npm control', async () => {
+  vi.stubEnv('FEATHERLOG_NPM', '1');
+  const f = await fixture(false);
+  const stop = f.start();
+  expect(await f.bus.request('shell/update-state', {})).toEqual({
+    current: '0.1.0', status: 'managed',
+  });
+  expect(await f.bus.request('shell/check-update', {})).toBeNull();
+  f.resume();
+  expect(f.timers.size).toBe(0);
+  expect(electron.constructor).not.toHaveBeenCalled();
+  stop();
+});
+
 it.skipIf(process.platform !== 'linux')(
   'persists notifications and hands installation to normal shutdown', async () => {
   vi.stubEnv('APPIMAGE', '/test/Featherlog.AppImage');

@@ -1,6 +1,9 @@
 import type { Json } from '@featherlog/contracts';
 import { motion } from 'motion/react';
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import {
+  useEffect, useRef, useState, useSyncExternalStore,
+  type KeyboardEvent, type PointerEvent, type ReactNode,
+} from 'react';
 import type { WindowRuntime } from '../app/runtime';
 import { useSetting } from '../app/use-setting';
 import { PAPERS, type Paper } from '../theme';
@@ -13,11 +16,42 @@ import { UpdateNotes } from './Updates';
  * hand, then one section per plugin rendered from its settings schema.
  */
 export function SettingsPage({ runtime }: { runtime: WindowRuntime }) {
-  const sections = runtime.manifests.flatMap((manifest) => {
-    const settings = manifest.contributes?.settings;
-    const fields = settings ? readFields(settings.schema) : [];
-    return fields.length ? [{ scope: manifest.id, title: settings?.title ?? manifest.name, fields }] : [];
-  });
+  const plugins = useSyncExternalStore(runtime.subscribePlugins, () => runtime.plugins);
+  const [reloadingPlugins, setReloadingPlugins] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [pluginActionError, setPluginActionError] = useState<string | null>(null);
+
+  const sections = plugins
+    .filter((plugin) => plugin.enabled && plugin.status === 'loaded')
+    .flatMap((plugin) => {
+      const settings = plugin.manifest.contributes?.settings;
+      const fields = settings ? readFields(settings.schema) : [];
+      return fields.length ? [{ scope: plugin.manifest.id, title: settings?.title ?? plugin.manifest.name, fields }] : [];
+    });
+
+  const handleReloadPlugins = async () => {
+    setReloadingPlugins(true);
+    setPluginActionError(null);
+    try {
+      await runtime.reloadExternalPlugins();
+    } catch (cause) {
+      setPluginActionError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setReloadingPlugins(false);
+    }
+  };
+
+  const handleTogglePlugin = async (id: string, enabled: boolean) => {
+    setTogglingId(id);
+    setPluginActionError(null);
+    try {
+      await runtime.setPluginEnabled(id, enabled);
+    } catch (cause) {
+      setPluginActionError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setTogglingId(null);
+    }
+  };
 
   return (
     <div className={styles.desk}>
@@ -67,12 +101,42 @@ export function SettingsPage({ runtime }: { runtime: WindowRuntime }) {
             />
 
             <Section title="插件">
+              <div className={styles.pluginToolbar}>
+                <button
+                  type="button"
+                  className={styles.inkButton}
+                  disabled={reloadingPlugins}
+                  onClick={() => { void handleReloadPlugins(); }}
+                >
+                  {reloadingPlugins ? '正在重载…' : '重载外部插件'}
+                </button>
+                {pluginActionError && <span className={`${styles.hint} ${styles.warn}`}>{pluginActionError}</span>}
+              </div>
               <ul className={styles.plugins}>
-                {runtime.manifests.map((manifest) => (
-                  <li key={manifest.id}>
-                    <span className={styles.pluginName}>{manifest.name}</span>
-                    <small>v{manifest.version}</small>
-                    {manifest.description && <p>{manifest.description}</p>}
+                {plugins.map((plugin) => (
+                  <li key={plugin.manifest.id}>
+                    <span className={styles.pluginName}>{plugin.manifest.name}</span>
+                    <span className={`${styles.sourceTag} ${plugin.source === 'builtin' ? styles.builtinTag : styles.externalTag}`}>
+                      {plugin.source === 'builtin' ? '内置' : '外部'}
+                    </span>
+                    <small>v{plugin.manifest.version}</small>
+                    {plugin.source === 'external' && (
+                      <button
+                        type="button"
+                        className={styles.pluginToggle}
+                        role="switch"
+                        aria-checked={plugin.enabled}
+                        disabled={togglingId === plugin.manifest.id || reloadingPlugins}
+                        onClick={() => { void handleTogglePlugin(plugin.manifest.id, !plugin.enabled); }}
+                      >
+                        <InkBox on={plugin.enabled} />
+                        <span>{plugin.enabled ? '已启用' : '已停用'}</span>
+                      </button>
+                    )}
+                    {plugin.manifest.description && <p>{plugin.manifest.description}</p>}
+                    {plugin.status === 'failed' && plugin.error && (
+                      <p className={styles.pluginError}>加载失败：{plugin.error.message}</p>
+                    )}
                   </li>
                 ))}
               </ul>

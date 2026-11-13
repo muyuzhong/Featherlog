@@ -33,7 +33,6 @@ interface State {
 }
 const fresh = (): State => ({ version: 1, consentEndpoint: null, consentNotes: false, auth: null, usage: {}, lines: [],
   boards: {}, recaps: {}, epilogues: {}, progress: {}, peaks: {}, activity: [], pending: [], pendingRecaps: [] });
-const json = (value: unknown): Json => JSON.parse(JSON.stringify(value)) as Json;
 function timestamp(value: unknown) {
   if (typeof value !== 'string' || !value.includes('T') || !Number.isFinite(Date.parse(value))) {
     throw failure('scribe/unusable-reply', '时间记录无法使用。');
@@ -162,13 +161,14 @@ export async function setup(ctx: MainContext): Promise<void> {
   const client: ModelClient = request =>
     request.config.protocol === 'openai' ? openai(request) : anthropic(request);
   const local = (message: Envelope) => message.origin === 'quest';
-  const persist = (change: (draft: State) => void) => {
+  const persist = (change: (draft: State) => void | boolean) => {
     const result = writes.then(async () => {
       if (disposed) return;
-      const draft = structuredClone(state);
-      change(draft);
+      // History entries are immutable; copy only the containers changed by this transaction.
+      const draft = { ...state };
+      if (change(draft) === false) return;
       // ponytail: one atomic journal record; split records if years of local history make writes expensive.
-      await ctx.storage.set('state', json(draft));
+      await ctx.storage.set('state', draft as unknown as Json);
       state = draft;
     });
     writes = result.catch(() => {});
@@ -240,7 +240,7 @@ export async function setup(ctx: MainContext): Promise<void> {
       // Reserve an unknown-usage attempt before sending, so shutdown cannot erase a paid call.
       await persist(draft => {
         const usage = draft.usage[callMonth] ?? { month: callMonth, calls: 0, inputTokens: 0, outputTokens: 0, unreported: 0 };
-        usage.calls++; usage.unreported++; draft.usage[callMonth] = usage;
+        draft.usage = { ...draft.usage, [callMonth]: { ...usage, calls: usage.calls + 1, unreported: usage.unreported + 1 } };
       });
       if (stamp !== revision || disposed || controller.signal.aborted) {
         throw failure('scribe/unavailable', '配置已改变，请重试。');
@@ -282,7 +282,9 @@ export async function setup(ctx: MainContext): Promise<void> {
         const tokens = reported;
         if (tokens) await persist(draft => {
           const usage = draft.usage[callMonth]!;
-          usage.inputTokens += tokens.inputTokens; usage.outputTokens += tokens.outputTokens; usage.unreported--;
+          draft.usage = { ...draft.usage, [callMonth]: { ...usage,
+            inputTokens: usage.inputTokens + tokens.inputTokens, outputTokens: usage.outputTokens + tokens.outputTokens,
+            unreported: usage.unreported - 1 } };
         });
         await changed();
       }
@@ -337,12 +339,12 @@ export async function setup(ctx: MainContext): Promise<void> {
     if (disposed || stamp !== revision || !enabled() || night(ctx.clock.now())) return;
     const line: ScribeLine = { id: globalThis.crypto.randomUUID(), text: written, topic,
       questId: quest.id, at: nowISO(), origin };
-    await persist(draft => { draft.lines.push(line); });
+    await persist(draft => { draft.lines = [...draft.lines, line]; });
     if (!disposed && stamp === revision && enabled() && !night(ctx.clock.now())) ctx.bus.emit('scribe/said', { line });
   };
   const epilogue = async (quest: Quest) => {
     if (quest.kind === 'daily' || state.epilogues[quest.id] || !enabled()) return;
-    if (night(ctx.clock.now())) { await persist(draft => { if (!draft.pending.includes(quest.id)) draft.pending.push(quest.id); }); return; }
+    if (night(ctx.clock.now())) { await persist(draft => { if (!draft.pending.includes(quest.id)) draft.pending = [...draft.pending, quest.id]; }); return; }
     const stamp = revision;
     let written = '这一卷写到功成，走过的路留在日志里。鹅毛笔收好了，下一卷由你落笔。';
     try {
@@ -352,9 +354,9 @@ export async function setup(ctx: MainContext): Promise<void> {
     }
     catch { /* A completed quest keeps its ending even without an endpoint. */ }
     if (disposed || stamp !== revision || !enabled()) return;
-    if (night(ctx.clock.now())) { await persist(draft => { if (!draft.pending.includes(quest.id)) draft.pending.push(quest.id); }); return; }
+    if (night(ctx.clock.now())) { await persist(draft => { if (!draft.pending.includes(quest.id)) draft.pending = [...draft.pending, quest.id]; }); return; }
     const ending: ScribeEpilogue = { questId: quest.id, text: written, writtenAt: nowISO() };
-    await persist(draft => { draft.epilogues[quest.id] = ending; draft.pending = draft.pending.filter(id => id !== quest.id); });
+    await persist(draft => { draft.epilogues = { ...draft.epilogues, [quest.id]: ending }; draft.pending = draft.pending.filter(id => id !== quest.id); });
     if (!disposed && stamp === revision && enabled() && !night(ctx.clock.now())) ctx.bus.emit('scribe/epilogue-written', { epilogue: ending });
   };
   const choose = (list: Quest[], key: string, upcoming = false): ScribeBoard['items'] => {
@@ -390,7 +392,7 @@ export async function setup(ctx: MainContext): Promise<void> {
         } catch { /* Rule-selected tasks remain useful without generated wording. */ }
       }
       const result: ScribeBoard = { periodKey, items, origin };
-      await persist(draft => { draft.boards[periodKey] = result; });
+      await persist(draft => { draft.boards = { ...draft.boards, [periodKey]: result }; });
       return result;
     })();
     boardCalls.set(periodKey, work);
@@ -417,7 +419,7 @@ export async function setup(ctx: MainContext): Promise<void> {
       const reply = await invoke(`写一页中文战报，只输出正文。只用这些本机进展，未记录的历史不要补写；明日建议是提议，不是事实：${JSON.stringify(source)}`, 1800);
       const recap: ScribeRecap = { periodKey: key, text: prose(reply.text, source, 4000), writtenAt: nowISO() };
       if (stamp !== revision || disposed) throw failure('scribe/unavailable', '配置已改变，请重试。');
-      await persist(draft => { draft.recaps[key] = recap; draft.pendingRecaps = draft.pendingRecaps.filter(period => period !== key); });
+      await persist(draft => { draft.recaps = { ...draft.recaps, [key]: recap }; draft.pendingRecaps = draft.pendingRecaps.filter(period => period !== key); });
       if (!disposed) ctx.bus.emit('scribe/recap-written', { recap });
       return recap;
     })();
@@ -426,17 +428,30 @@ export async function setup(ctx: MainContext): Promise<void> {
   };
   const updateProgress = async (list: Quest[]) => {
     await persist(draft => {
+      let changed = false;
+      draft.progress = { ...draft.progress };
       const live = new Set(list.map(quest => quest.id));
-      for (const id of Object.keys(draft.progress)) if (!live.has(id)) delete draft.progress[id];
+      for (const id of Object.keys(draft.progress)) if (!live.has(id)) {
+        delete draft.progress[id];
+        changed = true;
+      }
       for (const quest of list) {
         const objective = currentObjective(quest);
-        if (quest.status !== 'active' || !objective) { delete draft.progress[quest.id]; continue; }
+        if (quest.status !== 'active' || !objective) {
+          if (Object.hasOwn(draft.progress, quest.id)) {
+            delete draft.progress[quest.id];
+            changed = true;
+          }
+          continue;
+        }
         const signature = JSON.stringify([objective.id, objective.count?.current ?? null]);
         const old = draft.progress[quest.id];
         if (old?.signature === signature) continue;
         const initial = Date.parse(quest.updatedAt);
         draft.progress[quest.id] = { signature, at: old ? ctx.clock.now() : Math.min(ctx.clock.now(), initial), proposed: false };
+        changed = true;
       }
+      return changed;
     });
   };
   const schedule = () => {
@@ -465,7 +480,7 @@ export async function setup(ctx: MainContext): Promise<void> {
       const after = recapHour >= dayStartHour ? (time >= recapHour || time < dayStartHour)
         : time >= recapHour && time < dayStartHour;
       if (panelOpen && after && !state.recaps[periodKey] && !state.pendingRecaps.includes(periodKey)) {
-        await persist(draft => { draft.pendingRecaps.push(periodKey); });
+        await persist(draft => { draft.pendingRecaps = [...draft.pendingRecaps, periodKey]; });
       }
       if (!night(ctx.clock.now())) {
         for (const id of state.pending) {
@@ -479,7 +494,9 @@ export async function setup(ctx: MainContext): Promise<void> {
             const quest = list.find(item => item.id === id);
             if (!quest) continue;
             await say('stall', quest, ctx.clock.now());
-            if (!disposed) await persist(draft => { if (draft.progress[id]) draft.progress[id]!.proposed = true; });
+            if (!disposed) await persist(draft => {
+              if (draft.progress[id]) draft.progress = { ...draft.progress, [id]: { ...draft.progress[id], proposed: true } };
+            });
           }
         }
         if (panelOpen) for (const key of state.pendingRecaps) {
@@ -554,7 +571,13 @@ export async function setup(ctx: MainContext): Promise<void> {
   });
   register('scribe/lines', async payload => {
     const id = payload.questId === undefined ? undefined : identifier(payload.questId);
-    return { lines: state.lines.filter(line => id === undefined || line.questId === id).slice(-limit(payload.limit)).reverse() };
+    const count = limit(payload.limit);
+    const lines: ScribeLine[] = [];
+    for (let index = state.lines.length - 1; index >= 0 && lines.length < count; index--) {
+      const line = state.lines[index]!;
+      if (id === undefined || line.questId === id) lines.push(line);
+    }
+    return { lines };
   });
   const settingChange = () => {
     revision++; controllers.forEach(controller => controller.abort()); retryAt = 0; failures = 0;
@@ -572,6 +595,7 @@ export async function setup(ctx: MainContext): Promise<void> {
   ctx.bus.on('kernel/ready', () => { queue(async () => {
     const list = await quests();
     await persist(draft => {
+      draft.peaks = { ...draft.peaks };
       for (const quest of list) draft.peaks[quest.id] = Math.max(draft.peaks[quest.id] ?? 0, quest.derived.streak);
     });
     await changed(); await checkTime();
@@ -602,10 +626,10 @@ export async function setup(ctx: MainContext): Promise<void> {
         await persist(draft => {
           const objectiveId = 'objectiveId' in payload ? payload.objectiveId : undefined;
           const objective = quest.chapters.flatMap(chapter => chapter.objectives).find(item => item.id === objectiveId);
-          draft.activity.push({ periodKey, questId: quest.id, title: quest.title, kind: type,
+          draft.activity = [...draft.activity, { periodKey, questId: quest.id, title: quest.title, kind: type,
             at: new Date(at).toISOString(), streak: quest.derived.streak,
             ...(objective ? { objective: objective.text } : {}),
-            ...(type === 'quest/counted' && 'previous' in payload ? { previous: payload.previous, current: payload.current } : {}) });
+            ...(type === 'quest/counted' && 'previous' in payload ? { previous: payload.previous, current: payload.current } : {}) }];
           if (quest.status !== 'completed') draft.pending = draft.pending.filter(id => id !== quest.id);
         });
         await updateProgress(await quests());
@@ -619,7 +643,7 @@ export async function setup(ctx: MainContext): Promise<void> {
         queue(async () => {
           const peak = quest.derived.streak;
           if (peak <= (state.peaks[quest.id] ?? 0)) return;
-          await persist(draft => { draft.peaks[quest.id] = peak; });
+          await persist(draft => { draft.peaks = { ...draft.peaks, [quest.id]: peak }; });
           react('streak', quest, at);
         });
       }
@@ -629,6 +653,7 @@ export async function setup(ctx: MainContext): Promise<void> {
   ctx.bus.on('quest/deleted', (payload, envelope) => {
     if (!local(envelope)) return;
     queue(async () => { await persist(draft => {
+      draft.progress = { ...draft.progress };
       delete draft.progress[payload.id]; draft.pending = draft.pending.filter(id => id !== payload.id);
     }); schedule(); });
   });

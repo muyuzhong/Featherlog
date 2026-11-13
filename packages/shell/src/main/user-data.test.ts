@@ -9,16 +9,23 @@ vi.mock('node:fs', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs')>();
   return { ...actual, renameSync: vi.fn(actual.renameSync) };
 });
-const electron = vi.hoisted(() => ({ app: {
-  isPackaged: true,
-  getPath: vi.fn<(name: string) => string>(),
-  setName: vi.fn(), setPath: vi.fn(),
-  requestSingleInstanceLock: vi.fn(() => false), quit: vi.fn(),
-} }));
+const electron = vi.hoisted(() => ({
+  app: {
+    isPackaged: true,
+    getPath: vi.fn<(name: string) => string>(),
+    setName: vi.fn(), setPath: vi.fn(),
+    requestSingleInstanceLock: vi.fn(() => false), quit: vi.fn(),
+  },
+  protocol: {
+    registerSchemesAsPrivileged: vi.fn(),
+    handle: vi.fn(),
+  },
+}));
 vi.mock('electron', () => electron);
 vi.mock('electron-updater', () => ({ default: {} }));
 const directories: string[] = [];
 afterEach(async () => {
+  vi.unstubAllEnvs();
   vi.mocked(renameSync).mockReset();
   vi.clearAllMocks();
   await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true })));
@@ -68,6 +75,16 @@ it('uses Featherlog-dev without migrating or touching either production director
   expect(existsSync(legacy)).toBe(true);
   expect(existsSync(directory)).toBe(true);
   expect(readdirSync(development)).toEqual([]);
+});
+
+it('uses and migrates production data when launched from npm', async () => {
+  vi.stubEnv('FEATHERLOG_NPM', '1');
+  const { app, directory, legacy, seed } = await fixture(false);
+  seed();
+  configureUserData(app);
+  expect(app.setPath).toHaveBeenCalledExactlyOnceWith('userData', directory);
+  expect(renameSync).toHaveBeenCalledExactlyOnceWith(legacy, directory);
+  expect(readFileSync(join(directory, 'other.bin'))).toEqual(Buffer.from([0, 255, 1]));
 });
 
 it('renames the complete legacy directory, preserving tasks, settings and other files', async () => {

@@ -68,11 +68,25 @@ export function SlotMount<K extends SlotKind>(props: Props<K>) {
         close: (result) => (s.props as Extras['popup']).onClose(result),
       },
     };
-    const unmount = mount(el.current, hosts[kind]);
+    const host = document.createElement('div');
+    host.style.width = '100%';
+    host.style.height = '100%';
+    el.current.replaceChildren(host);
+    const unmount = mount(host, hosts[kind]);
     return () => {
       // Plugins often unmount a React root of their own; doing that while the
       // shell's root is committing makes React warn, so let the commit finish.
-      if (typeof unmount === 'function') queueMicrotask(unmount);
+      if (typeof unmount === 'function') {
+        queueMicrotask(() => {
+          try {
+            unmount();
+          } finally {
+            host.remove();
+          }
+        });
+      } else {
+        host.remove();
+      }
       s.show.clear();
       s.hide.clear();
       s.params.clear();

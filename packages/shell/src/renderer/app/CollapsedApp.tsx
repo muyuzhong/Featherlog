@@ -1,5 +1,5 @@
 import type { UnfoldSide } from '@featherlog/contracts';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { CollapsedView } from '../collapsed/CollapsedView';
 import type { WindowRuntime } from './runtime';
 import { useNotifications, useShellState } from './shell-state';
@@ -11,7 +11,9 @@ import styles from './App.module.css';
  * The Electron window is sized to exactly this content (design §6.4 dock.resize).
  */
 export function CollapsedApp({ runtime }: { runtime: WindowRuntime }) {
-  const { preload, registry, shellBus, manifests } = runtime;
+  const { preload, registry, shellBus } = runtime;
+  const plugins = useSyncExternalStore(runtime.subscribePlugins, () => runtime.plugins);
+  const manifests = plugins.filter((item) => item.enabled && item.status === 'loaded').map((item) => item.manifest);
   const shell = useShellState(shellBus);
   const [toasts, dismiss] = useNotifications(shellBus);
   const unfold = useUnfoldSide(preload.dock);

@@ -1,4 +1,5 @@
-import type { IsoDateTime, Json } from './envelope';
+import type { BusErrorInfo, IsoDateTime, Json } from './envelope';
+import type { PluginManifest } from './plugin';
 import type { Badge } from './slots';
 
 /** Which surface is currently shown. */
@@ -45,6 +46,15 @@ export type UpdateState = { current: string } & (
   | { status: 'managed' }
 );
 
+export interface PluginDescriptor {
+  manifest: PluginManifest;
+  source: 'builtin' | 'external';
+  enabled: boolean;
+  status: 'loaded' | 'disabled' | 'failed';
+  uiUrl?: string;
+  error?: BusErrorInfo;
+}
+
 /** "shell/*" belongs to the Electron shell. */
 export interface ShellEvents {
   /** `tabId`/`params` accompany view "panel": the tab to show and its "shell/open-panel" params. */
@@ -59,6 +69,12 @@ export interface ShellEvents {
     type: string;
     result: Json | null;
     reason: 'user' | 'timeout' | 'dismissed';
+  };
+  /** Emitted when the loaded/available plugin list changes (external load, unload, toggle, or hot reload). */
+  'shell/plugins-changed': {
+    plugins: PluginDescriptor[];
+    reloadedIds?: string[];
+    removedIds?: string[];
   };
 }
 
@@ -86,4 +102,10 @@ export interface ShellRequests {
     res: { popupId: string };
   };
   'shell/dismiss-popup': { req: { popupId: string }; res: null };
+  /** Snapshot of all registered built-in and external plugins with status and renderer UI URL. */
+  'shell/plugins': { req: Record<string, never>; res: PluginDescriptor[] };
+  /** Force re-scan and hot-reload external plugins (one id or all when omitted). */
+  'shell/reload-plugins': { req: { id?: string }; res: PluginDescriptor[] };
+  /** Enable or disable an external plugin without deleting its directory or saved settings. */
+  'shell/set-plugin-enabled': { req: { id: string; enabled: boolean }; res: PluginDescriptor[] };
 }
