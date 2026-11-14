@@ -43,10 +43,10 @@ export function Objectives({ quest, store, compact = false }: Props) {
     ) : null;
   }
 
-  const shownDone = compact ? done.slice(-1) : done;
+  const shownDone = compact && quest.kind !== 'side' ? done.slice(-1) : done;
   return (
     <ol className={`${styles.list} ${compact ? styles.compact : ''}`}>
-      {compact && done.length > 1 && <li className={styles.more}>此前已完成{cnCount(done.length - 1)}个目标</li>}
+      {shownDone.length < done.length && <li className={styles.more}>此前已完成{cnCount(done.length - 1)}个目标</li>}
       {shownDone.map((o) => {
         const fresh = !seen.current!.has(o.id);
         return (
@@ -114,7 +114,7 @@ export function Objectives({ quest, store, compact = false }: Props) {
       </AnimatePresence>
 
       {later.length > 0 &&
-        (quest.revealed && !compact ? (
+        (quest.kind === 'side' || (quest.revealed && !compact) ? (
           later.map((o) => (
             <li key={o.id} className={styles.later}>
               <span className={styles.dot} />

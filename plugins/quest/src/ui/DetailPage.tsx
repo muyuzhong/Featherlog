@@ -45,7 +45,7 @@ export function DetailPage({ quest, store, today, scribe, notes, onEdit, onSplit
   const completed = quest.status === 'completed';
   const justTracked = useJustBecame(quest.tracked);
   const justCompleted = useJustBecame(completed);
-  const hiddenLater = quest.status === 'active' && objectives.filter((o) => !o.doneAt).length > 1;
+  const hiddenLater = quest.kind === 'main' && quest.status === 'active' && objectives.filter((o) => !o.doneAt).length > 1;
   const currentObjective = quest.status === 'active' ? objectives.find((o) => !o.doneAt) : undefined;
   const split = async () => {
     if (!currentObjective || splitting) return;
