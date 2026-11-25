@@ -1,969 +1,236 @@
-# 羽记 Featherlog 设计文档
+# 羽记 Featherlog v2 设计文档
 
-> 状态：v1 草案（2026-09-27）。类型层面的唯一真相是 `packages/contracts`；本文解释这些类型的**语义和规则**。两者冲突时以本文为准，并修正契约。
+> 状态：v2 正式设计（基于 `github.com/egoist/mygo` 的不透明弹出工作台面板 + KDE Plasma 6 原生底部 Dock 插件 + 本机环回 HTTP API + 本地 CLI Hooks）。
+> 本文档定义羽记 v2 的架构、领域不变量、RPC 与 HTTP 契约、Linux Wayland 定位策略与本地 Unix Socket 协议。
 
-## 1. 项目概述
+---
 
-羽记是一个游戏任务风格的个人面板桌面客户端。学习计划、要做的事、日常习惯都被组织成游戏式的"任务"：任务线分章节推进，目标逐个解锁，完成时有仪式感，帮助人坚持下去。
+## 1. 产品定位与演进
 
-交互形态：一个收起视图（置顶的浮动卷轴，用户可拖到任意位置，通常是屏幕边缘），鼠标悬停显示预览，点击打开完整面板。
+羽记 v2 从旧版 Electron 羊皮卷游戏化任务面板重构为 **轻量级原生并发工作台**：
 
-**v1 范围**：内核 + Electron 外壳 + 任务面板插件。
-**v1 明确不做**：奖励系统（XP、金币）、AI、八股弹窗、钱包、游戏接入、本地 WebSocket。这些都通过"只加字段、只加消息"的方式在以后加入，v1 的契约不为它们预留字段。
+- **核心场景**：同时推进多个任务或 AI Agent 编排线程（例如正在手写功能 A、后台 Agent 跑测试 B、等 CI/审 PR C），在切换上下文时不再忘事或断片。
+- **核心交互形态**：
+  1. **常驻底部 Dock 状态条（KDE Plasma 6 Bottom Dock Applet）**：原生 Plasma 6 小组件（`plasmoid/io.github.muyuzhong.featherlog/`）直接嵌在 KDE 底部浮动 Dock 内，单行高密度展示活跃并发槽位（`WorkSlot`）、今日任务进度与面板开关；滚轮快速切焦点、单击未聚焦槽位即切焦点、单击当前焦点槽位或箭头弹出/收起工作台。
+  2. **弹出工作台面板（`MyGo` Opaque Workspace Panel）**：固定 `880×520px` 不透明无边框弹出窗口（标题 `featherlog-panel`），后台常驻、默认启动隐藏（传 `--show` 可立即显示），点击 KDE Dock 插件或按全局快捷键 `Alt+Shift+Space` 时弹出并聚焦在底部 Dock 正上方 `10px` 处；按 `Esc`、点收起 `⌄` 或未钉住失焦时立即隐藏窗口而不退出宿主进程。
+  3. **CLI / Agent Hooks**：单文件二进制 `featherlog` 同时是桌面宿主与终端 CLI，通过本机 Unix Socket（`<userData>/featherlog.sock`）实时操作并发槽与随笔，AI 助手或构建脚本可直接汇报进度并同步刷新 KDE Dock 状态条与弹出面板。
 
-目标平台：Linux、macOS、Windows。
+### 1.1 视觉与美学铁律
 
-## 2. 设计原则
+- **严禁彩色发光状态灯（Zero Colored Status LEDs）**：不使用红/黄/绿圆点、呼吸灯或霓虹边框表示状态。
+- **并发三态的无彩灯层次表达**：
+  - `focus`（专注中，全局至多 1 个）：高对比度实心浮起卡片，在卡槽中微微向上探出，深墨主标题与 Medium/Semibold 字重。
+  - `running`（后台推进中）：低对比度哑光次级卡片，右侧 `tabular-nums` 等宽显示已运行分钟数；设有提醒倒计时时仅在底边绘制极细 `1px` 单色刻度线。
+  - `ready`（待看 / 到点提醒回看）：卡片右侧高对比度**单色反白小签条**（浅色主题深炭底暖白字，深色主题暖白底深炭字）。
+- **双中性主题**：`stone`（Warm Stone 温润纸石浅色，默认）与 `graphite`（Graphite Ink 石墨暗色），内外严格满足同心圆角几何与临界阻尼物理弹簧过渡。
 
-1. **一切皆插件**。任务面板是核心功能，但也是插件，不享有内核特权。
-2. **内核只送信**。内核不认识任何具体消息类型，只负责投递、插件生命周期和资源清理。
-3. **模块之间只通过总线通信，互不 import**。唯一允许共享的是 `@featherlog/contracts`（纯类型）。
-4. **消息是纯 JSON**。同一套协议可以跨进程（IPC）、以后跨程序（WebSocket），不需要改任何插件。
-5. **契约只加不改**。
-6. **每个插件的数据独立**，只能经由 `ctx.storage` 访问自己的数据。
-7. **错误隔离**。一个插件的处理函数出错，不影响其他插件，也不影响内核。
+---
 
-## 3. 仓库结构与分工
+## 2. 系统架构
 
 ```
-featherlog/
-├─ docs/design.md              本文档
-├─ AGENTS.md                   给 Codex 的工作规则
-├─ packages/
-│  ├─ contracts/               契约（纯类型）          共享，改动需审
-│  ├─ kernel/                  内核                    Codex
-│  └─ shell/                   Electron 外壳
-│     ├─ src/main/             插件宿主、IPC 桥、窗口、存储、设置   Codex
-│     ├─ src/preload/          preload 脚本            Codex
-│     └─ src/renderer/         全部界面（含窗口入口 app/）  Claude
-├─ plugins/
-│  └─ quest/
-│     ├─ manifest.json         插件清单                共享，改动需审
-│     ├─ src/main/             任务逻辑                Codex
-│     └─ src/ui/               任务界面                Claude
-└─ examples/
-   └─ flashcards/              示例插件（可选，§17）   分工同 plugins/
+┌─────────────────────────── featherlog 二进制 (Go + MyGo) ────────────────────────────┐
+│                                                                                      │
+│  main.go ──┬── 无子命令 ──► MyGo 桌面常驻宿主                                          │
+│            │                   ├─ 不透明 880×520 弹出工作台 ("featherlog-panel")       │
+│            │                   │   ├─ WebView 加载 frontend/dist (embed) 或 dev URL   │
+│            │                   │   ├─ window.mygo + __FEATHERLOG_MYGO__              │
+│            │                   │   └─ internal/dock (layer-shell / KWin Script 定位) │
+│            │                   ├─ internal/barhttp (127.0.0.1:39173/39174 长轮询 API) │
+│            │                   │       ▲                                             │
+│            │                   │       └── KDE Plasma 6 Dock Applet (plasmoid/)      │
+│            │                   ├─ internal/app (5 个 mygo.Bind 服务 + 5 类事件广播)   │
+│            │                   ├─ internal/ipcsock (<userData>/featherlog.sock)      │
+│            │                   └─ 领域与存储层:                                       │
+│            │                       internal/{clock,store,workbench,tasks,notes,      │
+│            │                                 settings}                               │
+│            │                                                                         │
+│            └── CLI 子命令 (status/focus/run/ready/done/note/toggle)                  │
+│                    └── 优先经 Unix Socket 通知运行中实例；未运行时安全直连本地存储    │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- 包名：`@featherlog/contracts`、`@featherlog/kernel`、`@featherlog/shell`、`@featherlog/plugin-quest`。
-- 工具链：pnpm workspace、TypeScript（strict）、vitest、electron-vite。
-- 代码、标识符、注释用英文；文档和界面文案用中文。
+### 2.1 目录结构
 
-## 4. 总线
-
-### 4.1 信封
-
-见 `contracts/src/envelope.ts`。要点：
-
-| 字段 | 说明 |
+| 路径 | 职责 |
 |---|---|
-| `v` | 信封格式版本，固定为 `1` |
-| `kind` | `event` / `request` / `response` |
-| `type` | `<模块>/<动作>`；响应沿用请求的 type |
-| `id` | UUID |
-| `source` | 发送方插件 id，或 `kernel`、`shell`、`external:<名字>` |
-| `time` | Unix 毫秒时间戳 |
-| `payload` | 纯 JSON |
-| `replyTo` | 仅响应：对应请求的 id |
-| `causedBy` | 可选：引起这条消息的消息 id，用于追踪和撤销 |
-| `origin` | 可选，由内核填写：应答者发事件时，按 `causedBy` 关联仍在处理的请求，填上该请求的 `source`，包括异步与嵌套请求。没有关联、请求已结束或不是该应答者发出的事件不填。插件看不到别人的请求，靠它分辨一个事件报告的是谁的动作 |
-| `timeoutMs` | 可选，仅请求：请求方愿意等多久（毫秒）。从窗口来的请求由主进程的内核计时，靠它才能超过默认的 5 秒（例如模型调用）；内核把它限制在 120 秒以内 |
+| `main.go` | 统一入口：CLI 参数解析（含 `--show`、`--http-port`）、单实例协调、`MyGo` 常驻宿主与 `barhttp` 启动 |
+| `frontend_embed.go` / `frontend_noembed.go` | `embed.FS` 嵌入 `frontend/dist`（生产/默认构建）与无嵌入回退（纯 Go 测试/开发） |
+| `internal/clock/` | 可注入时钟接口（`Now()`、`AfterFunc()`），真实时钟与确定性测试假时钟 |
+| `internal/store/` | 原子 JSON 持久化（`*.tmp` → `fsync` → `rename`）、损坏文件保护（`store/corrupt`）、目录隔离（`Featherlog` / `Featherlog-dev`） |
+| `internal/workbench/` | 并发工作槽领域逻辑、单焦点不变量、提醒定时器与睡眠恢复 |
+| `internal/tasks/` | 扁平化精简任务（无主线/支线等级；可选自由子步骤、可选配额 `×N`、可选每日/每周重置）、`dayStartHour` 跨周期与单调保护 |
+| `internal/notes/` | 随笔与任务手记（`1..20000` 字）、大小写不敏感检索、任务删除解绑（`DetachTask`） |
+| `internal/settings/` | 应用设置校验（`settings/invalid`）与损坏备份恢复（`settings.json.corrupt-<ms>-<id>`） |
+| `internal/app/` | 组合根与 5 个 `mygo.Bind` 服务、跨领域协调、WebView 实时事件推送、IPC 命令路由 |
+| `internal/dock/` | 底部居中几何、不透明 `880×520` 面板显隐生命周期、Linux Wayland `gtk-layer-shell`（`purego`）、KDE KWin Script 定位（`kwin_linux.go`）、全局快捷键 |
+| `internal/barhttp/` | 仅绑定 `127.0.0.1` 的本机环回 HTTP 长轮询与控制 API（供 KDE Plasma 6 Dock Applet 调用） |
+| `internal/ipcsock/` | 单实例 Unix Domain Socket 服务/客户端（`0600` 权限、僵尸 socket 清理、换行分隔 JSON 协议） |
+| `frontend/` | 独立 React + TypeScript + Vite 前端（MyGo 面板模式全铺不透明 Drawer，构建输出 `frontend/dist`） |
+| `plasmoid/io.github.muyuzhong.featherlog/` | KDE Plasma 6 原生底部 Dock 状态条小组件（QML + 长轮询客户端，无彩色状态灯） |
+| `scripts/install-plasmoid.sh` | Plasma 6 小组件幂等安装/升级脚本（`kpackagetool6`） |
 
-响应的 payload 是 `{ ok: true, data }` 或 `{ ok: false, error: { code, message, data? } }`。
+### 2.2 架构约束
 
-### 4.2 命名
+1. **所有时间逻辑必须经由注入的 `clock.Clock`**：领域层严禁直接调用 `time.Now()`、`time.AfterFunc()` 或 `time.NewTimer()`。
+2. **所有跨进程/前后端载荷均为纯 JSON**：字段统一 camelCase；时间戳统一为 Unix 毫秒整数（`int64`）；业务日期统一为 `YYYY-MM-DD`。
+3. **错误带机器可读错误码**：格式为 `<package>/<reason>`（例如 `store/corrupt`、`workbench/not-found`、`tasks/invalid-input`、`notes/invalid-content`、`settings/invalid`）。
+4. **原子写入与损坏保护**：所有持久化写入采用临时文件 + `fsync` + 原子 `rename`；遇到损坏的 JSON 文件时返回错误码，绝不静默覆盖或删除用户数据（设置文件先备份为 `settings.json.corrupt-<ms>-<id>` 再回退默认值）。
 
-- 格式 `<模块>/<动作>`，全小写 kebab-case。模块名就是插件 id。
-- **事件**用完成时：`quest/created`、`quest/period-rolled`。
-- **请求**用动词：`quest/get`、`shell/show-popup`。
-- **命令**（只需要对方执行、不需要返回数据）也用请求表达，返回 `null`。这样发起方能知道有没有人处理。
-- 一个插件**只能发出自己命名空间下的事件、只能应答自己命名空间下的请求**。可以请求任何命名空间。开发模式下违反时同步抛出 `forbidden-namespace`。
-- 保留命名空间：`kernel/*`（内核生命周期）、`shell/*`（外壳）、`external/*`（以后给外部程序）。
+---
 
-### 4.3 投递语义
+## 3. 领域模型与不变量
 
-**事件**
+### 3.1 并发工作槽（`internal/workbench`）
 
-- `emit` 立即返回。监听器在微任务中异步调用，绝不会在 `emit` 的调用栈里同步执行。
-- 同一发送方发出的事件，按发送顺序调用每个监听器（只保证调用顺序，不等待异步监听器完成）。
-- 监听器同步抛错或返回 rejected Promise，都会被捕获并记录日志，不影响其他监听器。
-- 事件**不持久化、不重放**。晚注册的监听器收不到之前的事件。需要当前状态时，用请求去问状态的所有者。
+`WorkSlot` 字段：`id`、`title`、`state`（`focus | running | ready`）、`breadcrumb`（一句话断点备忘）、`tag?`、`linkedTaskId?`、`stateChangedAt`、`remindAt?`、`order`、`createdAt`、`updatedAt`。
 
-**请求**
+核心规则：
+- **单焦点不变量**：任意时刻至多存在 1 个 `state == "focus"` 的槽位。将任意槽位设为 `focus`（新建或状态流转）时，原 `focus` 槽位自动降级为 `running` 并刷新 `stateChangedAt`。
+- **回看提醒定时器**：对 `running` 槽位设置 `remindInMinutes` 时，记录 `remindAt = now + duration` 并通过注入 `Clock.AfterFunc` 调度定时回调；到期后自动从 `running` 转为 `ready`、清除 `remindAt`、原子落盘并通知变更监听者推送 `workbench:changed`。
+- **睡眠恢复**：启动时与每次读写操作前均检查过期提醒（`remindAt <= clock.Now()`），确保笔记本休眠唤醒后不漏提醒。
+- **任务联动**：`WorkbenchService.Complete` 支持可选 `completeLinkedTask: true`，在移除活跃槽位的同时将关联任务标记完成。
 
-- 发出请求时查找应答者；没有应答者时，Promise **立即** 以 `no-handler` 拒绝（异步拒绝，不是同步抛出）。观察者仍依次收到请求信封和 `no-handler` 错误响应信封。
-- 应答者在微任务中调用，**绝不在 `request` 的调用栈里同步执行**：`request()` 返回时应答者尚未运行。这与事件的投递方式一致，也与跨 IPC 时请求必然异步的行为一致，避免插件之间的重入问题。应答者同步返回的数据，仍在进入总线的那一刻复制并冻结。
-- 默认超时 5000 ms，可通过 `timeoutMs` 调整：有限正数有效，上限 120000 ms，超出上限取上限，其他值按默认处理；事件上的 `timeoutMs` 忽略。超时后以 `timeout` 拒绝，之后到达的响应被丢弃。
-- 应答者抛出的 Error 若带有形如 `<模块>/<原因>` 的字符串 `code`（如 `quest/not-found`），则把 `code`、`message`、`data` 原样转给请求方。其他任何错误都变成 `handler-error`，`message` 保留原文。"其他错误"包括 Node 的系统错误（`ENOENT` 等），也包括应答者内部再发请求时收到的 `timeout`、`no-handler`：请求方只应看到"它请求的那个应答者"的结果，不应把下游的超时误认为自己的超时。
-- 同一个请求类型注册第二个应答者时，`handle` **同步抛出** `duplicate-handler`。
+### 3.2 扁平精简任务（`internal/tasks`）
 
-**复制语义**
+所有任务均为平级待办，不再区分「主线 / 支线」RPG 等级，移除旧版角色属性、剧情简报、揭晓遮罩与顺序锁；任意任务均可按需附带自由子步骤清单、配额计数（`×N`）与每日/每周重置。
 
-- 消息进入总线时，内核把 payload 深拷贝一份（`structuredClone`）并**深度冻结**，所有接收方（监听器、应答者、观察者）拿到的是这份只读副本。响应数据同样如此。
-- 因此：发送方之后修改自己的对象，不影响已经发出的消息；接收方也无法通过收到的对象改动发送方的内部状态，接收方之间也互不影响。这与跨 IPC 时的行为一致。
-- 开发模式和生产模式行为相同。
-- 大消息的成本随 payload 大小增加：请求和响应数据各自需要复制、冻结；开发模式还会逐属性检查纯 JSON，因此明显慢于生产模式。测量性能时应分别记录两种模式，并减少重复发送完整大状态。无人订阅且无观察者的本地事件省略快照与投递工作，开发期 JSON 校验仍保留；内核自产且外部不可达的载荷直接冻结。
+核心规则：
+- **扁平模型与向后兼容**：`Create` 省略 `kind`（或传入 `"task"`）时默认按普通任务创建（内部兼容存为 `"side"`；若同时传入 `recurrence` 则自动启用周期重置并归为 `"daily"`）。为保证历史持久化文件与已有 RPC 调用零破坏，`Create`、`Reorder` 与持久化校验仍兼容接受 `"main"`、`"side"`、`"daily"`。
+- **自由子步骤**：`items` 可按任意顺序勾选、增删、改名，不设顺序锁。
+- **可选配额步进（`×N`）**：任务本体与子项均支持可选配额 `{ current, target }`，`StepQuota(delta)` 支持 `+1`/`-1` 步进，达到目标自动完成。
+- **任意任务可开关周期重置**：通过 `Update` 传入 `recurrence: { freq: "daily" | "weekly", weekdays? }` 即可为任意任务开启每日/每周重置（自动切入周期重置语义）；传入 `recurrence: null` 即可关闭重置并恢复为普通任务。
+- **统一排序（`Reorder`）**：`Reorder` 省略 `kind` 时直接按 `ids` 对扁平任务列表排序（指定 `kind` 时保留按分类排序的向后兼容行为）。
+- **周期与 `dayStartHour`**：默认 `dayStartHour = 4`。周期键 `periodKey` 为 `now - dayStartHour 小时` 在本地时区的 `YYYY-MM-DD`。启动时、通过 `Clock` 定时到下一边界、以及**每次操作前**均检测跨周期；发现周期前进时重置开启了周期重置的任务进度并广播 `tasks:changed`。
+- **单调倒退保护**：当系统时钟回调或用户修改 `dayStartHour` 导致计算的周期键早于已记录周期键时，保留已有周期进度与历史记录，不触发跨周期重置。
+- **连续记录（`streak`）**：对开启周期重置的任务仅正向统计应做周期的连续完成数，断签无惩罚。
 
-**纯 JSON 校验**
+### 3.3 随笔与手记（`internal/notes`）
 
-- 开发模式下，内核校验每个 payload 和响应数据是否为纯 JSON：只允许 `null`、布尔、字符串、有限数字、数组（非稀疏、无额外属性）、普通对象（原型为 `Object.prototype` 或 `null`，只有可枚举的字符串键数据属性），且无循环引用。`-0` 视为合法（序列化后是 `0`，数值上相等）。
-- 不通过时 `emit`/`request` 同步抛出 `not-json`；应答者返回的数据不通过时，请求以 `not-json` 失败。
-- 生产模式跳过校验（复制和冻结仍然进行），调用方仍必须遵守纯 JSON 契约。可被 `structuredClone` 复制的非法值（如 `undefined`、`BigInt`）不保证被内核拒绝，后续 JSON 序列化可能丢值或失败；纯 JSON 输入的复制隔离语义在两种模式下一致。
+- 纯文本内容 trim 后长度限制 `1..20000` 字符。
+- `taskId == nil` 为独立「随笔」，非空为挂载在任务下的「手记」。
+- 支持按 `taskId` 与大小写不敏感 `query` 组合检索。
+- **删除任务不删手记**：`TaskService.Delete` 成功后，`internal/app` 协调调用 `notes.DetachTask(taskID)`，将该任务下的所有手记转为独立随笔并广播 `notes:changed`。
 
-### 4.4 兼容规则
+### 3.4 设置（`internal/settings`）
 
-1. 只加字段，不改字段含义、不改类型、不删字段。
-2. 新增的字段必须是可选的。
-3. 消费方必须忽略不认识的字段；遇到不认识的枚举值要有兜底处理。
-4. 真正的破坏性变更：使用新的消息名（如 `quest/completed-v2`），旧消息保留一段时间。
+| 字段 | 类型 | 合法值 | 默认值 |
+|---|---|---|---|
+| `theme` | `string` | `"stone"` \| `"graphite"` | `"stone"` |
+| `dayStartHour` | `int` | `0..23` | `4` |
+| `sound` | `bool` | `true` \| `false` | `true` |
+| `volume` | `int` | `0..10` | `5` |
+| `pinned` | `bool` | `true` \| `false` | `false` |
 
-### 4.5 宿主 API（只给可信的宿主代码，插件拿不到）
+修改 `dayStartHour` 时立即通知 `tasks` 更新周期配置；修改 `pinned` 时立即同步到 `dock.Controller`。
 
-外壳主进程需要把总线延伸到窗口，总线检查器需要看到全部流量。内核为此提供两个宿主级接口：
+---
 
-- `observe(fn: (envelope) => void): Dispose`：观察经过总线的**每一条**信封，包括请求和响应。观察者在发布信封的调用栈内同步执行，必须避免阻塞；耗时处理应自行异步调度。
-- `inject(envelope, { timeoutMs? }?): void`：从外部投入一条信封（来自窗口或以后的外部程序），保留其 `source`。若是请求，内核照常查找应答者、处理超时，默认 5000 ms，宿主可用第二个参数调整；该选项不进入信封。产生的响应信封（含 `no-handler`、`timeout` 错误响应）通过 `observe` 发出，宿主据 `replyTo` 转回给来源。
+## 4. 前后端 RPC 契约与事件推送
 
-## 5. 插件
+### 4.1 MyGo 绑定与双桥接暴露
 
-### 5.1 构成
+后端在 `App.Run()` 之前通过 `mygo.Bind` 注册 5 个服务结构体：
 
-每个插件是 `plugins/<id>/` 下的一个包，由三部分组成：
+1. `WorkbenchService`：`List`, `Create`, `Update`, `SetState`, `Complete`, `Reorder`
+2. `TaskService`：`List`, `Create`, `Update`, `SetItems`, `ToggleItem`, `StepQuota`, `Complete`, `Delete`, `Reorder`
+3. `NoteService`：`List`, `Create`, `Update`, `Delete`
+4. `SettingsService`：`Get`, `Update`
+5. `DockService`：`Resize`, `Quit`
 
-- `manifest.json`：清单，类型见 `PluginManifest`。纯 JSON，不执行代码就能读。
-- 主进程部分（`main` 入口，导出 `setup(ctx: MainContext)`）：状态、逻辑、存储都在这里。
-- 界面部分（`ui` 入口，导出 `setup(ctx: UiContext)`）：只负责渲染。**不保存业务状态**，所有数据通过总线向主进程部分请求。
+MyGo 在页面文档加载起点注入 `window.mygo`：
+- 方法调用：`window.mygo.call("ServiceName.MethodName", ...args)`
+- 事件订阅：`window.mygo.on("event:name", handler)` / `window.mygo.once("event:name", handler)`
+- 支持运行 `MYGO_GENERATE=<path>` 导出强类型 TypeScript 客户端。
 
-同一个插件的界面部分可能同时在多个窗口里运行（收起窗口一份、面板窗口一份），每个窗口有独立的 `UiContext`。
+同时，宿主通过 `PageOptions.PreloadScript` 在 `window.mygo` 就绪后挂载 `window.__FEATHERLOG_MYGO__` 便捷适配器（暴露 `call`、`on`、`once` 以及 camelCase 方法映射的 5 个服务对象），确保前端无论直接调用 `window.mygo`、生成的 TS 客户端还是 `window.__FEATHERLOG_MYGO__` 均可无缝衔接。
 
-### 5.2 清单的用途
+### 4.2 实时推送事件（Go → WebView）
 
-- `contributes`：声明插槽贡献（见第 7 节），外壳据此布局。
-- `emits` / `listens` / `handles` / `requests`：**内核运行时不强制**。开发模式下用于检查：发出了未声明的消息时警告；请求了没有任何插件声明 `handles` 的消息时，在启动时警告。
-
-### 5.3 生命周期
-
-1. 外壳主进程读取所有清单。
-2. 外壳注册自己的 `shell/*` 应答者（外壳不是插件，但先于插件就绪）。
-3. 外壳调用一次 `load(整批插件)`。内核**先校验整批清单**：id 为小写 kebab-case、不是保留名（`kernel`、`shell`、`external`）、批内和已加载插件之间不重复。任何一项不合法，就在调用任何 `setup` 之前以 `invalid-plugin` 拒绝整批（这是宿主的编程错误，应当立刻暴露，而不是留下加载了一半的状态）。
-4. 依次调用每个插件主进程部分的 `setup(ctx)`，成功后发 `kernel/plugin-loaded`。
-   - `setup` 抛错或 rejected：发 `kernel/plugin-failed`，清理它已注册的一切，其他插件照常加载。
-   - `setup` 超时（默认 10 秒，可在创建内核时配置）：视为失败，以 `timeout` 发 `kernel/plugin-failed` 并清理，继续加载下一个。之后即使 `setup` 完成也不会"复活"。
-   - 插件不得假设其他插件已加载。**跨插件的请求放到 `kernel/ready` 之后再发。**
-5. 全部处理完后发 `kernel/ready`。外壳在启动时调用一次 `load`；之后只在用户启用可选插件时再调用（§17.1），因此对 `kernel/ready` 的处理必须是幂等的。
-6. 卸载：按注册的逆序执行所有清理，发 `kernel/plugin-unloaded`。
-
-### 5.4 自动清理
-
-凡是通过 `ctx` 注册的东西都由内核记录，卸载时自动释放：
-
-- `bus.on` 的监听器、`bus.handle` 的应答者
-- `ctx.clock.setTimeout` 的定时器
-- `ctx.onDispose` 登记的回调
-- 界面侧：`ctx.slots.provide` 的挂载（先调用 unmount）
-
-卸载时尚未完成的请求：发给该插件的请求以 `disposed` 拒绝；该插件自己发出的请求也以 `disposed` 拒绝。
-
-### 5.5 存储、设置、时钟
-
-- `ctx.storage`：每个插件独立的键值存储，值为 JSON。实现上每个插件一个目录，放在 Electron `userData` 下；写入必须原子化（写临时文件再 rename）。插件自己在一个键里记录 `schemaVersion`，在 `setup` 中做数据迁移。
-- `ctx.settings`：只读。值由外壳的设置页写入；默认值来自清单里 settings schema 的 `default`。
-- `ctx.clock`：所有和时间有关的逻辑都必须用它，不直接用 `Date.now()` 和全局 `setTimeout`，以便测试时注入模拟时钟。
-
-## 6. 外壳：进程、窗口与 IPC
-
-```
-┌────────────────────────── Electron 主进程 ───────────────────────────┐
-│  内核（总线 + 生命周期）                                               │
-│   ├─ 外壳主进程：shell/* 应答者 · IPC 桥 · 存储 · 设置 · 窗口 · 浮窗(§9)  │
-│   └─ 各插件的主进程部分（quest …）                                     │
-└───────────────┬───────────────────────────────┬──────────────────────┘
-          IPC   │  preload: window.featherlog    │  IPC
-     ┌──────────┴──────────┐            ┌────────┴───────────┐
-     │ 收起窗口（浮动卷轴）   │            │ 面板窗口（任务日志）  │
-     │ 图标 · 悬停便签 · 通知 │            │ 标签页 · 设置        │
-     └─────────────────────┘            └────────────────────┘
-```
-
-弹窗窗口（`shell/show-popup`）在做八股弹窗时再加，v1 不实现，也不注册对应的应答者（请求会得到 `no-handler`）。
-
-### 6.1 构建与目录
-
-用 electron-vite 构建三个产物，都在 `packages/shell` 里：
-
-| 产物 | 入口 | 负责方 |
+| 事件名 | Payload 类型 | 触发时机 |
 |---|---|---|
-| 主进程 | `src/main/index.ts` | Codex |
-| preload（沙箱，CommonJS） | `src/preload/index.ts` | Codex |
-| 渲染层（单页，按 `?window=collapsed\|panel` 渲染不同窗口） | `src/renderer/app/index.html` | Claude |
+| `workbench:changed` | `WorkSlot[]` | UI 操作、定时提醒触发（`running` → `ready`）、CLI 命令修改槽位 |
+| `tasks:changed` | `{ periodKey: string, tasks: Task[] }` | UI 操作、`dayStartHour` 变更、定时/唤醒跨周期重置、关联槽位完成联动 |
+| `notes:changed` | `{ reason: string }` | UI 操作、CLI 记随笔、删除任务触发 `DetachTask` |
+| `settings:changed` | `Settings` | 设置更新 |
+| `dock:toggle` | `{ expanded?: boolean }` | 全局快捷键触发、重复启动主程序唤醒、未钉住抽屉失焦自动收起 |
 
-- 根目录脚本：`pnpm app` 启动开发版（electron-vite dev），`pnpm build:app` 构建。安装包打包在 v1 之后。
-- `app.isPackaged` 为 `false` 时，内核以开发模式运行（纯 JSON 校验、命名空间检查）。
-- 单实例：`app.requestSingleInstanceLock()`；重复启动时打开面板。
+---
 
-**插件组装（组合根）**：v1 只支持仓库内置插件，构建时静态引入。
+## 5. 弹出工作台面板与 Linux Wayland 适配（`internal/dock`）
 
-- 主进程：`src/main/plugins.ts` 列出每个插件的 `{ manifest, setup }`（引入 `@featherlog/plugin-*/manifest.json` 与 `@featherlog/plugin-*/main`）。
-- 渲染层：`src/renderer/app/plugins.ts` 列出每个插件的界面入口（`@featherlog/plugin-*/ui`）。
-- 这两个文件是全仓库**唯一**允许引入插件包的地方（AGENTS.md 规则 1 的例外）。
+### 5.1 不透明窗口属性与常驻生命周期
 
-### 6.2 启动与退出
+- **窗口属性**：固定 `880×520px`（`MinWidth/MaxWidth = 880`、`MinHeight/MaxHeight = 520`）、`Title: "featherlog-panel"`、`Frameless: true`、`DisableShadow: false`、`Transparent: false`、`AlwaysOnTop: true`、`SkipTaskbar: true`、`Hidden: true`（默认后台常驻隐藏，传入 `--show` 时启动即显示）。
+- **为何不透明**：在双显卡 Intel+NVIDIA Wayland 环境下（尤其开启 `WEBKIT_DISABLE_DMABUF_RENDERER=1` 时），GTK3/WebKitGTK 透明窗口会出现严重的局部脏区重绘缺陷；使用 `Transparent: false` 配合与主题一致的纯色 `BackgroundColor`（`stone`：`#F6F5F2`，`graphite`：`#131416`，切换主题时动态同步），在原生 Wayland 下无需 `GDK_BACKEND=x11` 即可保持 100% 锐利完整渲染。
+- **常驻不退出**：窗口通过 `OnPageTitleUpdated` 锁定原生标题为 `"featherlog-panel"`，通过 `OnWindowAllClosed` 保持常驻；收起（`DockService.Resize({ expanded: false })`、`Esc`、点击 `⌄` 或未钉住失焦）时仅在主线程调用 `Hide()`，绝不退出进程，仅在 `DockService.Quit` / `SIGTERM` / `SIGINT` 时优雅退出。
 
-1. 取单实例锁，读取设置（§6.6），选择浮窗实现（§9）。兼容模式要在 `app.whenReady()` 之前加命令行开关。
-2. 创建内核：真实时钟（`Date.now` / 全局 `setTimeout`）、日志器、`createServices`（§6.6 的存储与设置）。
-3. `kernel.createBus('shell')`，注册外壳的应答者（§6.5）。
-4. 创建 IPC 桥（§6.3），再 `kernel.load(内置插件)`。
-5. 创建收起窗口并交给浮窗实现；面板窗口在第一次打开时才创建，之后关闭只隐藏、不销毁。
-6. 退出（右键菜单"退出"、系统退出）：逆序卸载插件、`dock.detach()`、等待未完成的存储写入，然后退出。
+### 5.2 底部居中几何算法
 
-### 6.3 IPC 桥
+给定目标显示器可用工作区 `WorkArea`（含底边距 `PanelBottomInset = 10px`）：
+- 宽度夹紧在 `[320, 1280]` 且不超过 `WorkArea.Width`；高度夹紧在 `[36, 900]` 且不超过 `WorkArea.Height`。
+- 水平居中：`x = WorkArea.X + (WorkArea.Width - width) / 2`，夹紧在 `[WorkArea.X, WorkArea.X + WorkArea.Width - width]`。
+- 底边锚定：`bottomY = WorkArea.Y + WorkArea.Height - effectiveInset`，`y = bottomY - height`，严格夹紧在 `WorkArea` 范围内。
 
-通道固定为四个：
+### 5.3 Linux Wayland `gtk-layer-shell` 与 KDE KWin Script 定位
 
-| 通道 | 方向 | 内容 |
+1. **优先 `gtk-layer-shell`**：在支持 `wlr-layer-shell` 且安装了 `libgtk-layer-shell.so.0` 的 Wayland 环境下，`internal/dock` 通过 `purego` 动态加载（零 CGO），锚定底边（`EDGE_BOTTOM = true`、`exclusive_zone = -1`、`KEYBOARD_MODE_ON_DEMAND`）。
+2. **KDE Plasma Wayland KWin Scripting 回退（`internal/dock/kwin_linux.go`）**：当 `WAYLAND_DISPLAY` 非空、`XDG_CURRENT_DESKTOP` 包含 `KDE` 且系统缺失 `libgtk-layer-shell.so.0` 时，Wayland 会忽略 `gtk_window_move` 与 `keep_above`。宿主自动原子写入 `<dataDir>/kwin/featherlog-panel.js`，依次探测 `qdbus6` / `qdbus` / `gdbus` 调用 `org.kde.KWin /Scripting` 先卸载旧脚本再加载运行，并在退出 `Close()` 时自动卸载：
+   - 监听 `windowList()`、`windowAdded` 与 `captionChanged`，匹配 `w.caption === "featherlog-panel"`。
+   - 设置 `keepAbove = true`、`onAllDesktops = true`、`skipTaskbar = true`、`skipPager = true`、`skipSwitcher = true` 与 `w.tile = null`（附 `tileChanged` 保护，防止被 KDE 平铺接管）。
+   - 在初次接管及 `minimizedChanged` / `activeChanged` / `frameGeometryChanged` / `outputChanged` 时，将窗口精确置于 `workspace.clientArea(KWin.PlacementArea, w.output, workspace.currentDesktop)` 底边上方 `10px` 且水平居中。
+3. **其他平台 / 合成器**：安全回退到标准 `win.SetBounds`，绝不崩溃。
+
+### 5.4 全局快捷键、Pin 与 Dock 防抖
+
+- 启动时依次尝试注册 `Alt+Shift+Space`、`CommandOrControl+Shift+Space`，触发时调用 `Controller.Toggle(nil)`（展开时自动 `Show` + `Focus`、重算底边居中坐标并广播 `dock:toggle`；收起时 `Hide`）。
+- 面板处于展开态且 `pinned == false` 时，原生窗口 `OnBlur` 自动隐藏；内置 `300ms` 失焦防抖窗口（基于注入 `Clock`），避免点击 KDE 底部 Dock 按钮收起面板时因先触发 `OnBlur` 再收到 `POST /api/panel/toggle` 而误弹回；`pinned == true` 时常驻展开。
+
+---
+
+## 6. 本机环回 HTTP API 与 KDE Plasma 6 Dock 插件（`internal/barhttp`）
+
+### 6.1 监听地址与端口发现
+
+- **严格环回绑定**：仅监听 `127.0.0.1:<port>`，绝不暴露到局域网或公网，也不允许跨域写访问。
+- **默认端口**：默认生产数据目录使用 `39173`；`--dev` 或自定义 `--data-dir` / `FEATHERLOG_DATA_DIR` 使用 `39174`；可通过 `--http-port <port>` 或 `FEATHERLOG_HTTP_PORT` 覆盖（`0` 表示测试用临时端口）。
+- **地址文件**：启动时原子写入 `http://127.0.0.1:<actualPort>` 到 `<dataDir>/bar-http.url`（`0600` 权限），关闭时自动删除。
+
+### 6.2 HTTP JSON 契约
+
+| 方法与路径 | 请求体 / 查询参数 | 响应 |
 |---|---|---|
-| `bus:send` | 窗口 → 主进程 | 事件或请求信封，主进程用 `kernel.inject` 投入总线 |
-| `bus:deliver` | 主进程 → 窗口 | 该窗口订阅了的事件；该窗口发出的请求的响应 |
-| `bus:subscribe` / `bus:unsubscribe` | 窗口 → 主进程 | 事件类型数组 |
+| `GET /api/bar` | `?rev=<uint64>&wait=<0..25>`；当 `rev > 0` 且等于当前修订号且 `wait > 0` 时阻塞至多 `wait` 秒，任一槽位 / 任务 / 设置 / `panelOpen` 变化立即唤醒 | `200 OK`：`{ rev, panelOpen, pinned, theme, todayDone, todayTotal, slots: [{ id, title, state, breadcrumb, tag, stateChangedAt, remindAt, order }] }` |
+| `POST /api/panel/toggle` | 可选 `{ "open": true \| false }`（空体或 `{}` 表示取反切换） | `200 OK`：`{ "panelOpen": bool, "rev": uint64 }` |
+| `POST /api/slot/focus` | `{ "id": "<slotId>" }` | `200 OK`：更新后的完整 `GET /api/bar` 快照 |
+| `POST /api/slot/cycle` | `{ "delta": 1 \| -1 }`（无焦点时 `+1` 聚焦首个，`-1` 聚焦末个） | `200 OK`：更新后的完整 `GET /api/bar` 快照 |
+| `POST /api/slot/state` | `{ "id": "<slotId>", "state": "focus" \| "running" \| "ready" }` | `200 OK`：更新后的完整 `GET /api/bar` 快照 |
+| `POST /api/slot/done` | `{ "id": "<slotId>", "completeLinkedTask"?: bool }` | `200 OK`：更新后的完整 `GET /api/bar` 快照 |
 
-- 主进程只接受形状合法的信封：`kind` 为 `event` 或 `request`，`type` 形如 `<模块>/<动作>`，`id` 与 `source` 为非空字符串；不合法的丢弃并记日志。
-- 投递来自 `kernel.observe`：事件按订阅投递，**不做全量广播**；响应按"请求 id → 发出它的窗口"的映射投递，投递后删除映射。
-- 窗口销毁或重新加载时，清空它的订阅和未决映射。
-- 窗口**不能**注册应答者。窗口里消息的 `source` 是对应插件的 id，外壳自己的界面用 `shell`（v1 不做来源校验）。
-- 请求超时由主进程的内核负责，窗口侧只等 `replyTo` 匹配的响应。
-- `*` 订阅只在开发模式下允许（总线检查器）。
+其中 `todayDone / todayTotal` 按扁平统一待办统计：包含所有活跃任务（排除当前周期非应做的周循环任务）以及当前 `periodKey` 内已完成的任务，与弹出面板「待办」计数保持一致。
 
-### 6.4 preload：`window.featherlog`
+---
 
-接口类型是契约的一部分：`packages/contracts/src/preload.ts` 的 `FeatherlogPreload`。要点：
+## 7. 本地 Unix Socket 与 CLI Hooks（`internal/ipcsock` & `main.go`）
 
-- `window.kind`：`collapsed` 或 `panel`，主进程创建窗口时通过 `additionalArguments` 传给 preload。
-- `bus`：§6.3 的原始传输；渲染层用它构造 `UiBus`。
-- `settings`：`all()`、`set(scope, key, value)`、`onChange`。`scope` 是 `shell` 或插件 id。
-- `dock`（只在收起窗口有效）：`resize({ width, height, expanded })` 按内容调整窗口尺寸，由 §9 的规则决定窗口往哪边变宽；`expanded` 变化时主进程发 `shell/view-changed`（`collapsed` ↔ `preview`）。`menu()` 弹出原生右键菜单：打开任务日志 / 设置 / 退出。
-- `panel`（只在面板窗口有效）：`close()` 隐藏面板并发 `shell/view-changed`。
-- `platform`：操作系统，以及当前浮窗实现的能力（§9），设置页据此显示提示。
+### 7.1 单实例 Socket
 
-打开面板不经过 preload，任何人都用总线请求 `shell/open-panel`。
+- 路径：`<userData>/featherlog.sock`（生产 `<configDir>/Featherlog/featherlog.sock`，开发 `<configDir>/Featherlog-dev/featherlog.sock`，可通过 `FEATHERLOG_DATA_DIR` 或 `--data-dir` 覆盖）。
+- 权限：目录 `0700`，Socket 文件 `0600`。
+- 僵尸 Socket 清理：监听前若路径已存在且类型为 Unix Socket，先 `DialTimeout` 探测；若对端活跃则返回 `ErrAlreadyRunning`；若对端不可达则删除残留文件后重新监听；若路径被普通文件占用则拒绝覆盖。
+- 帧格式：单行 JSON（上限 1 MiB）请求 `{"command":"...","params":{...}}\n` → 单行 JSON 响应 `{"ok":true,"data":...}\n` 或 `{"ok":false,"error":{"code":"...","message":"..."}}\n`。
 
-### 6.5 外壳的应答与事件
+### 7.2 CLI 子命令
 
-| 请求 | 行为 |
+| 命令 | 行为 |
 |---|---|
-| `shell/state` | 返回 `ShellState`：当前视图、全部角标、面板最近打开的标签页与参数。窗口加载后先取一次 |
-| `shell/open-panel` | 创建或显示并聚焦面板窗口，记下标签页与参数，发 `shell/view-changed`（`view: "panel"`，带 `tabId`、`params`） |
-| `shell/set-badge` | 记下角标，发 `shell/badge-changed` |
-| `shell/notify` | 发 `shell/notified`（带唯一 `id`），由收起窗口显示 |
-
-外壳的界面状态（角标、面板、通知）全部通过总线上的这些事件同步到窗口，不另开私有通道，总线检查器也能看到。
-
-### 6.6 存储、设置、日志的实现
-
-**数据目录**（下文的 `<userData>`）：
-
-- 安装版为系统的应用数据目录下的 `Featherlog`（Linux `~/.config/Featherlog`，Windows `%APPDATA%\Featherlog`，macOS `~/Library/Application Support/Featherlog`）。
-- 开发模式（未打包）为同一位置的 `Featherlog-dev`，开发调试不会碰到真实的任务日志。
-- 在 `app.whenReady()` 之前用 `app.setPath('userData', …)` 设定；应用名同时设为 `Featherlog`。
-- 迁移：v0.1.0 误用了 `@featherlog/shell`。安装版启动时，若 `Featherlog` 不存在而 `@featherlog/shell` 存在，就把后者整个改名为前者（同一文件系统上的 rename），失败时记日志并继续使用旧目录，不丢数据。开发模式不迁移。
-
-**存储**（`ctx.storage`，§5.5 的语义）：
-
-- 位置：`<userData>/plugins/<插件 id>/<encodeURIComponent(键)>.json`。
-- `set`：写 `*.tmp` → `fsync` → `rename`，同一个键的写入串行执行。
-- `get`：文件不存在返回 `undefined`；JSON 解析失败抛错（code `shell/storage-corrupt`），**不覆盖、不删除**原文件。
-- `keys`：列出该插件目录下的键。
-
-**设置**：
-
-- 全部保存在 `<userData>/settings.json`：`{ "shell": {...}, "plugins": { "<id>": {...} } }`，原子写入。
-- 启动时若设置 JSON、已知 scope 的结构或已知设置值损坏，先把原文件改名为 `settings.json.corrupt-<Clock 毫秒数>-<唯一标识>`，再使用全部默认值继续启动并记警告。备份失败或文件读取发生其他错误时继续抛错，不覆盖原文件；插件存储的损坏处理不变。
-- 默认值：插件来自清单 `contributes.settings.schema` 的 `default`；外壳来自下表。
-- `set` 按 schema 校验（v1 支持 `integer`/`number` 含 `minimum`/`maximum`、`string` 含 `enum`、`boolean`），不合法时以 `shell/invalid-setting` 拒绝。
-- 变化同时通知插件的 `ctx.settings.onChange` 和所有窗口的 `settings.onChange`。
-- **机密**：schema 中带 `writeOnly: true` 的字符串字段（如 API 密钥）不写进 `settings.json`，也不出现在 `settings.all()` 和 `ctx.settings` 里。渲染层只能通过 preload 的 `settings.setSecret` 写入（空字符串表示删除）、用 `settings.hasSecret` 查询是否已设置；主进程用 Electron `safeStorage` 加密后存入外壳存储，插件主进程半边通过 `ctx.secrets.get(key)` 读取。系统不提供加密（`safeStorage.isEncryptionAvailable()` 为假）时拒绝保存并说明原因，不退回明文。
-
-外壳自己的设置（scope `shell`）：
-
-| 键 | 值 | 默认 | 说明 |
-|---|---|---|---|
-| `paper` | `"vellum"` / `"golden"` / `"aged"` | `"vellum"` | 纸张（渲染层读取） |
-| `compatMode` | 布尔 | `false` | Linux 兼容模式：强制 XWayland（§9），重启后生效 |
-| `autoUpdate` | 布尔 | `true` | 自动检查并下载更新（§12.2）。关闭后只在设置页手动检查 |
-| `sound` | 布尔 | `true` | 笔墨声（§10.1） |
-| `volume` | 0–10 整数 | `6` | 音量（§10.1） |
-
-**日志**：主进程与插件日志写到控制台和 `<userData>/logs/main.log`，单个文件超过 1 MB 轮转，保留 3 个。插件日志带 `[插件 id]` 前缀。
-
-### 6.7 窗口
-
-**收起窗口**：
-
-- 无边框、透明背景、始终置顶、不进任务栏、无系统阴影，用 `showInactive()` 显示；`resizable: true`（理由见 §9.3）。
-- 标题固定为 `featherlog-dock`（KWin 脚本据此识别，§9）；主进程拦截 `page-title-updated`，不让网页标题覆盖它。
-- 尺寸完全由渲染层通过 `dock.resize` 决定，主进程把宽限制在 40–720、高限制在 80–900。它是一个置顶的浮窗，由用户拖动，具体规则见 §9。
-- macOS：`setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })`，并隐藏 Dock 图标（`app.dock.hide()`）。
-
-**面板窗口**：
-
-- 无边框（标题栏由渲染层绘制，带拖动区域），可调整大小，最小 960×640，默认 1240×800。
-- 首次打开时，在 `focusSafe` 平台居中于卷轴所在的显示器工作区；Wayland 下无法可靠读取卷轴位置时（KWinFloat/PlainFloat），回退到最右侧显示器的工作区。记住上次的位置与尺寸（外壳存储）。
-- 关闭（×、Esc）只隐藏；背景色设为 `#1f150d`，避免显示时闪白。
-
-**安全**（两个窗口都适用）：`contextIsolation: true`、`sandbox: true`、`nodeIntegration: false`；`setWindowOpenHandler` 一律拒绝；阻止 `will-navigate`；渲染层 HTML 带 CSP。
-
-## 7. 界面插槽
-
-### 7.1 两种插槽
-
-- **声明式**：插件只提供 JSON，外壳统一渲染。图标、角标、设置项、通知。
-- **挂载式**：插件在清单里声明，在界面部分用 `ctx.slots.provide(kind, id, mount)` 提供 `mount(el, host) => unmount`。
-
-### 7.2 插槽清单
-
-| 插槽 | 类型 | 窗口 | 声明位置 | 多个插件时 |
-|---|---|---|---|---|
-| 收起视图·图标 | 声明式 | 收起窗口 | `contributes.collapsedIcons` | 按 `order` 排列，用户可拖动调整；放不下折叠进"更多" |
-| 收起视图·悬停预览 | 挂载式 `collapsed.preview` | 收起窗口 | 图标的 `preview: true` | 每个图标一个预览；默认悬停在第一个图标 |
-| 面板·标签页 | 挂载式 `panel.tab` | 面板窗口 | `contributes.panelTabs` | 按 `order` 排列 |
-| 弹窗 | 挂载式 `popup` | 弹窗窗口 | `contributes.popups` | 排队，同时只显示一个，高优先级可插队 |
-| 通知 | 声明式 | 外壳决定 | 无需声明，发 `shell/notify` | 堆叠，自动消失 |
-| 设置页 | 声明式（JSON Schema） | 面板窗口的设置页 | `contributes.settings` | 每个插件一节 |
-
-规则：
-
-- 所有 id 带插件前缀：`quest/today`、`quest/home`。
-- 悬停预览挂载一次后常驻，悬停只切换显示；预览**可交互**（例如直接勾选任务）；高度由插件用 `host.setHeight` 申请，外壳限制最大值。
-- 焦点在预览里的输入框中时，鼠标移开也不收起（正在写字）；预览里带 `data-hold-open` 属性的元素获得焦点时同样处理（例如正在复习的八股卡片，§17.5）。点到别处或窗口失去焦点时收起。
-- 标签页切换时不卸载，通过 `onHide` / `onShow` 通知。
-- 弹窗**永不抢焦点**（`showInactive`）。
-- 插件的样式必须限定在自己的挂载点内（用 CSS Modules），不得写全局选择器；主题只通过外壳提供的 CSS 变量获取。
-
-### 7.3 外壳的消息
-
-见 `contracts/src/shell.ts` 与 §6.5：请求 `shell/state`、`shell/open-panel`、`shell/set-badge`、`shell/notify`；事件 `shell/view-changed`、`shell/badge-changed`、`shell/notified`。更新相关的 `shell/update-state`、`shell/check-update`、`shell/apply-update` 与事件 `shell/update-changed` 见 §12.3。弹窗相关的 `shell/show-popup`、`shell/dismiss-popup`、`shell/popup-closed` 已在契约中，但 v1 不实现：`shell/show-popup` 立即返回 `popupId`，关闭时通过 `shell/popup-closed` 带回结果。
-
-## 8. 任务面板插件（quest）
-
-羽记的"任务"是游戏意义上的任务，而不是待办清单：同一时间只追踪一个任务，屏幕上只显示它的**当前目标**；目标按顺序一个个解锁；任务线分章节推进；完成时有仪式感。
-
-### 8.1 分类
-
-| kind | 名称 | 结构 | 例子 |
-|---|---|---|---|
-| `main` | 主线 | 任务线 → 若干章节 → 每章若干目标 | 「内存之王」：背完 Redis 八股，分数据结构、持久化、高可用、集群四章 |
-| `side` | 支线 | 只有一章（无章名），零到多个目标 | 「登录门外的怪物」：修掉登录页 bug |
-| `daily` | 每日委托 | 没有章节；每个周期重置；可以有每周期的配额 | 背 10 张卡片 |
-
-- `title` 是真实目标，必填。`name`（任务名）和 `story`（简报）可选，界面缺省时直接显示 `title`。以后由 AI 插件把真实目标改写成任务名和简报。
-- 没有目标的支线就是"一件事"，直接 `quest/complete`。
-
-### 8.2 字段校验（不满足时抛 `quest/invalid-input`）
-
-- `title`：去掉首尾空白后非空，最长 200 字符；`name` 最长 40；`story` 最长 2000。
-- `main` 至少一章，每章至少一个目标；`side` 最多一章；`daily` 不能有章节。
-- 目标 `text` 非空；`count.target` 为正整数。
-- `recurrence`：`daily` 必填，其他类型禁止。`weekly` 的 `weekdays` 非空、不重复、取值 0–6。
-- `quota`：只有 `daily` 可以有，`target` 为正整数。
-- `deadline`、`scheduledFor`：合法的 `YYYY-MM-DD`。
-- 章节的 `deadline`（每章自己的限期，2026-10-05 用户要求）：只有主线的章节可以有，合法的 `YYYY-MM-DD`；支线的那一章不能有（支线用任务自己的 `deadline`），否则以 `quest/invalid-input` 拒绝。章节限期晚于任务限期是允许的，界面负责提示。
-- `attributes`（任务练的属性，§16.2）：一到两项，取值 `learning` / `body` / `mind` / `craft`，不重复；空数组视为不设，存储与快照里省略该字段。三种任务都可以有。`quest/update` 传 `null` 清除。
-- `kind` 创建后不能修改。
-
-### 8.3 目标与章节的推进
-
-- **顺序解锁**：当前章 = 第一个还有未完成目标的章；当前目标 = 当前章里第一个未完成的目标。只有当前目标能被完成，否则抛 `quest/objective-locked`。
-- 计数目标：`quest/count` 累加到 `target` 时自动完成该目标。
-- 一章的最后一个目标完成时，该章 `doneAt` 被设置，发 `quest/chapter-completed`。
-- 最后一章完成时，任务**自动完成**（`status: completed`），发 `quest/completed`。这是游戏里的"任务完成"时刻，界面据此播放完成仪式。
-- `quest/reopen-objective` 用于撤销：该目标及其后所有目标恢复为未完成；受影响的章节和任务一并恢复。撤销**不丢进度**：其中的计数目标，`current` 降为 `min(current, target - 1)`，而不是清零。
-- `quest/complete` 对主线和支线表示"直接完成"：剩余目标全部完成，再完成任务。
-- 主线的 `revealed` 为 `false` 时，界面只显示已完成的目标和当前目标，后面的目标显示为"尚未揭晓"；未到达的章节只显示章序号。支线在详情页和卷轴预览中始终显示全部目标，不受 `revealed` 影响，也不提供"揭开／收起后续"按钮。这只影响显示，不影响数据与顺序解锁规则。
-
-### 8.4 追踪
-
-- 同一时间最多追踪一个任务，且**只有进行中的主线和支线可以被追踪**，每日委托不追踪（否则抛 `quest/invalid-input`）。`quest/track` 追踪一个任务时，自动取消之前的追踪，发一次 `quest/tracked`。
-- 被追踪的任务完成、归档或删除时，追踪自动清空（`questId: null`）。
-- 收起视图的悬停预览显示：被追踪任务的名字、当前章、当前目标，以及每日委托完成数和进行中的支线数。
-
-### 8.5 周期与每日委托
-
-- **周期键** `periodKey` = 把当前时间减去 `dayStartHour` 小时后，在系统本地时区下的日期。默认 `dayStartHour = 4`。
-- 每日委托在某个周期"应做"：`freq: daily` 每天都应做；`freq: weekly` 在 `weekdays` 包含该日期星期几时应做。
-- **跨周期**：发现周期键大于已记录的周期键时，把所有每日委托的 `cycle` 重置为 `{ periodKey: 新值, current: 0, done: false }`，并发一次 `quest/period-rolled`。检测时机：`setup` 时；用 `ctx.clock.setTimeout` 定到下一个边界；**每次处理请求前**（笔记本睡眠时定时器不可靠）。
-- 修改 `dayStartHour` 或系统时间导致周期键倒退时，保留已记录周期、每日委托进度和历史日期，不发 `quest/period-rolled`，也不重映射历史。每日委托的新建、计数、撤销、应做判断与连续记录继续使用已记录周期，直到新周期超过它；主线与支线的日期判断仍立即采用新设置。
-- 有 `quota` 的委托：`done` 等价于 `cycle.current >= quota.target`；`quest/count`（不带 `objectiveId`）达到配额时自动完成并发 `quest/completed`。`quest/complete` 把 `current` 设为 `target`；`quest/uncomplete` 把 `current` 设为 `max(0, target - 1)`。
-- **连续记录** `derived.streak`：从上一个应做周期往前数连续完成的应做周期数，当前周期已完成再加 1。不应做的日子不中断，早于创建日期的周期不计。只做展示，**没有惩罚**。
-
-### 8.6 列表与排序
-
-`quest/list` 返回按 `kind` 分组后各自按 `order` 升序的任务。界面自行分组显示：主线、支线、每日委托。
-
-`derived.dueToday`：应做的每日委托；或 `scheduledFor ≤ 今天`、`deadline ≤ 今天` 的进行中主线和支线；或**当前章**的 `deadline ≤ 今天` 的进行中主线。`derived.overdue` 同理：任务的 `deadline` 早于今天，或当前章的 `deadline` 早于今天。`derived.chapterDeadline` 是当前章的限期（没有则省略），已完成的章节不再算。
-
-例如"架构师的养成计划"：每本书是一章，各有自己的限期；每本书用一个计数目标"读完《人月神话》，共 16 章"，读完一章计一次，不必逐章写目标。
-
-**"今天"在整个任务插件里一律指当前周期键**（按 `dayStartHour` 偏移后的日期），包括 `dueToday`、`overdue` 和每日委托。例如一天从 4 点开始时，凌晨 1 点仍然算前一天：前一天到期的支线此时是"今日限期"，还不算逾期。
-
-### 8.7 请求与事件
-
-| 请求 | 成功时发出的事件 |
-|---|---|
-| `quest/create` | `quest/created` |
-| `quest/update` | `quest/updated`（没有变化时不发） |
-| `quest/set-chapters` | `quest/updated`（`changed: ["chapters"]`） |
-| `quest/complete-objective` | `quest/objective-completed`；必要时再发 `quest/chapter-completed`、`quest/completed`、`quest/tracked` |
-| `quest/reopen-objective` | `quest/objective-reopened`；任务因此重新打开时再发 `quest/uncompleted` |
-| `quest/count` | `quest/counted`；达到目标时同上 |
-| `quest/complete` | `quest/completed`（已完成时幂等，不发事件） |
-| `quest/uncomplete` | `quest/uncompleted`（未完成时幂等） |
-| `quest/track` | `quest/tracked`（没有变化时不发） |
-| `quest/archive` | `quest/updated`（`changed: ["status"]`）；被追踪时再发 `quest/tracked` |
-| `quest/delete` | `quest/deleted`；被追踪时再发 `quest/tracked` |
-| `quest/reorder` | 每个 `order` 变化的任务发一次 `quest/updated` |
-
-- 事件携带完整的 `quest` 快照（包含 `derived`），界面收到后直接替换本地数据。
-- 请求处理过程中发出的事件，`causedBy` 设为该请求的 id，`origin` 设为该请求的 `source`（由内核填写，§4.1）；同一请求引发的多个事件按上表顺序发出。
-- 收起视图图标的角标：`kernel/ready` 之后及每次变化时，按被追踪任务当前章的进度请求 `shell/set-badge`（`{ kind: "progress", value: chapterRatio }`，没有追踪任务时设为 `null`）。请求失败只记日志。
-
-### 8.8 存储
-
-- `state` 保存 `schemaVersion: 2`、有序任务索引 `quests: [{ id, key }]` 和 `meta: { lastPeriodKey }`。每个 `record:<UUID>` 保存一个不含 `derived` 的任务及其历史日期数组，写入后不再修改。
-- 一次操作先写完所有变化任务的新记录，再原子替换 `state` 索引；未变化的任务复用原记录。索引成功落盘后才更新内存、发事件、返回成功，多个任务与历史、周期仍一起提交。
-- 提交失败保留旧索引和旧记录；提交后清理废弃记录，清理失败只记日志。启动先完整校验索引及引用，再清理未引用记录，因此中途退出留下的记录不会成为部分提交。
-- 启动时校验并迁移旧 `schemaVersion: 1` 单记录，全部新记录写完后才替换旧 `state`；迁移失败可按旧格式重试。未知版本或损坏的引用拒绝加载，不覆盖原数据。升级后不能用只认识版本 1 的旧应用读取新格式。
-
-### 8.9 设置
-
-| 键 | 类型 | 默认 | 说明 |
-|---|---|---|---|
-| `dayStartHour` | 0–23 整数 | 4 | 一天从几点开始；修改后按新值重新计算周期 |
-
-## 9. 平台适配：浮动的卷轴
-
-收起窗口是一个**置顶的浮窗**：用户按住卷轴两端的木轴，把它拖到自己想放的地方（通常是屏幕边缘）。外壳不强制贴边，只负责三件事：置顶、记住位置（平台允许时）、悬停展开时卷轴本身不跳动。
-
-> 早先的方案是强制贴边（KWin 脚本按显示器边缘锚定），2026-09-28 改为浮窗：行为在各平台一致，实现也简单得多。
-
-### 9.1 接口
-
-```ts
-interface Dock {
-  readonly capabilities: DockCapabilities; // 见 contracts/src/preload.ts
-  readonly side: UnfoldSide;
-  onSide(listener: (side: UnfoldSide) => void): Dispose;
-  attach(window: BrowserWindow): Promise<void>;
-  /** 渲染层要求改变尺寸时调用（§9.3 的规则）。 */
-  resize(size: { width: number; height: number; expanded?: boolean }): void;
-  detach(): Promise<void>;
-}
-```
-
-### 9.2 三种实现
-
-| 条件 | 实现 | anchored | keepAbove | focusSafe | 记住位置 |
-|---|---|---|---|---|---|
-| Windows、macOS；Linux X11；Linux 兼容模式 | `ElectronFloat` | ✗ | ✓ | ✓ | ✓ |
-| Linux Wayland，且 `XDG_CURRENT_DESKTOP` 含 `KDE` | `KWinFloat` | ✗ | ✓ | ✗ | ✗ |
-| 其他 Linux Wayland（如 GNOME） | `PlainFloat` | ✗ | ✗ | ✗ | ✗ |
-
-- `anchored` 在 v1 一律为 `false`（不再强制贴边），渲染层据此把木轴做成拖动把手。
-- 判断 Wayland：`process.platform === 'linux'`、存在 `WAYLAND_DISPLAY`、且没有开启兼容模式。
-
-### 9.3 共同规则
-
-- **窗口属性**：无边框、透明、`resizable: true`、不进任务栏、`showInactive()` 显示。必须 `resizable: true`：实机发现 Wayland 下不可调整大小的窗口 `setSize` 不生效，窗口停留在旧尺寸（用户仍然改不了它的大小，因为它没有边框可拖）。
-- **拖动**：由渲染层的 CSS 拖动区域（`-webkit-app-region: drag`）交给窗口系统完成，各平台都可用。
-- **首次出现的位置**：最右侧显示器的右边缘、竖直居中。
-- **展开方向随位置而定**：卷轴中心在所在显示器的**右半边**时，便签在卷轴左侧展开，窗口**向左**变宽（保持右边缘不变）；在**左半边**时，便签在右侧展开，窗口**向右**变宽（保持左边缘不变）。总之便签朝屏幕中间展开，卷轴本身不动。若仍会超出显示器，就整体平移到刚好留在屏幕内。收起时反过来。
-- **高度变化保持竖直中心**：卷轴在内容中竖直居中，预览及其高度动画改变窗口高度时，窗口同时向上下扩缩，避免卷轴瞬间上下跳动。需要整数坐标的平台按整数半高锚定，奇偶高度交替不能累积位置偏移；超出显示器时仍夹在显示器内。
-- **方向只在收起状态下、窗口被移动后重新判断**；展开期间不变，避免展开使窗口中心越过中线而来回翻转。
-- **方向告诉渲染层**：preload 的 `dock.side()` 返回当前方向，`dock.onSide` 在方向变化时通知（`'left'` 表示向左展开）。渲染层据此把便签放在卷轴的哪一侧。
-- 以上规则在能定位窗口的平台由主进程实现，在 KDE Wayland 由 KWin 脚本实现（§9.5）。
-
-### 9.4 ElectronFloat（Windows、macOS、X11、兼容模式）
-
-- `setAlwaysOnTop(true, 'floating')`；macOS 另加 `setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })`。
-- `resize`：按 §9.3 算出新位置，`setBounds`。
-- 方向：启动时与每次 `moved` 后按窗口所在显示器计算；变化时经 preload 通知渲染层。
-- **记住位置**：窗口 `moved` 后保存 `{ x, y }`（外壳存储，防抖）；启动时恢复。若保存的位置已不在任何显示器上（显示器被拔掉），退回默认位置。
-
-### 9.5 KWinFloat（KDE Plasma，Wayland）
-
-Wayland 下应用不能置顶、也不能定位自己，交给一个**很小的** KWin 脚本：
-
-- **加载**：生成脚本写到 `<userData>/kwin/featherlog-float.js`，通过 DBus 加载与运行（`org.kde.KWin /Scripting` 的 `loadScript` 与 `/Scripting/Script<id>` 的 `run`），卸载用 `unloadScript("featherlog-float")`；启动时先卸载同名残留。DBus 调用用 `execFile`，依次尝试 `qdbus6`、`qdbus`、`gdbus`，封装为可注入的执行器。
-- **脚本只做三件事**：
-  1. 按标题 `featherlog-dock` 找到收起窗口（窗口出现时、标题变化时都检查），设置 `keepAbove`、`onAllDesktops`、`skipTaskbar`、`skipPager`、`skipSwitcher`；
-  2. 第一次找到它时，放到最右侧 output 的右边缘、竖直居中；
-  3. 监听 `frameGeometryChanged`：若只是**尺寸**变了（不是用户拖动造成的位置变化），按 §9.3 的当前方向保持右边缘或左边缘，并夹在 output 内（加守卫，避免回调里改几何又触发自己）；若是用户拖动造成的位置变化，按 §9.3 重新判断方向。
-- **方向上报**：KWin 脚本在第一次找到窗口时、以及方向改变时，用 `callDBus("org.featherlog.Shell", "/Dock", "org.featherlog.Dock", "SetSide", side)` 通知主进程。主进程在会话总线上注册名字 `org.featherlog.Shell`，导出 `/Dock` 对象与 `org.featherlog.Dock.SetSide(s)` 方法（纯 JS 的 DBus 库即可，如 `dbus-next`），收到后经 preload 通知渲染层。注册失败时记日志，方向固定为 `left`。
-- 参考原型 `spike/collapsed-view` 的 `kwin-anchor.js`（已在 KDE Plasma 6.7 上验证过 DBus 加载与 `frameGeometryChanged` 重新定位），但**不要**做边缘锚定。
-- 已知限制：重启后回到默认位置（Wayland 下应用读不到自己的位置）；窗口首次出现时 KWin 可能会激活它一次。
-- 找不到任何 DBus 工具时退化为 `PlainFloat` 并记日志。
-
-### 9.6 PlainFloat（其他 Wayland）
-
-- 不定位、不保证置顶；方向固定为 `right`：窗口向右变宽时左上角不动，卷轴正好保持原位。
-- 设置页据 `capabilities` 提示："当前桌面不支持置顶，可开启兼容模式后重启"。
-
-### 9.7 兼容模式
-
-设置 `compatMode = true`（或环境变量 `FEATHERLOG_COMPAT_MODE=1`）时，在 `app.whenReady()` 之前 `app.commandLine.appendSwitch('ozone-platform', 'x11')`，改走 XWayland，从而使用 `ElectronFloat`。代价：XWayland 只有一个全局缩放比例，混合缩放的多块屏上可能发糊。
-
-> 实机注意（2026-09-28，Arch + KDE Plasma 6.7）：兼容模式下 Chromium 的 GPU 进程反复段错误（Mesa 的 `/usr/lib/gbm/dri_gbm.so` 被 GPU 沙箱拒绝），窗口画不出来；原生 Wayland 正常。这是系统更新与 Chromium 的兼容问题，不在本项目内处理。
-
-## 10. 前端
-
-- React + TypeScript，动效用 Motion；组件样式用 CSS Modules；不使用 Tailwind 和成品组件库。
-- **视觉方向：羊皮纸任务日志**。完整面板是一本摊开的冒险者日志（左页任务列表、右页任务详情），收起视图是一个置顶的浮动小卷轴。质感来自纸纤维、污渍、毛边、墨迹和火漆，但克制使用，保证每天看很多次也不累。
-- 整本日志是"手写"的。字体都是 SIL OFL 开源授权，随应用打包，不依赖网络：
-  - **马善政毛笔楷书**：标题、分区名、列表里的任务名，毛笔笔锋。
-  - **小赖字体**：其余一切文字，像钢笔写的，松弛但好读。
-  - 不使用拉丁装饰字体。
-- 纸张是程序生成的羊皮纸：可平铺的纸面（柔和的大面积色差、光照模拟的起伏）加一层拉伸到任意尺寸的边缘焦痕，外加毛边遮罩。默认"淡黄"，另有"金黄""陈旧"两种。纹理在构建时预先生成为静态图片（`packages/shell/scripts/gen-textures.sh`），运行时不使用实时 SVG 滤镜。
-- 主题通过外壳提供的 CSS 变量暴露给所有插件（颜色、字体、纸张纹理），插件用它们画出同一种纸。
-
-### 10.1 反馈：动作要有回应
-
-像游戏一样，每个动作都要立刻有回应，而且回应分层：即时的手感（本节）、几秒内的回应（书记官，§14）、一天一周的成长（角色页，§16）。手感只在本地完成，不依赖网络。
-
-**声音**：
-
-- 外壳提供一套共用的音效，插件通过 `ctx.sound.play(cue)` 播放（类型见 `contracts/src/plugin.ts` 的 `SoundCue`），所有插件听起来是同一本日志。
-- 音效用 Web Audio 实时合成，不打包录音：`ink` 落笔、`tick` 计数、`unlock` 新目标浮现、`erase` 撤回、`page` 翻页、`seal` 盖火漆、`bell` 章节告成、`stamp` 盖朱印。
-- 响度分层：日常的落笔和计数最轻，庆祝（火漆、钟声、朱印）明显更响；任何音效都不能削波。用 `renderCue` 离线渲染来测量，而不是只凭耳朵。
-- **只在用户动手的那个窗口发声**：所有窗口都会收到同一个事件，所以声音挂在本窗口发出的请求上，而不是挂在事件上。音频在第一次发声时才创建，正好在用户的点击里，不受自动播放限制。
-- 一个动作的后果跟在落笔之后：先 `ink`，再按结果补一声 `unlock`（下一个目标）、`bell`（一章完成）或 `stamp`（任务完成），间隔与画面上的动画对齐。
-- 外壳设置 `sound` 关闭时完全静音；`volume` 0–10 映射到听感均匀的增益曲线。
-
-**画面**：
-
-- 下一个目标像墨水洇开一样从左向右浮现，背后有一抹很快褪去的朱色。
-- 计数时数字弹一下，上方飘起"+1"。
-- 卷轴的进度环增长时泛起一圈涟漪；回到新一章的起点时泛起两圈更大的，读起来是"翻章"而不是"清零"。
-- 便签上完成任务时，朱印「功成」盖在便签上；一章完成时，便签顶部短暂显示"本章告成"。
-- 一个分区的事全部做完（例如今天的每日委托），计数换成一枚"尽数完成"的小印。
-- 墨迹动画被打断（例如连续两个事件导致重新渲染）时必须画完，不能停在第一帧。
-- 遵守 `prefers-reduced-motion`：涟漪、飘字等纯装饰的动效在减少动态效果时不出现。
-
-## 11. 协作流程
-
-- Claude 负责方案设计、`packages/contracts`、全部前端，以及审查 PR。
-- Codex 负责内核、插件的主进程部分、Electron 主进程和 preload，每项工作提一个 PR。
-- `packages/contracts` 和 `manifest.json` 是双方的接口。需要修改时，在 PR 描述里单独列出"契约变更"一节，说明原因，经审查后合并。
-- 每个 PR 必须通过 `pnpm typecheck` 和 `pnpm test`。
-
-## 12. 发布与更新
-
-### 12.1 打包与发布
-
-- 用 **electron-builder** 打包，配置放在 `packages/shell`。版本号只有一个来源：`packages/shell/package.json` 的 `version`。
-- 应用标识：`appId` 为 `io.github.muyuzhong.featherlog`，`productName` 为 `Featherlog`，可执行文件名为 `featherlog`。Linux 桌面项的显示名为"羽记"。
-- 图标：`packages/shell/resources/icon.png`（1024×1024，Claude 提供），Windows 和 macOS 的图标格式由 electron-builder 从它生成。
-- 目标格式：
-
-  | 平台 | 格式 | 能否自己更新 |
-  |---|---|---|
-  | Linux x64 | AppImage | 能 |
-  | Windows x64 | NSIS（按用户安装，不需要管理员权限） | 能 |
-  | macOS arm64 / x64 | dmg | 不能：v1 没有签名，Squirrel.Mac 拒绝未签名的更新，只提示去下载 |
-
-- v1 不做代码签名。Windows 首次运行会有 SmartScreen 提示，macOS 需要右键打开；README 里说明。
-- macOS 保留两个架构的 dmg 和更新元数据；手动下载不需要 zip，恢复签名自动更新时再增加 Squirrel.Mac 所需的 zip。
-- 运行时依赖（`dbus-next`、`electron-updater`）必须进安装包；其余代码都打进 bundle。pnpm 工作区的依赖布局由实现方处理，要求用打出的包实际启动验证。
-- **发布流程**：推送 `v<版本号>` 标签触发 GitHub Actions（`.github/workflows/release.yml`）。准备阶段安装依赖并集中运行一次 `pnpm typecheck`，通过后校验版本、准备草稿。随后三个平台并行：`pnpm install --frozen-lockfile` → `pnpm test` → 构建 → electron-builder 上传到同名 GitHub Release。各系统仍独立执行测试以覆盖平台差异；标签与 `version` 不一致时失败。
-- **自动发版**（2026-10-04 用户要求）：发版的决定仍由人做，就是合并一个修改 `packages/shell/package.json` 中 `version` 的 PR；之后全部由 CI 完成，不再手动打标签、手动发布：
-  1. 推送到 `main` 后，若该版本号与现有标签都不同（`v<版本号>` 不存在），CI 打上这个标签并运行发版流程。注意 `GITHUB_TOKEN` 推送的标签不会触发其他工作流，所以发版流程要由同一个工作流直接调用（例如可复用工作流），而不是靠标签触发。手动推送 `v*` 标签的旧路径保留。
-  2. 流程照旧：准备唯一的草稿、三平台测试与构建、核对 10 个文件。
-  3. **冒烟测试**：在 Linux 上用 xvfb 实际启动打出的 AppImage（隔离的配置目录），等到日志出现内核与全部插件加载完成，再正常退出；失败则不发布。
-  4. 全部通过后**自动发布**草稿并标为最新。发布说明由上一个标签以来合并的 PR 生成（GitHub 的自动生成说明，按 `.github/release.yml` 分类）。
-  5. 发布前任何一步失败都停在草稿，不发布残缺或未验证的版本；失败的版本修好后，用新的补丁版本号重发，不复用已失败的标签。
-  6. 发布后 CI 用 `packaging/aur/update.sh` 的同等逻辑（Arch 容器里运行 `makepkg --printsrcinfo`）更新 PKGBUILD 与 `.SRCINFO`，开一个 PR，不直接推送到 `main`。AUR 更新或开 PR 失败时只报错，不撤回已发布的版本，保持下载与自动更新可用（2026-10-05 用户确认）。
-- 已安装的客户端只看到正式发布的版本，草稿和预发布版不会触发更新。
-
-### 12.2 自动更新
-
-- 主进程用 **electron-updater**，更新源是 GitHub Releases（`muyuzhong/Featherlog`）。下载的文件按 release 里 `latest*.yml` 的 sha512 校验。
-- **能自己更新的安装**：已打包，并且是 Windows NSIS（可执行文件旁有 `Uninstall Featherlog.exe`），或是 Linux 且在 AppImage 里运行（有 `APPIMAGE` 环境变量）。其他已打包的 Windows 程序按 `manual` 处理。发现新版本就在后台下载，下好后状态变为 `ready`，**下次退出时自动安装**（`autoInstallOnAppQuit`），也可以通过 `shell/apply-update` 立即重启安装。
-- **不能自己更新的安装**（macOS、Linux 上非 AppImage 的安装）：只检查不下载。发现新版本时状态为 `manual`，带上该 release 的页面地址；`shell/apply-update` 用系统浏览器打开它。
-- **开发模式**（未打包）：状态为 `unsupported`，从不联网。
-- **由系统包管理器安装**（如 AUR 的 `featherlog-bin`）：安装包的 `resources/package-type` 文件存在时（electron-updater 的约定，内容如 `pacman`），状态为 `managed`，从不联网；更新交给包管理器。优先于上面所有判断。
-- **检查时机**（设置 `autoUpdate` 为 `true` 时）：启动 30 秒后检查一次，此后每 6 小时一次；系统从睡眠中恢复时，若距上次检查已超过 6 小时，立即检查。定时一律用注入的 `Clock`。`autoUpdate` 为 `false` 时从不自行检查；设置页的"检查更新"（`shell/check-update`）任何时候都可用，手动检查发现新版本同样会下载。
-- 同一时间只进行一次检查或下载，重复的 `shell/check-update` 直接返回。
-- 检查超过 120 秒未完成，或下载连续 120 秒没有进度增加时，按失败处理；取消该次下载，禁用旧更新器的退出安装，重试使用新实例，旧请求的迟到结果和事件不再改变状态。正常推进的长下载不受总时长限制。
-- 失败后的自动重试依次等待 5 分钟、15 分钟、1 小时，之后每次 6 小时；成功后恢复通常的 6 小时周期。上次失败时，从睡眠恢复立即补查。关闭 `autoUpdate` 同时关闭退避重试和恢复补查，手动检查仍可用。
-- 更新下好时，主进程发一次 `shell/notify`（同一版本只发一次，跨启动也算，记录在 `<userData>/updates.json`）：标题"新版本已备好"，正文"v<版本> · 退出时自动安装，也可以在设置里立即重启"。后台检查失败只记日志、进入 `error` 状态，不打扰用户。
-- **隐私**：只访问 GitHub（API 与 release 下载地址），不带任何标识，不做统计。
-- 更新说明（release notes）转成纯文本（去掉 HTML 标签），最多 2000 字；渲染层只按纯文本显示。
-
-### 12.3 消息
-
-类型见 `contracts/src/shell.ts` 的 `UpdateState`。
-
-| 请求 / 事件 | 行为 |
-|---|---|
-| `shell/update-state` | 返回当前的 `UpdateState` |
-| `shell/check-update` | 立即开始一次检查并返回 `null`，不等结果（检查和下载都可能超过总线的 5 秒超时）。结果通过事件送达。`unsupported` 时什么也不做 |
-| `shell/apply-update` | `ready`：退出并安装新版本（走正常的退出流程，先写完存储和设置）。`manual`：用系统浏览器打开 release 页面。其他状态以 `shell/no-update` 拒绝 |
-| `shell/update-changed` | 状态每次变化时发出，载荷是完整的 `UpdateState`。下载进度最多每 500 毫秒发一次 |
-
-### 12.4 AUR
-
-- 包名 `featherlog-bin`，源文件放在仓库的 `packaging/aur/featherlog-bin/`（`PKGBUILD` 与 `.SRCINFO`）。
-- 来源是同版本 GitHub Release 里的 AppImage，按 sha256 校验；`--appimage-extract` 解包后安装到 `/opt/featherlog`，不依赖 FUSE。
-- 安装内容：`/usr/bin/featherlog` 启动脚本、`/usr/share/applications/featherlog.desktop`（显示名"羽记"）、`hicolor` 各尺寸图标、`/usr/share/licenses/featherlog-bin/LICENSE`，以及写有 `pacman` 的 `/opt/featherlog/resources/package-type`（§12.2 的 `managed`）。`chrome-sandbox` 设为 `4755`，不使用 `--no-sandbox`。
-- `depends` 为 Electron 运行时需要的系统库；`optdepends` 列出 `qt6-tools`（KDE 上用 `qdbus6` 加载 KWin 脚本）。
-- 每次发版：`packaging/aur/update.sh <版本>` 更新 `pkgver`、`pkgrel=1` 和校验和并重新生成 `.SRCINFO`，再由维护者推送到 AUR（`ssh://aur@aur.archlinux.org/featherlog-bin.git`）。
-
-## 13. 以后再说
-
-- AI 书记官见 §14；估算耗时等更多能力以后再说。
-- 角色页见 §16。不做金币和商店。
-- 游戏接入。
-- 八股见 §17（卷轴上的卡片，不做弹窗）；与 Claude Code hooks 联动以后再说。
-- 本地 WebSocket 桥（需要校验 Origin 或 token）。
-- 第三方插件的运行时动态加载（v1 只支持仓库内置插件）。
-- 界面国际化（v1 界面文案为中文）。
-- 开机自启；代码签名与 macOS 自动更新；AUR 包。
-
-## 14. 书记官（AI 插件 `scribe`）
-
-> 2026-10-03 用户确认：模型与接口由用户自行配置，不预设任何服务商；人设名为"翎"；其余按本节。
-
-### 14.1 定位
-
-书记官是一个**有人设的 NPC**，替你记这本日志的人。它让羽记从"我在记录"变成"有人在看着我打这一局"：你落笔，它会回应；你卡住，它会出主意；一条主线走完，它给你写尾声。
-
-- 它是一个普通插件（主进程半边 + 界面半边），只通过总线做事：读任务用 `quest/list`、`quest/get` 和 `quest/*` 事件，写任务用 `quest/*` 请求。不读写其他插件的存储，内核和任务插件不为它开后门。
-- **书记官只提议，落笔的永远是你。** 它起草的任务、拆分的目标，都先在编辑稿纸（§10 的编辑器）里摆给你看，由你点"落笔"才写进日志。v1 里它唯一自己写下的东西是它自己的话（回应、战报、尾声），存在它自己的存储里。
-- 没有配置密钥时，书记官仍然在：回应改用内置的台词，起草和战报不可用，并说明原因。
-
-### 14.2 人设
-
-- 一位在羽记里替冒险者记日志的老书记官，名叫"翎"：那支替你执笔的鹅毛笔的翎羽。话少，干脆，带一点冷幽默；对你的进展是真心高兴，但不肉麻。
-- **从不说教，从不内疚绑架**：断了连续天数、逾期了，它说的是"接着来"，而不是"你又没坚持"。和 §8.5"连续记录没有惩罚"一致。
-- 说话像写在日志页边的批注：中文，一句话，回应不超过 40 个字；会引用你的任务名、章节和过去的进度（"上周你在 rehash 卡了三天，这次快多了"），这是罐头台词做不到的。
-- 不编造事实：只引用日志里真实存在的任务、目标、日期和次数。
-
-### 14.3 能力
-
-| 能力 | 触发 | 输出 | 模型调用 |
-|---|---|---|---|
-| **一句话立项** | 用户在便签或日志左页的"对翎说……"输入一句话，如"这个月把 Redis 八股背完" | 一份任务草稿（`QuestInput`：类型、真实目标、任务名、简报、章节与目标、限期、建议的属性），打开编辑稿纸，由用户修改后落笔 | 结构化输出，effort `medium` |
-| **即时回应** | 本窗口里用户完成目标、完成一章、完成任务、连续天数创新高、撤回 | 一句批注，显示在便签底部和日志页边，字是一笔一笔"写"出来的 | 流式，effort `low` |
-| **今日委托板** | 每个周期第一次打开日志（`dayStartHour` 之后） | 建议今天先做的至多三件事（追踪中的当前目标、今日限期的支线、每日委托），各附一句理由 | effort `low`；挑哪三件由规则决定，模型只负责措辞 |
-| **今日战报** | 用户设定的时间（默认 22:00）之后第一次打开，或手动请求 | 一页日志体的总结：今天推进了什么、连续第几天、明天建议先做什么 | effort `medium` |
-| **卡住了** | 某个当前目标连续 5 天没有进展 | 提议把它拆成 2–4 个更小的目标；接受后打开编辑稿纸，已完成的目标保留 id | 结构化输出，effort `medium` |
-| **尾声** | 一个主线或支线完成 | 不超过 200 字的尾声，留在任务页"功成"下方和卷末；主线另题一个至多 8 字的称号（§16.4） | effort `medium` |
-
-- **话痨程度**（设置）：少 / 常 / 多。"常"表示目标完成时最多每 3 分钟回应一次，章节和任务完成时总是回应；"少"只在章节、任务完成时回应；"多"每次都回应。夜间（23:00–7:00）不主动说话。
-- 回应、委托板、战报、尾声都按事件的 `origin`（§4.1）过滤：只回应 `origin` 为 `quest` 的事件（任务插件的界面发起的动作），不回应它自己（`scribe`）或其他来源引起的事件。插件不从组合根接收任何契约之外的参数。
-- 卡住提议的批注用话题 `stall`。
-
-### 14.4 模型、接口与费用
-
-- **不预设任何服务商。** 用户在设置里配置，翎的设置（`contributes.settings`）为：
-
-  | 键 | 类型 | 说明 |
-  |---|---|---|
-  | `enabled` | 布尔，默认 `false` | 启用翎（首次启用时先显示 §14.5 的告知） |
-  | `protocol` | `"openai"` / `"anthropic"` | 接口协议。`openai` 指 OpenAI 兼容的 Chat Completions（`POST {baseUrl}/chat/completions`），覆盖大多数服务商和本地模型；`anthropic` 指 Messages API（`POST {baseUrl}/v1/messages`） |
-  | `baseUrl` | 字符串 | 接口地址，必须是 `https://`，本机地址（`localhost`、`127.0.0.1`）允许 `http://` |
-  | `model` | 字符串 | 模型名，原样传给接口 |
-  | `apiKey` | 字符串，`writeOnly` | 密钥，见下文；本地模型可以不填 |
-  | `talkativeness` | `"quiet"` / `"normal"` / `"chatty"`，默认 `"normal"` | 话痨程度（§14.3） |
-  | `recapTime` | 0–23 整数，默认 `22` | 几点之后写今日战报 |
-
-- 协议、地址、模型、密钥任一缺失时视为"未配置"：只用内置台词，起草等能力在界面上说明需要先配置。
-- **调用**：主进程半边用 `fetch` 直接请求所配置的接口，两种协议各写一个小适配器，对上层提供同一个接口（发送消息、流式文本、取用量）。不引入任何服务商的 SDK，保持中立。
-- **结构化结果**（起草、拆分）：在提示词里给出 JSON 结构与示例，要求只输出 JSON；解析后按 §8.2 校验。不合格时把错误附上重试一次，仍失败则告诉用户"没写成，换个说法试试"。服务商支持 JSON 模式时（如 OpenAI 兼容的 `response_format`）可以作为可选增强，但不能依赖。
-- **思考与长度**：回应要求一句话、`max_tokens` 很小；起草、战报给足长度。不同服务商的"思考"参数各不相同，v1 不设置，交给模型默认。
-- **提示词缓存**：人设与写作规则放在最前面并逐字节固定，变化的内容（日期、任务快照）放在其后。Anthropic 协议在该前缀上加 `cache_control`；多数 OpenAI 兼容服务会自动缓存相同前缀。
-- **密钥保管**：设置 schema 中带 `writeOnly: true` 的字段是机密（§6.6）。设置页把它画成密码框，保存时经只写的 preload 接口交给主进程，用 Electron `safeStorage` 加密后存在外壳存储里，不进 `settings.json`，也不经过总线。渲染层只知道"已设置 / 未设置"。插件主进程半边通过 `ctx.secrets.get(name)` 读取。
-- **网络**：只访问 `baseUrl` 所在的主机。
-- **费用**：输入只带必要的上下文（相关任务和最近的进展，不带整本日志）。设置页显示本月用量（输入、输出 token，取自响应里的用量字段；服务商不返回时显示"未知"）。
-- **失败**：HTTP 401/403 提示"密钥不对"并暂停调用，直到配置改变；429、5xx 和网络错误退回内置台词，并按 `retry-after`（没有则指数退避）延后；超时 30 秒。起草失败时说明原因并允许重试。
-- **测试连接**："札记"页里的"试一试"按钮发一个极短的请求，显示成功或具体的失败原因。
-
-### 14.5 隐私
-
-- 第一次启用时明确告知：任务的标题、目标、简报和最近的进展会发送给用户所配置的接口（写明它的地址）以生成回应；不会发送其他任何内容。用户同意后才会联网。
-- 设置里可以随时关掉书记官，关掉后完全不联网。
-- 书记官说过的话、战报和尾声只存在本机。
-
-### 14.6 界面
-
-- 书记官的字用另一种墨色（偏蓝的黑），末尾有一枚小小的"翎"字印，和你自己的字一眼分得开。
-- 便签底部：最近一句批注，以及"对翎说……"的输入行。
-- 日志：右页页边显示与这个任务有关的批注；任务完成后在"功成"下方显示尾声。
-- 新的面板标签页"札记"：左页是翎的状态（未启用 / 首次告知与同意 / 缺配置 / 停笔 / 已执笔，含"试一试"、本月用量、撤回同意）和今日委托板（点一项打开日志并选中那个任务，经 `shell/open-panel` 的 `params: { questId }`）；右页是今日战报（可以"请翎现在写"）与往日战报。尾声留在各自的任务页上，v1 不做合集（还没有列出全部尾声的请求）。
-- 涉及模型调用的请求（`scribe/test`、`draft-quest`、`split-objective`、`board`、`recap`）界面一律传 `timeoutMs: 65000`。
-- 回应出现时不发声：每个窗口都会收到 `scribe/said`，而声音只属于用户动手的那个窗口（§10.1）。回应以逐字写出的方式出现，代替声音。
-- 从便签上"对翎说"得到的草稿，经 `shell/open-panel` 的 `params: { draft, note }` 交给日志，在编辑稿纸上打开。
-
-### 14.7 消息（计划中的契约）
-
-确认本节后再写进 `packages/contracts`：
-
-- 请求：
-  - `scribe/state`：是否已配置、模型、话痨程度、本月用量。
-  - `scribe/draft-quest`：`{ text }` → `{ input: QuestInput, note?: string }`。
-  - `scribe/split-objective`：`{ questId, objectiveId }` → `{ objectives: ObjectiveDraft[] }`。
-  - `scribe/board`：→ 今日委托板。
-  - `scribe/recap`：`{ date? }` → 当日战报。
-  - `scribe/epilogue`：`{ questId }` → 尾声或 `null`。
-- 事件：
-  - `scribe/said`：`{ id, text, about: { questId?, kind }, at }`，即时回应。
-  - `scribe/recap-written`、`scribe/epilogue-written`。
-- `MainContext` 新增 `secrets`（按插件隔离的只读 `get(name)`，由外壳用 `safeStorage` 实现）；preload 的 `settings` 新增只写的 `setSecret(scope, key, value)` 与 `hasSecret(scope, key)`，对应 schema 中的 `writeOnly` 字段。
-  - `scribe/test`：试一试连接，返回成功或失败原因。
-
-### 14.8 测试
-
-- 模型客户端通过注入替换为假的实现，所有规则在不联网的情况下测试：触发条件、话痨节流、夜间静默、只回应本机动作、结构化输出解析失败与 §8.2 校验失败、各类错误的退避与内置台词、用量统计。
-- 时间相关逻辑（5 天卡住、22:00 战报、3 分钟节流）一律用注入的 `Clock`。
-- 人设的写作质量另做一组离线样例评估（用户确认的示例回应），换模型或改提示词时对照。
-
-## 15. 笔记插件（notes）：手记与随笔
-
-> 2026-10-03 用户确认：名字用"手记 / 随笔"；卷轴上可以随时记一笔；纯文本；翎默认不读笔记，可以打开。
-
-### 15.1 两种笔记，一个模型
-
-- **手记**：挂在一个任务上，记录在这个任务里做了什么、学到了什么。例如"看完人月神话"里记下读到"没有银弹"时的想法。任务完成后手记仍在，成为这段经历的记录。
-- **随笔**：不属于任何任务，想法、随感、记录。
-- 两者是同一种笔记：`questId` 有值就是手记，没有就是随笔。由 `notes` 插件（主进程 + 界面）独占存储；任务插件不存笔记，任务界面通过总线读写属于某个任务的手记。
-
-### 15.2 模型与规则
-
-类型见 `contracts/src/notes.ts`。
-
-- 笔记是**纯文本**：保留换行，不解析任何标记。去掉首尾空白后非空，最长 20000 字；否则以 `notes/invalid-input` 拒绝。
-- 创建时带 `questId` 的，必须是存在的任务（`notes` 插件用 `quest/get` 确认，不存在以 `notes/invalid-input` 拒绝）。一条笔记创建后不能改挂到别的任务上（v1 不提供"移动"）。
-- **任务被删除时，它的手记变成随笔**（去掉 `questId`，正文不变），绝不随任务一起删掉。每条受影响的笔记发一次 `notes/updated`。
-- 列表按创建时间倒序，分页（`before` + `limit`，默认 50）。`questId: null` 表示只要随笔，省略表示全部。
-- `query` 做简单的包含匹配（不区分大小写），v1 不做分词与高亮。
-- `notes/counts` 一次返回多个任务的手记数量，供日志列表和任务页的账目使用。
-- 存储只用 `ctx.storage`。每条笔记的读写不能牵连整本笔记（实现可按条存储或分片），写入原子化。
-
-### 15.3 界面
-
-- **任务页的手记**：在本章目标之下、账目之上。最新的在上，显示日期与正文；"记一笔"输入框（多行，Ctrl+Enter 落笔）；悬停时可以改、可以删（删要点两次）。默认显示最近三则，"全部 N 则"展开。账目里多一行"手记 · N 则"。已完成的任务同样可以看、可以补记。
-- **随笔标签页**（面板，标签名"随笔"）：同样是一本摊开的书。左页按日期分组列出随笔（显示首行），顶部有"新的一页"和一个搜索框；右页是选中的那篇，直接在纸上编辑，停笔一秒或离开时自动保存，可以删除。左页可以切换"连同手记"，手记前标出所属任务名，点它跳到那个任务。
-- **卷轴上随时记**：`notes` 插件在卷轴上贡献一个图标（`pen-line`），悬停展开一张小便签：一个输入框，下方一枚可切换的签条"记作随笔 / 记到「正在追踪的任务」"，Ctrl+Enter 落笔，落笔后便签上留一行"已记下"。
-- 落笔用 §10.1 的 `ink` 声音，删除用 `erase`。
-
-### 15.4 与翎
-
-- 翎的设置新增 `readNotes`（布尔，默认 `false`）："让翎读我的手记"。打开后，翎写战报、尾声时可以读取相关任务最近的手记（`notes/list`，每个任务至多 5 则、每则截断到 300 字），并在第一次打开时补充告知"手记也会发送给所配置的接口"。随笔永远不发送。
-- 关闭时翎不发任何笔记相关的请求。
-
-### 15.5 测试
-
-- 校验边界（空白、20000 字、不存在的任务）、分页与倒序、`questId: null` 过滤、搜索、计数。
-- 任务删除后手记转为随笔且发 `notes/updated`；并发写入不丢失；存储损坏不覆盖。
-- 翎的 `readNotes` 关闭时零读取，打开时只读相关任务、数量与长度受限、从不读取随笔。
-
-
-## 16. 角色插件（character）：属性、称号与编年
-
-> 2026-10-05 用户确认：任务的属性由自己选，翎起草时可以建议；成长显示为境界名加进度；称号是固定成就加翎的题赠；属性固定四项。
-
-### 16.1 定位
-
-角色页是 §10.1 所说"一天一周的成长"那一层：你做完的事，在这里变成一个人的样子。它不是积分系统：**历练只增不减，也不能花**；没有金币、商店、可消耗的点数，也没有每日任务式的刷分。
-
-- 一个普通插件 `character`（主进程半边 + 界面半边）。读任务只用 `quest/list` 和 `quest/*` 事件，读翎的题赠只用 `scribe/epilogue-written` 事件；只写自己的存储。任务插件和翎不为它开后门，没有翎时角色页照样完整，只是没有题赠。
-- 撤销不惩罚，也不能刷：撤回一个目标不扣历练，但同一个目标再完成一次也不会再给（§16.2）。
-
-### 16.2 属性与历练
-
-四项属性，固定不变：
-
-| 属性 | 键 | 印字 | 典型任务 |
-|---|---|---|---|
-| 学识 | `learning` | 学 | 读书、背八股、学一门课 |
-| 体魄 | `body` | 体 | 跑步、健身、作息 |
-| 心性 | `mind` | 心 | 冥想、戒掉什么、坚持一个习惯 |
-| 技艺 | `craft` | 技 | 写代码、做东西、练一门手艺 |
-
-- 属性挂在任务上（`Quest.attributes`，一到两项，§8.2）。用户在编辑稿纸里选；翎起草任务时一并建议（§14.3），用户可以改。没选属性的任务照样记历练，记在"未归属"里。
-- **历练记在任务名下，属性按任务现在的属性分摊。** 一个任务挂两项属性时平分（单数的余数给第一项）。之后改了任务的属性，它过去攒下的历练也跟着挪过去；给"未归属"的任务补选属性，它的历练就归入那项属性。任务被删除时，按删除那一刻的属性冻结，历练不收回。
-- 每一份历练只给一次，按下面的单位记账：
-
-  | 单位 | 历练 | 说明 |
-  |---|---|---|
-  | 完成一个普通目标 | 10 | 按目标 id 记 |
-  | 计数目标每计一个单位 | 3 | 按该目标**到过的最高计数**记，每个目标至多 60（超过 20 个单位不再加）；计数目标完成时不另加 |
-  | 完成主线的一章 | 20 | 按章 id 记 |
-  | 完成一条主线 | 60 | 按任务 id 记 |
-  | 完成一条支线 | 20 | 包括没有目标、直接完成的"一件事" |
-  | 每日委托完成一个周期 | 5 | 按 `(任务 id, 周期键)` 记 |
-
-  撤回后重新完成，已经记过的单位不再给；计数撤下去再加回来，没有超过到过的最高计数就不给。`quest/complete` 直接完成剩下的目标，那些目标照常记历练。
-- **对账而不是解释事件**：角色插件每收到一个 `quest/*` 事件，就拿事件里的任务快照与已记的账对一遍，把快照里已完成但还没记过的单位补上。启动时（`kernel/ready` 之后）用 `quest/list` 对一遍全部任务。因此漏掉事件、重复事件、插件晚于任务插件加载，结果都一样。
-- **第一次运行时补算过往**：已完成的目标、章节、任务按上表补记，编年按各自的 `doneAt` / `completedAt` 补写；每日委托只能看到当前连续记录，按 `derived.streak` 个周期补记。补算不弹通知（§16.5）；补算中达到的境界和称号，编年和 `earnedAt` 记在补算的时刻。
-
-### 16.3 境界
-
-四项属性用同一套境界，累计历练达到门槛即升，不会降：
-
-| 境界 | 序号 | 累计历练 |
-|---|---|---|
-| 未涉 | 0 | 0 |
-| 初涉 | 1 | 1 |
-| 入门 | 2 | 100 |
-| 小成 | 3 | 300 |
-| 精熟 | 4 | 700 |
-| 大成 | 5 | 1500 |
-| 化境 | 6 | 3000 |
-
-量级参考："架构师的养成计划"三本书各一个 16 章的计数目标，三章、一条主线，合计约 48×3 + 20×3 + 60 = 264，读完是"入门"快到"小成"；一项每天都做的每日委托一年约 1800。门槛是初值，以后按实际手感调整，调整只改门槛，不改账。
-
-### 16.4 称号
-
-- **固定称号**：达到条件时获得，获得后不会失去。未获得的也列在角色页上，写着条件，像游戏里的成就墙。
-
-  | id | 称号 | 条件 |
-  |---|---|---|
-  | `first-stroke` | 初落笔 | 完成第一个目标 |
-  | `one-deed` | 了却一桩 | 完成第一条支线 |
-  | `chapter-one` | 一章告成 | 完成主线的第一章 |
-  | `first-volume` | 卷终 | 完成第一条主线 |
-  | `three-volumes` | 三卷在握 | 完成三条主线 |
-  | `seven-days` | 晨钟不辍 | 任一每日委托连续 7 个应做周期（`derived.streak ≥ 7`） |
-  | `thirty-days` | 寒暑不移 | 任一每日委托连续 30 个应做周期 |
-  | `on-time` | 如期 | 在限期内完成 5 条主线或支线（完成时的周期键不晚于 `deadline`；用完成那一刻 `quest/period` 的周期键） |
-  | `learning-3` / `body-3` / `mind-3` / `craft-3` | 博览 / 筋骨 / 定心 / 巧手 | 该属性达到"小成" |
-  | `learning-5` / `body-5` / `mind-5` / `craft-5` | 鸿儒 / 铁骨 / 澄明 / 匠心 | 该属性达到"大成" |
-
-- **翎的题赠**：一条主线完成、翎写尾声时，同时为这条主线题一个称号（`ScribeEpilogue.title`，至多 8 个字，不带标点，比如"三卷读罢"），只有主线有。角色插件收到 `scribe/epilogue-written` 且带 `title` 时，把它记为称号 `gift:<questId>`，条件写"为「<任务名>」题"。没配置翎、翎没写成、或尾声被重写时：没有题赠，或保留第一次的题赠，不覆盖。
-- 可以**佩戴**一个已获得的称号（`character/wear`），显示在角色页的人物名下。v1 只在角色页显示。
-
-### 16.5 反馈
-
-- 境界提升、获得称号时，角色插件的主进程半边发 `character/milestone`，并请求一次 `shell/notify`（贴在卷轴旁，§7.2）：
-  - 境界：标题"学识 · 入门"，正文"历练 100"；
-  - 称号：标题"得称号「卷终」"，正文为条件。
-  通知失败只记日志。同一次对账产生多个里程碑时逐个发出，至多 3 条，多的合成一条"另有 N 项"。补算（§16.2）不发通知。
-- **不显示每次加了多少历练**：完成目标时不飘"+10"。成长在角色页上看，按天、按周感受，不在每一笔上算分。
-- 角色页上，自上次打开以来新得的境界和称号带一枚小小的朱点，打开后消失（界面自己在 `localStorage` 记"上次看过"，丢了也无妨）。
-
-### 16.6 编年
-
-- 记下这几种事，按时间倒序：主线、支线完成；主线的一章完成；境界提升；获得称号。每日委托的完成太琐碎，不进编年。
-- 条目随记账产生，写入后不改：之后任务改名、撤销，编年里仍是当时的样子。撤回一个已完成的任务，编年不删那一条（那一天确实完成过）；再次完成时那一份历练已经记过，所以也不再写第二条。
-- 分页读取（`before` + `limit`，默认 50）。
-
-### 16.7 界面
-
-- 面板新增标签页"角色"（`character/sheet`，图标 `user-round`，`order: 3`，排在任务日志之后）。同样是一本摊开的书：
-  - **左页 · 人物**：顶部是佩戴的称号（毛笔大字；没佩戴时写"无名冒险者"）。下面四项属性，每项一枚印字（学 / 体 / 心 / 技）、属性名、境界名、一道通往下一境界的细进度条；悬停显示"历练 340 / 700"，数字只在悬停时出现。有未归属的历练时，底下一行小字"另有 N 历练尚未归入属性：在任务的修订里选一选"。再往下是称号墙：已得的是一枚枚可以点选佩戴的小签，未得的淡墨写着条件。
-  - **右页 · 编年**：按月分节（"二〇二六年十月"），每条一行：日期、一句话（"「架构师的养成计划」卷终""学识 · 入门""得称号「卷终」"）。完成的主线如果有翎的尾声，下面引一行尾声的开头（界面用 `scribe/epilogue` 取，没有翎就不显示）。点任务名经 `shell/open-panel` 跳到任务日志里的那个任务。
-- **任务编辑稿纸**（任务插件的界面）：真实目标下面一行"属性"，四枚印字可选一到两枚，再点取消。任务页账目里多一行"属性 · 学识、心性"。
-- 佩戴称号时用 §10.1 的 `seal` 声音（只在动手的窗口）。境界和称号来自对账，不属于某个窗口的动作，所以不发声，只有通知。
-
-### 16.8 消息与存储
-
-类型见 `contracts/src/character.ts`；任务的属性见 `contracts/src/quest.ts` 的 `QuestAttribute`。
-
-- 请求：`character/sheet`、`character/chronicle`、`character/wear`（未获得或不存在的称号以 `character/not-found` 拒绝）。
-- 事件：`character/changed`（携带完整的 `sheet`，界面直接替换）、`character/milestone`。
-- 存储只用 `ctx.storage`：账本（每个任务的历练、已记的单位、属性快照）、称号与佩戴、编年。编年按月分片，追加一条不重写全部历史；一次对账的账本、称号、编年一起提交，失败不留下半截。存储损坏拒绝加载，不覆盖原数据。
-
-### 16.9 测试
-
-- 记账规则：每类单位只给一次；撤回后重新完成不再给；计数按最高计数、至多 60；`quest/complete` 补记剩余目标；重复事件、漏掉事件、乱序事件后对账结果相同；启动对账与逐事件对账结果相同。
-- 分摊：一项、两项（余数给第一项）、无属性记入未归属；改属性后历练整体挪动；删除任务按删除时的属性冻结。
-- 境界门槛的边界（99/100、2999/3000、超过化境）；称号条件的边界（第 7 个周期、第 5 条如期、限期当天完成算如期、按 `dayStartHour` 偏移后的周期键）。
-- 题赠：只有带 `title` 的主线尾声产生称号；重写尾声不覆盖；没有翎时一切照常。
-- 补算：从已有任务补算的账、编年时间与逐步完成的结果一致；补算不发通知；之后重启不重复补算。
-- 通知：里程碑逐个发出，至多 3 条再合并；`shell/notify` 失败不影响记账。
-- 时间一律用注入的 `Clock`。
-
-## 17. 可选插件与示例插件「八股」（flashcards）
-
-> 2026-10-05 用户要求：一个背八股的小插件，默认不启用，在设置里勾选后才启用；代码放在 `examples/` 里，作为编写插件的示例。用户确认：卷轴上的悬停卡片；题库在面板里录入、批量粘贴，也能导入 Markdown 文件；间隔重复。使用场景是写代码时等 AI 输出的空档，不与任何 AI 工具联动。
-
-### 17.1 可选插件
-
-- 清单里 `optional: true` 的插件默认不加载，在设置页的"插件"一节里勾选后才启用。内置插件（任务、翎、笔记、角色）不是可选的，总是加载。
-- 已启用的可选插件 id 存在 `settings.json` 的 `shell.enabledPlugins`（字符串数组）。它不走通用的设置校验，只能通过 `shell/set-plugin-enabled` 修改；其中不认识的 id 忽略。
-- **启动**：外壳把内置插件和已启用的可选插件放在同一批里 `load`（§5.3）。
-- **启用**：`shell/set-plugin-enabled { enabled: true }` 立即 `kernel.load([该插件])`，不需要重启。这会再发一次 `kernel/ready`（`pluginIds` 为全部已加载的插件），所以**所有插件对 `kernel/ready` 的处理必须是幂等的**（现有的都是重新对账或刷新，满足这一点；测试要覆盖）。随后发 `shell/plugins-changed`，各窗口加载它的界面半边，它的卷轴图标、面板标签页和设置小节随之出现。
-- **停用**：立即 `kernel.unload(该插件)`（§5.4 自动清理），发 `shell/plugins-changed`，各窗口卸下它的界面半边，图标、标签页和设置小节消失；面板正停在它的标签页时回到第一个标签页。**数据和设置都保留**，再启用时原样回来。
-- **失败**：启用时 `setup` 失败，插件记为 `state: "failed"`，仍保持勾选；设置页显示"没能启用"，取消再勾选即重试。
-- 设置页的"插件"一节只列可选插件：名字、说明、勾选框；勾选后立即生效，不需要保存按钮。
-- 外壳在启动时调用一次 `load`，此后只在启用可选插件时再调用（修订 §5.3 第 5 条）。
-
-### 17.2 示例插件的位置
-
-- `examples/flashcards/`，包名 `@featherlog/plugin-flashcards`，结构与 `plugins/*` 相同（`manifest.json`、`src/main/`、`src/ui/`），工作区包含 `examples/*`。两个组合根（§6.1）照常引入它；可选只影响是否加载，不影响打包。
-- 它是**编写插件的参考**：目录里的 `README.md` 说明清单的每个字段、主进程半边与界面半边的分工、`ctx.storage` / `ctx.settings` / `ctx.clock` 的用法、怎样请求别的插件并在它不在时降级、怎样写测试。代码保持短小、注释说明"为什么"。
-- 分工同其他插件：`src/main/` 由 Codex 实现，`src/ui/` 与 `README.md` 由 Claude 编写。
-
-### 17.3 题库
-
-类型见 `contracts/src/flashcards.ts`。
-
-- 一张卡片有题组 `deck`（可空，至多 40 字）、问题（1–500 字）、答案（1–10000 字），都去掉首尾空白，纯文本，保留换行。不合法以 `flashcards/invalid-input` 拒绝。
-- 修改问题或答案不重置复习进度；删除就是删除，不进回收站。
-- `flashcards/list` 的 `query` 对问题和答案做不区分大小写的包含匹配，`deck` 精确匹配（空字符串表示未分组）。
-- **Markdown 导入**（`flashcards/import`，面板里的"粘贴导入"和"导入文件"共用）：
-
-  ```
-  # Redis                    ← 题组（可选），作用到下一个 "# " 为止
-  ## RDB 和 AOF 的取舍？       ← 一题：## 或 ### 标题是问题
-  RDB 是某一时刻的快照……       ← 到下一个 #、## 或 ### 标题之前都是答案
-  ```
-
-  - 在第一个 `# ` 之前的题，题组取请求里的 `deck`（导入文件时界面传文件名去掉扩展名；粘贴时传当前选中的题组），没有则为空。
-  - `####` 及更深的标题算作答案的一部分；代码块（``` 围起来的部分）里的 `#` 不当作标题。
-  - 答案为空、问题或答案超长的题跳过；同一题组里问题相同（去空白后）的题跳过，都计入 `skipped`，其余的照常导入（2026-10-05 确认）。
-  - 文本至多 1 MB（1,048,576 个 UTF-8 字节），超过以 `flashcards/invalid-input` 整次拒绝。一次导入要么全部写入，要么都不写。
-- 插件主进程半边不读文件。导入文件由界面用浏览器的 `File.text()` 读出文本，再把文本发给 `flashcards/import`（AGENTS.md 规则 6）。
-
-### 17.4 间隔重复
-
-- 每张卡片在一个"盒子"里，盒子决定下次出现的间隔：
-
-  | 盒子 | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
-  |---|---|---|---|---|---|---|---|---|
-  | 间隔 | 10 分钟 | 1 天 | 2 天 | 4 天 | 7 天 | 15 天 | 30 天 | 60 天 |
-
-- 评分（新卡视为在盒子 0）：
-  - **忘了**（`again`）：回到盒子 0，10 分钟后再来；原来在盒子 1 及以上的，`lapses` 加一。
-  - **模糊**（`hard`）：留在原盒子（新卡进盒子 1），按该盒子的间隔。
-  - **记得**（`good`）：进下一个盒子（至多 7），按新盒子的间隔。
-- 以天计的间隔落在**那一天的开始**，而不是精确的 24 小时之后：例如盒子 3 表示"今天之后第 4 天的开始"。"一天"与任务插件一致：有任务插件时用 `quest/period` 的 `dayStartHour`，没有时用 4 点。
-- **出题顺序**（`flashcards/next`）：先出已到期的（`due` 不晚于现在），最早到期的先出；没有时出新卡（从没复习过的，创建早的先出），但每天新卡至多 `newPerDay` 张（设置，默认 10）；都没有时返回 `null`。盒子 0 里还没到 10 分钟的卡不提前出。
-- **新卡额度**：一张新卡第一次被评分时才占用当天的 `newPerDay` 额度（只是出现在卷轴上不算）；额度与今日计数按全部题库统计，`flashcards/next` 的 `deck` 只筛选出哪张。`flashcards/grade` 不因额度用完而拒绝（2026-10-05 确认）。
-- **今日计数**：`reviewed` 是今天评过分的次数；`remaining` 是今天结束前还会到期的卡数加上今天还能出的新卡数。按周期键记录，跨天清零；判断"今天"的时机同 §8.5（每次处理请求前检查，笔记本睡眠后也正确）。
-- 时间一律用 `ctx.clock`。
-
-### 17.5 界面
-
-- **卷轴上的卡片**（收起视图的悬停预览 `flashcards/card`）：
-  - 正面：题组名（小字）、问题、"翻看答案"（空格键）。
-  - 翻面：问题缩成一行，下面是答案（保留换行，过长时卡片内滚动），底部三个按钮"忘了 / 模糊 / 记得"，各自写着下次出现的时间（"10 分钟后 / 1 天后 / 4 天后"），键盘 1 / 2 / 3。
-  - 评分后下一题像翻页一样换上（`page` 声音；忘了用 `erase`，记得用 `tick`）。
-  - 底部一行"今日 7 · 还剩 13"。题库为空时写"题库还空着"，并给一个"去八股页添几题"的链接；今天的都背完了写"今日尽数完成"，盖一枚小印。
-  - 和随笔速记一样，鼠标在卡片里或焦点在卡片里时不收起；移开后收起，下次悬停仍是同一题、同一面，不会跳过没看完的题。
-- **面板标签页"八股"**（`flashcards/deck`）：
-  - 左页：题组列表（全部 / 各题组，写着共几题、今日到期几题、新题几题）、搜索框、题目列表（问题首行，盒子用几个小点表示熟练度）；顶部"添一题""粘贴导入""导入文件"。
-  - 右页：选中的题，直接编辑题组、问题、答案，点"落笔"保存；删除要点两次；底部写"复习 N 次 · 忘过 K 次 · 下次 十月八日"。
-  - "粘贴导入"在右页打开一张稿纸：格式说明、文本框、导入到哪个题组，导入后写"导入 12 题，跳过 3 题（重复或没有答案）"。"导入文件"选 `.md` / `.markdown` / `.txt`，至多 1 MB。
-- 未启用时，卷轴上没有这个图标，面板里没有这个标签页，设置页里也没有它的设置小节。
-
-### 17.6 消息
-
-- 请求：`flashcards/list`、`flashcards/next`、`flashcards/grade`、`flashcards/create`、`flashcards/update`、`flashcards/delete`、`flashcards/import`。
-- 事件：`flashcards/changed`、`flashcards/deleted`、`flashcards/imported`、`flashcards/reviewed`。
-- 外壳：请求 `shell/plugins`、`shell/set-plugin-enabled`，事件 `shell/plugins-changed`（`contracts/src/shell.ts`）。
-
-### 17.7 测试
-
-- 可选插件：默认不加载；启用后加载并发 `shell/plugins-changed`、重启后仍启用；停用后卸载、数据与设置保留、再启用原样回来；`setup` 失败记为 `failed`；对内置插件或不认识的 id 以 `shell/invalid-input` 拒绝；再次 `kernel/ready` 时内置插件不重复记账、不重复发事件。
-- 导入：标题层级、`####` 留在答案里、代码块里的 `#`、第一个 `# ` 之前的题组、空答案与重复跳过、1 MB 上限、全有或全无。
-- 间隔重复：每个盒子的三种评分、`lapses`、以天计的到期落在一天的开始、`dayStartHour` 边界、没有任务插件时用 4 点、睡眠后恢复。
-- 出题：到期先于新卡、最早到期先出、`newPerDay` 上限与跨天清零、盒子 0 不提前、全部完成返回 `null`。
+| `featherlog [--show] [--dev] [--data-dir <dir>] [--http-port <port>]` | 启动桌面常驻宿主与 `barhttp` API（默认隐藏面板，加 `--show` 立即弹出）；若已有实例运行，发送 `toggle` 命令并退出 |
+| `featherlog status [--json]` | 输出当前所有并发 `WorkSlot`（默认紧凑表格，`--json` 输出纯 JSON） |
+| `featherlog focus <title> [--tag <tag>] [--note <breadcrumb>]` | 聚焦指定槽位（匹配已有或新建），自动将原 `focus` 槽位退为 `running` |
+| `featherlog run <title> [--tag <tag>] [--remind <duration>] [--note <breadcrumb>]` | 创建或切入 `running` 后台推进槽位，支持 `--remind 15m` 定时回看提醒 |
+| `featherlog ready <id-or-substring> [--note <breadcrumb>]` | 按 ID 精确匹配或标题子串（大小写不敏感）将槽位标为 `ready`（待看）并可附断点备忘 |
+| `featherlog done <id-or-substring> [--complete-task]` | 完成并移出匹配槽位（可选同步完成关联任务） |
+| `featherlog note <text> [--task <taskId>]` | 追加一条随笔或任务手记 |
+| `featherlog toggle [--expand \| --collapse] [--json]` | 切换运行中桌面工作台面板的显示/隐藏 |
+
+所有子命令优先通过 Unix Socket 发送给运行中的桌面实例（立即触发实时 UI 与 KDE Dock 刷新及定时器）；若桌面端未运行，则自动以直连本地存储模式执行，保证终端脚本与 AI Agent 随时可用。

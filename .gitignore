@@ -6,3 +6,6 @@ coverage/
 .DS_Store
 .env*
 !.env.example
+/featherlog
+/featherlog.exe
+build/

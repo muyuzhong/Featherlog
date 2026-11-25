@@ -8,27 +8,27 @@ permissions:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-env:
-  electron_config_cache: ${{ github.workspace }}/.electron-cache
 jobs:
   check:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-22.04, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
+        with:
+          version: '11'
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           package-manager-cache: false
           cache: pnpm
-      - uses: actions/cache@v6
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - uses: actions/setup-go@v7
         with:
-          path: ${{ env.electron_config_cache }}
-          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm test ${{ runner.os == 'Linux' && '--coverage' || '' }}
+          go-version-file: go.mod
+      - run: pnpm --dir frontend install --frozen-lockfile
+      - run: pnpm --dir frontend typecheck
+      - run: pnpm --dir frontend test
+      - run: pnpm --dir frontend build
+      - run: CGO_ENABLED=0 go vet ./...
+      - run: go test -race -count=1 ./...
+      - run: CGO_ENABLED=0 go build -o featherlog .
