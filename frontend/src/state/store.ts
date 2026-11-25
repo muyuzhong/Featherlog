@@ -1,5 +1,6 @@
 import type { Clock } from '../lib/clock';
 import { dockGeometry, EXPANDED, planResize, sameGeometry } from '../lib/geometry';
+import { type ActionKey, type Notice, parseLanguage } from '../lib/i18n';
 import { messageOf, omitUndefined } from '../lib/json';
 import type { AppMode } from '../lib/mode';
 import type { Cue } from '../lib/sound';
@@ -8,9 +9,9 @@ import { setCompleted, stepQuota as stepTaskQuota, toggleItem as toggleTaskItem 
 import { periodKeyOf, type ReminderStarts, trackReminders } from '../lib/time';
 import type { Bridge } from '../rpc/bridge';
 import {
-  type BarMode,
   DEFAULT_SETTINGS,
   type DockGeometry,
+  type Language,
   type Note,
   type NoteListInput,
   type Settings,
@@ -46,7 +47,8 @@ export interface UiState {
   newSlotSignal: number;
   composeSignal: number;
   searchSignal: number;
-  notice: string | null;
+  /** the last failed call, worded at render time in the current language */
+  notice: Notice | null;
 }
 
 export interface AppState {
@@ -73,6 +75,8 @@ const QUERY_DEBOUNCE_MS = 160;
 interface Prefs {
   notesScope: NotesScope;
   followSystem: boolean;
+  /** the last language the backend said, so the first frame is already in it */
+  language: Language;
 }
 
 function readPrefs(storage: PrefStorage | null): Partial<Prefs> {
@@ -138,7 +142,7 @@ export class AppStore {
       periodKey: periodKeyOf(deps.clock.now(), DEFAULT_SETTINGS.dayStartHour),
       tasks: [],
       notes: [],
-      settings: { ...DEFAULT_SETTINGS },
+      settings: { ...DEFAULT_SETTINGS, language: parseLanguage(prefs.language) ?? DEFAULT_SETTINGS.language },
       reminders: {},
       ui: {
         expanded: this.panel,
@@ -184,6 +188,7 @@ export class AppStore {
       const [slots, taskList, settings] = await Promise.all([b.workbench.list(), b.tasks.list(), b.settings.get()]);
       const now = this.clock.now();
       const sorted = sortSlots(slots);
+      const hinted = this.#state.settings.language;
       this.#set({
         ready: true,
         slots: sorted,
@@ -192,9 +197,10 @@ export class AppStore {
         tasks: taskList.tasks,
         settings,
       });
+      if (settings.language !== hinted) this.#savePrefs();
     } catch (err) {
       this.#set({ ready: true });
-      this.#notice(`连接后端失败：${messageOf(err)}`);
+      this.#notice('connect', err);
     }
     await this.refreshNotes();
     this.#syncDock();
@@ -251,7 +257,7 @@ export class AppStore {
       return;
     }
     const was = this.#state.ui.panelOpen;
-    const result = await this.#run('切换工作台', () => this.bridge.dock.toggle(open === undefined ? undefined : { expanded: open }));
+    const result = await this.#run('togglePanel', () => this.bridge.dock.toggle(open === undefined ? undefined : { expanded: open }));
     if (!result) return;
     this.#setUi({ panelOpen: result.expanded }, false);
     if (was !== result.expanded) this.#cue(result.expanded ? 'lift' : 'settle');
@@ -288,7 +294,7 @@ export class AppStore {
   }
 
   async quit(): Promise<void> {
-    await this.#run('退出', () => this.bridge.dock.quit());
+    await this.#run('quit', () => this.bridge.dock.quit());
   }
 
   // ---- work slots ----
@@ -296,12 +302,12 @@ export class AppStore {
   async createSlot(input: WorkbenchCreateInput): Promise<WorkSlot | undefined> {
     const title = input.title.trim();
     if (!title) return undefined;
-    const created = await this.#run('新建并发槽', () =>
+    const created = await this.#run('createSlot', () =>
       this.bridge.workbench.create(omitUndefined({ ...input, title, state: input.state ?? 'focus' })),
     );
     if (!created) return undefined;
     // Creating a focus slot demotes the old one: only the list says so.
-    const slots = await this.#run('刷新并发槽', () => this.bridge.workbench.list());
+    const slots = await this.#run('refreshSlots', () => this.bridge.workbench.list());
     this.#applySlots(slots ?? [...this.#state.slots, created], false);
     this.#cue('lift');
     return created;
@@ -311,7 +317,7 @@ export class AppStore {
     const prev = this.#state.slots;
     // Text edits show at once; the reply or an error settles them.
     this.#set({ slots: prev.map((s) => (s.id === input.id ? patchSlot(s, input) : s)) });
-    const slot = await this.#run('保存', () => this.bridge.workbench.update(input));
+    const slot = await this.#run('saveSlot', () => this.bridge.workbench.update(input));
     if (slot) this.#set({ slots: this.#state.slots.map((s) => (s.id === slot.id ? slot : s)) });
     else this.#set({ slots: prev });
   }
@@ -327,7 +333,7 @@ export class AppStore {
     }
     this.#cue(state === 'focus' ? 'lift' : state === 'ready' ? 'tap' : 'settle');
     const input = omitUndefined({ id, state, remindInMinutes });
-    const slots = await this.#run('切换状态', () => this.bridge.workbench.setState(input));
+    const slots = await this.#run('setState', () => this.bridge.workbench.setState(input));
     this.#applySlots(slots ?? prev, false);
   }
 
@@ -341,13 +347,13 @@ export class AppStore {
     const prev = this.#state.slots;
     this.#applySlots(prev.filter((s) => s.id !== id), false);
     this.#cue('done');
-    const slots = await this.#run('完成下台', () => this.bridge.workbench.complete(omitUndefined({ id, completeLinkedTask })));
+    const slots = await this.#run('completeSlot', () => this.bridge.workbench.complete(omitUndefined({ id, completeLinkedTask })));
     this.#applySlots(slots ?? prev, false);
     if (slots && completeLinkedTask) await this.refreshTasks();
   }
 
   async reorderSlots(ids: string[]): Promise<void> {
-    const slots = await this.#run('排序', () => this.bridge.workbench.reorder({ ids }));
+    const slots = await this.#run('reorderSlots', () => this.bridge.workbench.reorder({ ids }));
     if (slots) this.#applySlots(slots, false);
   }
 
@@ -368,13 +374,13 @@ export class AppStore {
   // ---- tasks ----
 
   async refreshTasks(): Promise<void> {
-    const list = await this.#run('刷新任务', () => this.bridge.tasks.list());
+    const list = await this.#run('refreshTasks', () => this.bridge.tasks.list());
     if (list) this.#applyTaskList(list);
   }
 
   async createTask(input: TaskCreateInput): Promise<Task | undefined> {
     if (!input.title.trim()) return undefined;
-    const task = await this.#run('新建任务', () => this.bridge.tasks.create(omitUndefined({ ...input, title: input.title.trim() })));
+    const task = await this.#run('createTask', () => this.bridge.tasks.create(omitUndefined({ ...input, title: input.title.trim() })));
     if (task) {
       this.#upsertTask(task);
       this.#cue('tap');
@@ -383,17 +389,17 @@ export class AppStore {
   }
 
   async updateTask(input: TaskUpdateInput): Promise<void> {
-    const task = await this.#run('保存任务', () => this.bridge.tasks.update(omitUndefined(input)));
+    const task = await this.#run('saveTask', () => this.bridge.tasks.update(omitUndefined(input)));
     if (task) this.#upsertTask(task);
   }
 
   async setItems(id: string, items: TaskItemInput[]): Promise<void> {
-    const task = await this.#run('保存子项', () => this.bridge.tasks.setItems({ id, items: items.map((i) => omitUndefined(i)) }));
+    const task = await this.#run('saveItems', () => this.bridge.tasks.setItems({ id, items: items.map((i) => omitUndefined(i)) }));
     if (task) this.#upsertTask(task);
   }
 
   async toggleItem(taskId: string, itemId: string, done?: boolean): Promise<void> {
-    await this.#optimisticTask(taskId, (t) => toggleTaskItem(t, itemId, done), '勾选', () =>
+    await this.#optimisticTask(taskId, (t) => toggleTaskItem(t, itemId, done), 'toggleItem', () =>
       this.bridge.tasks.toggleItem(omitUndefined({ taskId, itemId, done })),
     );
     this.#cue('tap');
@@ -401,7 +407,7 @@ export class AppStore {
 
   async stepQuota(id: string, delta: 1 | -1, itemId?: string): Promise<void> {
     const before = this.#state.tasks.find((t) => t.id === id);
-    await this.#optimisticTask(id, (t) => stepTaskQuota(t, delta, itemId, this.clock.now()), '计数', () =>
+    await this.#optimisticTask(id, (t) => stepTaskQuota(t, delta, itemId, this.clock.now()), 'stepQuota', () =>
       this.bridge.tasks.stepQuota(omitUndefined({ id, itemId, delta })),
     );
     const after = this.#state.tasks.find((t) => t.id === id);
@@ -409,14 +415,14 @@ export class AppStore {
   }
 
   async completeTask(id: string, completed: boolean): Promise<void> {
-    await this.#optimisticTask(id, (t) => setCompleted(t, completed, this.clock.now()), '完成任务', () =>
+    await this.#optimisticTask(id, (t) => setCompleted(t, completed, this.clock.now()), 'completeTask', () =>
       this.bridge.tasks.complete({ id, completed }),
     );
     this.#cue(completed ? 'done' : 'tap');
   }
 
   async deleteTask(id: string): Promise<void> {
-    const ok = await this.#run('删除任务', () => this.bridge.tasks.delete({ id }));
+    const ok = await this.#run('deleteTask', () => this.bridge.tasks.delete({ id }));
     if (ok === undefined) return;
     this.#set({ tasks: this.#state.tasks.filter((t) => t.id !== id) });
     if (this.#state.ui.selectedTaskId === id) this.selectTask(null);
@@ -433,7 +439,7 @@ export class AppStore {
     const input: TaskUpdateInput = daily
       ? { id, recurrence: { freq: 'daily' }, ...(old.deadline ? { deadline: null } : {}) }
       : { id, recurrence: null };
-    const task = await this.#run('切换每日重置', () => this.bridge.tasks.update(input));
+    const task = await this.#run('dailyReset', () => this.bridge.tasks.update(input));
     if (task) this.#upsertTask(task);
   }
 
@@ -466,7 +472,7 @@ export class AppStore {
       this.#set({ notes: [] });
       return;
     }
-    const notes = await this.#run('读取随笔', () => this.bridge.notes.list(filter));
+    const notes = await this.#run('loadNotes', () => this.bridge.notes.list(filter));
     // A slower, older request must not overwrite a newer filter's answer.
     if (notes && req === this.#notesReq) this.#set({ notes });
   }
@@ -490,7 +496,7 @@ export class AppStore {
     const text = content.trim();
     if (!text) return false;
     const taskId = this.#state.ui.notesScope === 'focus' ? this.notesContextTaskId() : null;
-    const note = await this.#run('保存随笔', () => this.bridge.notes.create({ content: text, taskId }));
+    const note = await this.#run('saveNote', () => this.bridge.notes.create({ content: text, taskId }));
     if (!note) return false;
     this.#cue('tap');
     await this.refreshNotes();
@@ -500,14 +506,14 @@ export class AppStore {
   async updateNote(id: string, content: string): Promise<boolean> {
     const text = content.trim();
     if (!text) return false;
-    const note = await this.#run('保存随笔', () => this.bridge.notes.update({ id, content: text }));
+    const note = await this.#run('saveNote', () => this.bridge.notes.update({ id, content: text }));
     if (!note) return false;
     this.#set({ notes: this.#state.notes.map((n) => (n.id === id ? note : n)) });
     return true;
   }
 
   async deleteNote(id: string): Promise<void> {
-    const ok = await this.#run('删除随笔', () => this.bridge.notes.delete({ id }));
+    const ok = await this.#run('deleteNote', () => this.bridge.notes.delete({ id }));
     if (ok === undefined) return;
     this.#set({ notes: this.#state.notes.filter((n) => n.id !== id) });
   }
@@ -517,7 +523,7 @@ export class AppStore {
   async updateSettings(patch: Partial<Settings>): Promise<void> {
     const prev = this.#state.settings;
     this.#applySettings({ ...prev, ...patch });
-    const settings = await this.#run('保存设置', () => this.bridge.settings.update(patch));
+    const settings = await this.#run('saveSettings', () => this.bridge.settings.update(patch));
     this.#applySettings(settings ?? prev);
   }
 
@@ -530,8 +536,14 @@ export class AppStore {
     if (this.#state.ui.systemDark !== systemDark) this.#setUi({ systemDark }, false);
   }
 
-  async setBarMode(barMode: BarMode): Promise<void> {
-    if (this.#state.settings.barMode !== barMode) await this.updateSettings({ barMode });
+  async setLanguage(language: Language): Promise<void> {
+    if (this.#state.settings.language !== language) await this.updateSettings({ language });
+  }
+
+  /** The hour a new day starts, 0-23, wrapping around midnight. */
+  async setDayStartHour(hour: number): Promise<void> {
+    const dayStartHour = ((Math.round(hour) % 24) + 24) % 24;
+    if (this.#state.settings.dayStartHour !== dayStartHour) await this.updateSettings({ dayStartHour });
   }
 
   /** Forget where the standalone bar was dragged; the host puts it back in its default place. */
@@ -565,13 +577,17 @@ export class AppStore {
 
   #setUi(patch: Partial<UiState>, persist = true): void {
     this.#set({ ui: { ...this.#state.ui, ...patch } });
-    if (persist && this.#prefs) {
-      const { notesScope, followSystem } = this.#state.ui;
-      try {
-        this.#prefs.setItem(PREFS_KEY, JSON.stringify({ notesScope, followSystem }));
-      } catch {
-        // Preferences are a convenience; a blocked storage loses only them.
-      }
+    if (persist) this.#savePrefs();
+  }
+
+  #savePrefs(): void {
+    if (!this.#prefs) return;
+    const { notesScope, followSystem } = this.#state.ui;
+    const prefs: Prefs = { notesScope, followSystem, language: this.#state.settings.language };
+    try {
+      this.#prefs.setItem(PREFS_KEY, JSON.stringify(prefs));
+    } catch {
+      // Preferences are a convenience; a blocked storage loses only them.
     }
   }
 
@@ -594,8 +610,10 @@ export class AppStore {
 
   #applySettings(settings: Settings): void {
     const pinnedChanged = settings.pinned !== this.#state.settings.pinned;
+    const languageChanged = settings.language !== this.#state.settings.language;
     this.#set({ settings });
     if (pinnedChanged) this.#syncDock();
+    if (languageChanged) this.#savePrefs();
   }
 
   #upsertTask(task: Task): void {
@@ -603,7 +621,7 @@ export class AppStore {
     this.#set({ tasks: exists ? this.#state.tasks.map((t) => (t.id === task.id ? task : t)) : [...this.#state.tasks, task] });
   }
 
-  async #optimisticTask(id: string, local: (t: Task) => Task, label: string, remote: () => Promise<Task>): Promise<void> {
+  async #optimisticTask(id: string, local: (t: Task) => Task, action: ActionKey, remote: () => Promise<Task>): Promise<void> {
     const before = this.#state.tasks.find((t) => t.id === id);
     if (!before) return;
     try {
@@ -611,22 +629,22 @@ export class AppStore {
     } catch {
       // The backend decides; the local guess only makes the click feel instant.
     }
-    const task = await this.#run(label, remote);
+    const task = await this.#run(action, remote);
     this.#upsertTask(task ?? before);
   }
 
-  async #run<T>(label: string, fn: () => Promise<T>): Promise<T | undefined> {
+  async #run<T>(action: ActionKey, fn: () => Promise<T>): Promise<T | undefined> {
     try {
       return await fn();
     } catch (err) {
-      this.#notice(`${label}失败：${messageOf(err)}`);
+      this.#notice(action, err);
       return undefined;
     }
   }
 
-  #notice(text: string): void {
+  #notice(action: ActionKey, err: unknown): void {
     this.#cancelNotice?.();
-    this.#setUi({ notice: text }, false);
+    this.#setUi({ notice: { action, detail: messageOf(err) } }, false);
     this.#cancelNotice = this.clock.setTimeout(() => {
       this.#cancelNotice = null;
       this.#setUi({ notice: null }, false);
@@ -644,7 +662,7 @@ export class AppStore {
     this.#lastHideAt = now;
     this.#cue('settle');
     const geom: DockGeometry = { width: EXPANDED.width, height: EXPANDED.height, expanded: false, pinned: this.#state.settings.pinned };
-    this.bridge.dock.resize(geom).catch((err: unknown) => this.#notice(`收起面板失败：${messageOf(err)}`));
+    this.bridge.dock.resize(geom).catch((err: unknown) => this.#notice('hidePanel', err));
   }
 
   #syncDock(): void {
@@ -660,7 +678,7 @@ export class AppStore {
     this.#timers = [];
     for (const step of steps) {
       const send = (): void => {
-        this.bridge.dock.resize(step.geom).catch((err: unknown) => this.#notice(`调整窗口失败：${messageOf(err)}`));
+        this.bridge.dock.resize(step.geom).catch((err: unknown) => this.#notice('resizeWindow', err));
       };
       if (step.delayMs === 0) send();
       else this.#timers.push(this.clock.setTimeout(send, step.delayMs));

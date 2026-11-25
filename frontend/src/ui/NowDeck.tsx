@@ -3,7 +3,7 @@ import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { SPRING } from '../lib/geometry';
 import { formatClock, formatElapsed, reminderProgress } from '../lib/time';
 import type { WorkSlot, WorkSlotState } from '../rpc/types';
-import { useAppState, useNow, useStore } from '../state/react';
+import { useAppState, useNow, useStore, useT } from '../state/react';
 import { Elapsed, ReadyTag, Segmented } from './bits';
 import { ArrowUpRight, CornerDownRight, Plus, X } from './icons';
 import { InlineText, isImeKey } from './InlineText';
@@ -13,6 +13,7 @@ const REMIND_STEPS = [10, 20, 45] as const;
 /** The upper half: every slot in flight as an index card, the focus one lifted out of the tray. */
 export function NowDeck() {
   const { slots, ui } = useAppState();
+  const t = useT();
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
@@ -20,14 +21,14 @@ export function NowDeck() {
   }, [ui.newSlotSignal]);
 
   return (
-    <section className="deck" aria-label="此刻并发">
+    <section className="deck" aria-label={t.deck.region}>
       <div className="deck-head">
-        <span className="section-title">此刻</span>
-        <span className="deck-count tnum">{slots.length} 张</span>
-        <span className="deck-hint">Alt+1–9 切专注 · Alt+N 新建 · 双击收起栏里的卡片直达</span>
+        <span className="section-title">{t.deck.title}</span>
+        <span className="deck-count tnum">{t.deck.count(slots.length)}</span>
+        <span className="deck-hint">{t.deck.hint}</span>
         <button type="button" className="ghost-btn" onClick={() => setAdding(true)}>
           <Plus />
-          新卡
+          {t.deck.newCard}
         </button>
       </div>
       <div className="deck-row">
@@ -41,7 +42,7 @@ export function NowDeck() {
         </LayoutGroup>
         {slots.length === 0 && !adding && (
           <button type="button" className="deck-empty" onClick={() => setAdding(true)}>
-            手上没有并发的事。开一张卡，写下正在做什么。
+            {t.deck.empty}
           </button>
         )}
       </div>
@@ -49,15 +50,12 @@ export function NowDeck() {
   );
 }
 
-const STATE_OPTIONS: { value: WorkSlotState; label: string }[] = [
-  { value: 'focus', label: '专注' },
-  { value: 'running', label: '后台' },
-  { value: 'ready', label: '待看' },
-];
+const STATES: readonly WorkSlotState[] = ['focus', 'running', 'ready'];
 
 function SlotCard({ slot, index, highlighted }: { slot: WorkSlot; index: number; highlighted: boolean }) {
   const store = useStore();
   const { tasks, reminders } = useAppState();
+  const t = useT();
   const [confirming, setConfirming] = useState(false);
   const ref = useRef<HTMLElement>(null);
   const task = slot.linkedTaskId ? tasks.find((t) => t.id === slot.linkedTaskId) : undefined;
@@ -95,14 +93,14 @@ function SlotCard({ slot, index, highlighted }: { slot: WorkSlot; index: number;
           <InlineText
             className="card-tag"
             value={slot.tag ?? ''}
-            label="项目标签"
-            placeholder="标签"
+            label={t.slot.tag}
+            placeholder={t.slot.tagPlaceholder}
             allowEmpty
             maxLength={24}
             onCommit={(tag) => void store.updateSlot({ id: slot.id, tag })}
           />
           <span className="card-status">
-            {slot.state === 'focus' && <span className="status-word">专注中</span>}
+            {slot.state === 'focus' && <span className="status-word">{t.slot.focusing}</span>}
             {slot.state === 'running' && <Elapsed since={slot.stateChangedAt} />}
             {slot.state === 'ready' && <ReadyTag />}
           </span>
@@ -110,7 +108,7 @@ function SlotCard({ slot, index, highlighted }: { slot: WorkSlot; index: number;
         <InlineText
           className="card-title"
           value={slot.title}
-          label="标题"
+          label={t.slot.title}
           maxLength={80}
           onCommit={(title) => void store.updateSlot({ id: slot.id, title })}
         />
@@ -118,8 +116,8 @@ function SlotCard({ slot, index, highlighted }: { slot: WorkSlot; index: number;
           <CornerDownRight />
           <InlineText
             value={slot.breadcrumb}
-            label="断点备忘"
-            placeholder="切走前记半句：下一步干嘛 / 等什么结果…"
+            label={t.slot.crumb}
+            placeholder={t.slot.crumbPlaceholder}
             allowEmpty
             maxLength={140}
             onCommit={(breadcrumb) => void store.updateSlot({ id: slot.id, breadcrumb })}
@@ -128,7 +126,7 @@ function SlotCard({ slot, index, highlighted }: { slot: WorkSlot; index: number;
         <div className="card-meta">
           <SlotMeta slot={slot} />
           {task && (
-            <span className="card-task" title={`关联任务：${task.title}`}>
+            <span className="card-task" title={t.slot.linkedTask(task.title)}>
               <ArrowUpRight />
               {task.title}
             </span>
@@ -136,8 +134,8 @@ function SlotCard({ slot, index, highlighted }: { slot: WorkSlot; index: number;
         </div>
         <div className="card-actions">
           {confirming ? (
-            <span className="confirm" role="group" aria-label="完成下台">
-              <span className="confirm-q">下台时</span>
+            <span className="confirm" role="group" aria-label={t.slot.wrapUp}>
+              <span className="confirm-q">{t.slot.wrapUpQuestion}</span>
               <button
                 type="button"
                 className="text-btn strong"
@@ -146,7 +144,7 @@ function SlotCard({ slot, index, highlighted }: { slot: WorkSlot; index: number;
                   void store.completeSlot(slot.id, true);
                 }}
               >
-                连任务一起完成
+                {t.slot.wrapUpWithTask}
               </button>
               <button
                 type="button"
@@ -156,9 +154,9 @@ function SlotCard({ slot, index, highlighted }: { slot: WorkSlot; index: number;
                   void store.completeSlot(slot.id, false);
                 }}
               >
-                只下台
+                {t.slot.wrapUpOnly}
               </button>
-              <button type="button" className="icon-btn tiny" aria-label="取消" onClick={() => setConfirming(false)}>
+              <button type="button" className="icon-btn tiny" aria-label={t.slot.cancel} onClick={() => setConfirming(false)}>
                 <X />
               </button>
             </span>
@@ -166,14 +164,14 @@ function SlotCard({ slot, index, highlighted }: { slot: WorkSlot; index: number;
             <>
               <Segmented<WorkSlotState>
                 id={`state-${slot.id}`}
-                label="状态"
+                label={t.slot.stateGroup}
                 compact
                 value={slot.state}
-                options={STATE_OPTIONS}
+                options={STATES.map((value) => ({ value, label: t.slot.states[value] }))}
                 onChange={(state) => void store.setSlotState(slot.id, state)}
               />
               <button type="button" className="text-btn" onClick={complete}>
-                完成下台
+                {t.slot.wrapUp}
               </button>
             </>
           )}
@@ -186,37 +184,40 @@ function SlotCard({ slot, index, highlighted }: { slot: WorkSlot; index: number;
 
 function SlotMeta({ slot }: { slot: WorkSlot }) {
   const store = useStore();
+  const t = useT();
   const now = useNow(1000);
   if (slot.state !== 'running') {
     return (
       <span className="meta-text">
-        {slot.state === 'focus' ? '专注了 ' : '已等你 '}
+        {slot.state === 'focus' ? t.slot.focusedFor : t.slot.waitingFor}
         <span className="tnum">{formatElapsed(now - slot.stateChangedAt)}</span>
       </span>
     );
   }
   return (
-    <span className="remind" role="group" aria-label="回看提醒">
+    <span className="remind" role="group" aria-label={t.slot.reminderGroup}>
       {slot.remindAt != null ? (
-        <span className="meta-text" title={`${formatClock(slot.remindAt)} 回看`}>
-          还剩 <span className="tnum">{formatElapsed(Math.max(0, slot.remindAt - now))}</span>
+        <span className="meta-text" title={t.slot.checkBackAt(formatClock(slot.remindAt))}>
+          {t.slot.leftBefore}
+          <span className="tnum">{formatElapsed(Math.max(0, slot.remindAt - now))}</span>
+          {t.slot.leftAfter}
         </span>
       ) : (
-        <span className="meta-text">回看</span>
+        <span className="meta-text">{t.slot.checkBack}</span>
       )}
       {REMIND_STEPS.map((m) => (
         <button
           key={m}
           type="button"
           className="remind-step tnum"
-          aria-label={`${m} 分钟后提醒回看`}
+          aria-label={t.slot.remindIn(m)}
           onClick={() => void store.setSlotState(slot.id, 'running', m)}
         >
           +{m}m
         </button>
       ))}
       {slot.remindAt != null && (
-        <button type="button" className="icon-btn tiny" aria-label="取消提醒" onClick={() => void store.setSlotState(slot.id, 'running', null)}>
+        <button type="button" className="icon-btn tiny" aria-label={t.slot.cancelReminder} onClick={() => void store.setSlotState(slot.id, 'running', null)}>
           <X />
         </button>
       )}
@@ -226,10 +227,11 @@ function SlotMeta({ slot }: { slot: WorkSlot }) {
 
 /** A 1px ink rule along the card's foot: how much of the wait has passed. */
 function ReminderLine({ start, remindAt }: { start: number; remindAt: number }) {
+  const t = useT();
   const now = useNow(1000);
   const progress = reminderProgress({ start, remindAt }, now);
   return (
-    <div className="card-progress" role="progressbar" aria-label="回看倒计时" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+    <div className="card-progress" role="progressbar" aria-label={t.slot.countdown} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
       <span style={{ transform: `scaleX(${progress})` }} />
     </div>
   );
@@ -237,6 +239,7 @@ function ReminderLine({ start, remindAt }: { start: number; remindAt: number }) 
 
 function NewSlotCard({ onDone }: { onDone: () => void }) {
   const store = useStore();
+  const t = useT();
   const [title, setTitle] = useState('');
   const [tag, setTag] = useState('');
   const titleRef = useRef<HTMLInputElement>(null);
@@ -276,11 +279,11 @@ function NewSlotCard({ onDone }: { onDone: () => void }) {
     >
       <div className="card-body">
         <div className="card-head">
-          <span className="card-index">新</span>
+          <span className="card-index">{t.slot.newIndex}</span>
           <input
             className="inline card-tag"
-            aria-label="新卡标签"
-            placeholder="标签（可选）"
+            aria-label={t.slot.newTag}
+            placeholder={t.slot.newTagPlaceholder}
             value={tag}
             maxLength={24}
             onChange={(e) => setTag(e.target.value)}
@@ -290,14 +293,14 @@ function NewSlotCard({ onDone }: { onDone: () => void }) {
         <input
           ref={titleRef}
           className="inline card-title"
-          aria-label="新卡标题"
-          placeholder="正在做什么？回车上台"
+          aria-label={t.slot.newTitle}
+          placeholder={t.slot.newTitlePlaceholder}
           value={title}
           maxLength={80}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={onKeyDown}
         />
-        <p className="card-new-hint">回车开始专注 · Esc 放弃</p>
+        <p className="card-new-hint">{t.slot.newHint}</p>
       </div>
     </motion.article>
   );

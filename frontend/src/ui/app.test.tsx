@@ -5,8 +5,8 @@ import { flush, MIN, renderApp } from '../test/fixtures';
 
 const trayChips = () => within(screen.getByRole('list', { name: '并发工作槽' })).getAllByRole('listitem');
 const card = (n: number) => screen.getByRole('article', { name: new RegExp(`^${n}\\. `) });
-const rowOf = (title: string) => {
-  const tasks = screen.getByRole('list', { name: '待办列表' });
+const rowOf = (title: string, list = '待办列表') => {
+  const tasks = screen.getByRole('list', { name: list });
   const li = within(tasks).getByDisplayValue(title).closest('li');
   if (!li) throw new Error(`no row for ${title}`);
   return li;
@@ -196,39 +196,291 @@ describe('standalone bar window (?mode=bar)', () => {
   });
 });
 
-describe('bar settings in the workbench', () => {
-  it('the header switches the bar between 自动, 滚筒 and 托盘', async () => {
-    const { bridge } = await renderApp({ expanded: true });
+describe('header', () => {
+  it('keeps only the name, the search and three icon buttons: settings, pin, collapse', async () => {
+    const { container } = await renderApp({ expanded: true });
+    const head = container.querySelector('.head') as HTMLElement;
+    expect(within(head).getByText('羽记').className).toBe('wordmark');
+    expect(container.querySelector('.head-date, .head-sub')).toBeNull();
+    expect(head.textContent).not.toMatch(/换日|月\d+日|周[一二三四五六日]/);
+    const right = head.querySelector('.head-right') as HTMLElement;
+    expect(within(right).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['设置', '钉住面板', '收起']);
+    expect(within(head).queryByRole('radiogroup')).toBeNull();
+    expect(head.textContent).not.toMatch(/常驻条|自动|托盘/);
+  });
+});
+
+describe('settings popover', () => {
+  const gear = () => screen.getByRole('button', { name: '设置' });
+  const openSettings = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(gear());
+    return screen.getByRole('dialog', { name: '设置' });
+  };
+
+  it('opens under the gear with language, theme, sound and day rollover, and no volume slider', async () => {
+    await renderApp({ expanded: true });
     const user = userEvent.setup();
-    const group = screen.getByRole('radiogroup', { name: '常驻条' });
-    expect(within(group).getByRole('radio', { name: '常驻条：自动' }).getAttribute('aria-checked')).toBe('true');
-    await user.click(within(group).getByRole('radio', { name: '常驻条：滚筒' }));
-    await flush();
-    expect((await bridge.settings.get()).barMode).toBe('standalone');
-    expect(within(group).getByRole('radio', { name: '常驻条：滚筒' }).getAttribute('aria-checked')).toBe('true');
-    await user.click(within(group).getByRole('radio', { name: '常驻条：托盘' }));
-    await flush();
-    expect((await bridge.settings.get()).barMode).toBe('tray-only');
+    expect(gear().getAttribute('aria-expanded')).toBe('false');
+    const pop = await openSettings(user);
+    expect(gear().getAttribute('aria-expanded')).toBe('true');
+    expect(gear().closest('.settings-anchor')?.contains(pop)).toBe(true);
+    expect(within(pop).getAllByRole('radiogroup').map((g) => g.getAttribute('aria-label'))).toEqual(['语言', '外观']);
+    expect(within(pop).getAllByRole('radio').map((r) => r.textContent)).toEqual(['简体中文', 'English', '纸石', '石墨', '跟随系统']);
+    expect(within(pop).getByRole('switch', { name: '提示音' }).getAttribute('aria-checked')).toBe('true');
+    expect(within(pop).getByRole('spinbutton', { name: '换日时间' }).textContent).toBe('04:00');
+    expect(within(pop).queryByRole('slider')).toBeNull();
+    expect(pop.querySelector('input[type="range"]')).toBeNull();
+    expect(pop.textContent).not.toMatch(/音量|volume/i);
+    // The bar was never dragged: nothing to reset.
+    expect(within(pop).queryByRole('button', { name: '重置滚筒位置' })).toBeNull();
   });
 
-  it('Ctrl+K switches the bar mode and puts the bar back in its default place', async () => {
+  it('closes on Esc without hiding the workbench, and on a click outside', async () => {
+    const { store } = await renderApp({ expanded: true });
+    const user = userEvent.setup();
+    await openSettings(user);
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(store.getState().ui.expanded).toBe(true);
+    expect(gear().getAttribute('aria-expanded')).toBe('false');
+
+    await openSettings(user);
+    await user.click(screen.getByRole('heading', { name: '待办' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(store.getState().ui.expanded).toBe(true);
+
+    // A second press on the gear closes it too.
+    await openSettings(user);
+    await user.click(gear());
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('a click inside keeps it open', async () => {
+    await renderApp({ expanded: true });
+    const user = userEvent.setup();
+    const pop = await openSettings(user);
+    await user.click(within(pop).getByRole('switch', { name: '提示音' }));
+    expect(screen.getByRole('dialog', { name: '设置' })).toBeTruthy();
+  });
+
+  it('switches 纸石, 石墨 and 跟随系统', async () => {
+    const { bridge } = await renderApp({ expanded: true });
+    const user = userEvent.setup();
+    const pop = await openSettings(user);
+    const theme = within(pop).getByRole('radiogroup', { name: '外观' });
+    expect(document.documentElement.dataset.theme).toBe('stone');
+    await user.click(within(theme).getByRole('radio', { name: '石墨' }));
+    await flush();
+    expect(document.documentElement.dataset.theme).toBe('graphite');
+    expect((await bridge.settings.get()).theme).toBe('graphite');
+    await user.click(within(theme).getByRole('radio', { name: '跟随系统' }));
+    await flush();
+    expect(within(theme).getByRole('radio', { name: '跟随系统' }).getAttribute('aria-checked')).toBe('true');
+    // The test desktop is light.
+    expect(document.documentElement.dataset.theme).toBe('stone');
+  });
+
+  it('turns the sound off and on with one switch', async () => {
+    const { bridge } = await renderApp({ expanded: true });
+    const user = userEvent.setup();
+    const pop = await openSettings(user);
+    const sound = within(pop).getByRole('switch', { name: '提示音' });
+    expect(sound.textContent).toBe('开启');
+    await user.click(sound);
+    await flush();
+    expect(sound.getAttribute('aria-checked')).toBe('false');
+    expect(sound.textContent).toBe('静音');
+    expect((await bridge.settings.get()).sound).toBe(false);
+    await user.click(sound);
+    await flush();
+    expect((await bridge.settings.get()).sound).toBe(true);
+  });
+
+  it('steps the day rollover by the hour, wrapping round midnight, by button or arrow key', async () => {
+    const { bridge } = await renderApp({ expanded: true });
+    const user = userEvent.setup();
+    const pop = await openSettings(user);
+    const hour = within(pop).getByRole('spinbutton', { name: '换日时间' });
+    await user.click(within(pop).getByRole('button', { name: '推后一小时' }));
+    await flush();
+    expect(hour.textContent).toBe('05:00');
+    expect(hour.getAttribute('aria-valuenow')).toBe('5');
+    expect((await bridge.settings.get()).dayStartHour).toBe(5);
+    for (let i = 0; i < 6; i++) await user.click(within(pop).getByRole('button', { name: '提前一小时' }));
+    await flush();
+    expect(hour.textContent).toBe('23:00');
+    expect((await bridge.settings.get()).dayStartHour).toBe(23);
+    hour.focus();
+    await user.keyboard('{ArrowUp}');
+    await flush();
+    expect(hour.textContent).toBe('00:00');
+    await user.keyboard('{End}');
+    await flush();
+    expect((await bridge.settings.get()).dayStartHour).toBe(23);
+    // Arrow keys on the hour never reach the window: the popover stays.
+    expect(screen.getByRole('dialog', { name: '设置' })).toBeTruthy();
+  });
+
+  it('offers 重置滚筒位置 only once the bar was dragged, and resets it with nulls', async () => {
+    const { bridge } = await renderApp({ expanded: true });
+    const user = userEvent.setup();
+    const update = vi.spyOn(bridge.settings, 'update');
+    await act(() => bridge.settings.update({ barX: 300, barY: 1040 }));
+    await flush();
+    const pop = await openSettings(user);
+    await user.click(within(pop).getByRole('button', { name: '重置滚筒位置' }));
+    await flush();
+    expect(update).toHaveBeenLastCalledWith({ barX: null, barY: null });
+    expect((await bridge.settings.get())).not.toHaveProperty('barX');
+    expect(within(pop).queryByRole('button', { name: '重置滚筒位置' })).toBeNull();
+  });
+
+  it('Ctrl+K resets the bar position only when there is one to forget, and offers no bar mode', async () => {
     const { bridge } = await renderApp({ expanded: true });
     const user = userEvent.setup();
     const update = vi.spyOn(bridge.settings, 'update');
     const box = screen.getByRole('combobox', { name: '搜索槽位、任务或命令' });
     await user.click(box);
+    await user.type(box, '滚筒');
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['命令在随笔里搜「滚筒」']);
+    await user.clear(box);
     await user.type(box, '常驻条');
-    const labels = screen.getAllByRole('option').map((o) => o.textContent);
-    expect(labels).toEqual(['命令在随笔里搜「常驻条」', '命令常驻条改为「滚筒」', '命令常驻条改为「托盘」']);
-    await user.keyboard('{ArrowDown}{Enter}');
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['命令在随笔里搜「常驻条」']);
+    await user.keyboard('{Escape}');
+    await act(() => bridge.settings.update({ barX: 12 }));
     await flush();
-    expect((await bridge.settings.get()).barMode).toBe('standalone');
     await user.click(box);
     await user.type(box, '重置滚筒');
-    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['命令在随笔里搜「重置滚筒」', '命令重置滚筒条位置']);
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['命令在随笔里搜「重置滚筒」', '命令重置滚筒位置']);
     await user.keyboard('{ArrowDown}{Enter}');
     await flush();
     expect(update).toHaveBeenLastCalledWith({ barX: null, barY: null });
+  });
+});
+
+describe('中文 / English', () => {
+  const switchTo = async (user: ReturnType<typeof userEvent.setup>, from: '设置' | 'Settings', name: '简体中文' | 'English') => {
+    await user.click(screen.getByRole('button', { name: from }));
+    const pop = screen.getByRole('dialog', { name: from });
+    await user.click(within(pop).getByRole('radio', { name }));
+    await flush();
+  };
+
+  it('switches the whole workbench at once, and back', async () => {
+    const { bridge, container } = await renderApp({ expanded: true });
+    const user = userEvent.setup();
+    expect(document.documentElement.lang).toBe('zh-CN');
+    await switchTo(user, '设置', 'English');
+    expect((await bridge.settings.get()).language).toBe('en');
+    expect(document.documentElement.lang).toBe('en');
+    expect(document.title).toBe('Featherlog');
+
+    // The popover itself, still open, has turned.
+    const pop = screen.getByRole('dialog', { name: 'Settings' });
+    expect(within(pop).getAllByRole('radiogroup').map((g) => g.getAttribute('aria-label'))).toEqual(['Language', 'Theme']);
+    expect(within(pop).getAllByRole('radio').map((r) => r.textContent)).toEqual(['简体中文', 'English', 'Stone', 'Graphite', 'System']);
+    expect(within(pop).getByRole('switch', { name: 'Sound' }).textContent).toBe('On');
+    expect(within(pop).getByRole('spinbutton', { name: 'Day rollover' })).toBeTruthy();
+    await user.keyboard('{Escape}');
+
+    // Header and search.
+    expect(container.querySelector('.wordmark')?.textContent).toBe('Featherlog');
+    expect(screen.getByRole('combobox', { name: 'Search slots, todos or commands' }).getAttribute('placeholder')).toBe('Jump to a slot, todo or command…');
+    expect(screen.getByRole('button', { name: 'Pin panel' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Collapse' })).toBeTruthy();
+
+    // Now deck.
+    expect(screen.getByRole('region', { name: 'In flight now' }).textContent).toContain('3 cards');
+    expect(within(card(1)).getByText('In focus')).toBeTruthy();
+    expect(within(card(1)).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Focus', 'Running', 'Ready']);
+    expect(within(card(2)).getAllByRole('button', { name: /^Remind me to check back in \d+ min$/ })).toHaveLength(3);
+    expect(within(card(3)).getByText('READY').className).toBe('ready-tag');
+    expect(within(card(1)).getByRole('button', { name: 'Wrap up' })).toBeTruthy();
+
+    // Todos: tally, quick add, deadline, quota and the details.
+    const todos = screen.getByRole('region', { name: 'Todos' });
+    expect(within(todos).getByRole('heading', { name: 'Todos' })).toBeTruthy();
+    expect(within(todos).getByLabelText('1 of 8 done').textContent).toBe('1/8');
+    expect(within(todos).getByRole('textbox', { name: 'New todo' }).getAttribute('placeholder')).toBe('New todo, Enter to add (end with ×5 for a count)');
+    expect(within(rowOf('整理 seamline 的 flaky 用例清单', 'Todo list')).getByText('1 day overdue')).toBeTruthy();
+    expect(within(rowOf('压测 barhttp 长轮询', 'Todo list')).getByRole('group', { name: 'Count 2/6' })).toBeTruthy();
+    const row = rowOf('v2 前端：面板模式联调', 'Todo list');
+    expect(within(row).getByText('Steps 1/4')).toBeTruthy();
+    await user.click(within(row).getByRole('button', { name: 'Show details' }));
+    expect(within(row).getByRole('switch', { name: 'Daily reset' })).toBeTruthy();
+    expect(within(row).getByRole('textbox', { name: 'Add step' })).toBeTruthy();
+    expect(within(row).getByRole('button', { name: 'Delete todo' })).toBeTruthy();
+    expect(within(rowOf('看一眼夜间构建', 'Todo list')).getByRole('button', { name: 'Show details' })).toBeTruthy();
+
+    // Notes.
+    const notes = screen.getByRole('region', { name: 'Notes' });
+    expect(within(notes).getAllByRole('radio').map((r) => r.textContent)).toEqual(['All notes', 'Focus notes']);
+    expect(within(notes).getByRole('textbox', { name: 'Search notes' })).toBeTruthy();
+    expect(within(notes).getByRole('textbox', { name: 'New note' }).getAttribute('placeholder')).toBe('Jot something down…');
+    expect(within(notes).getAllByRole('button', { name: 'Delete this note' }).length).toBeGreaterThan(0);
+
+    // No Chinese left in the chrome: what is still Chinese is the user's own text.
+    const chrome = [...container.querySelectorAll('button, [aria-label], [placeholder], .section-title, .deck-hint, .empty, .meta-text, .task-meta')]
+      .filter((el) => !el.closest('.inline, .note-body') && !(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement))
+      .flatMap((el) => [el.getAttribute('aria-label') ?? '', el.getAttribute('placeholder') ?? '', el.matches('button, .section-title, .deck-hint, .empty') ? (el.textContent ?? '') : ''])
+      .filter((text) => /[\u4e00-\u9fff]/.test(text));
+    const userText = ['v2 前端', '压测', 'clipnest', 'seamline', 'frontend README', '夜间构建', '待审 PR', 'MyGo', '底部卡槽', 'Claude', 'Codex', '收起态', '面板铺满', 'Esc / 失焦', 'Go 宿主'];
+    expect(chrome.filter((text) => !userText.some((u) => text.includes(u)))).toEqual([]);
+
+    await switchTo(user, 'Settings', '简体中文');
+    expect(document.documentElement.lang).toBe('zh-CN');
+    expect(container.querySelector('.wordmark')?.textContent).toBe('羽记');
+    expect(screen.getByRole('region', { name: '待办' })).toBeTruthy();
+    expect(card(3).querySelector('.ready-tag')?.textContent).toBe('待看');
+  });
+
+  it('Ctrl+K switches the language from either side, and words its commands in it', async () => {
+    const { bridge } = await renderApp({ expanded: true });
+    const user = userEvent.setup();
+    let box = screen.getByRole('combobox', { name: '搜索槽位、任务或命令' });
+    await user.click(box);
+    await user.type(box, 'english');
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['命令在随笔里搜「english」', '命令切换语言为 English']);
+    await user.keyboard('{ArrowDown}{Enter}');
+    await flush();
+    expect((await bridge.settings.get()).language).toBe('en');
+
+    box = screen.getByRole('combobox', { name: 'Search slots, todos or commands' });
+    await user.click(box);
+    await user.type(box, 'PR');
+    const options = screen.getAllByRole('option').map((o) => o.textContent);
+    expect(options).toContain('Todo过一遍待审 PR');
+    expect(options[0]).toBe('SlotClaude 在跑 e2e 回归Alt+2');
+    await user.clear(box);
+    await user.type(box, '语言');
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['CommandSearch notes for “语言”', 'CommandSwitch language to 简体中文']);
+    await user.keyboard('{ArrowDown}{Enter}');
+    await flush();
+    expect((await bridge.settings.get()).language).toBe('zh');
+  });
+
+  it('the drum bar speaks English too, with a READY label', async () => {
+    const { store } = await renderApp({ mode: 'bar' });
+    await act(() => store.setLanguage('en'));
+    await flush();
+    expect(screen.getByRole('list', { name: 'Work slots' })).toBeTruthy();
+    const chips = within(screen.getByRole('list', { name: 'Work slots' })).getAllByRole('listitem');
+    expect(within(chips[0]!).getByRole('button').getAttribute('aria-label')).toBe('1. 底部卡槽的展开动画, in focus');
+    expect(within(chips[2]!).getByText('READY').className).toBe('ready-tag');
+    expect(screen.getByRole('button', { name: 'Todos: 1 of 8 done' }).textContent).toBe('1/8');
+    expect(screen.getByRole('button', { name: 'Open the workbench' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'New slot' })).toBeTruthy();
+    expect(document.querySelector('.tray-handle')?.getAttribute('title')).toBe('Drag the bar');
+  });
+
+  it('words a failure in the current language, and re-words it on a switch', async () => {
+    const { bridge, store } = await renderApp({ expanded: true });
+    vi.spyOn(bridge.workbench, 'setState').mockRejectedValueOnce(new Error('workbench/busy'));
+    await act(() => store.setSlotState('s-2', 'focus'));
+    expect(screen.getByRole('status').textContent).toBe('切换状态失败：workbench/busy');
+    await act(() => store.setLanguage('en'));
+    await flush();
+    expect(screen.getByRole('status').textContent).toBe('Switching state failed: workbench/busy');
   });
 });
 
@@ -613,15 +865,6 @@ describe('keyboard and chrome', () => {
     await user.keyboard('{Enter}');
     await flush();
     expect(store.getState().slots.find((s) => s.id === 's-3')?.state).toBe('focus');
-  });
-
-  it('switches between 纸石 and 石墨', async () => {
-    await renderApp({ expanded: true });
-    const user = userEvent.setup();
-    expect(document.documentElement.dataset.theme).toBe('stone');
-    await user.click(screen.getByRole('radio', { name: '石墨暗色' }));
-    await flush();
-    expect(document.documentElement.dataset.theme).toBe('graphite');
   });
 
   it('the bar asks the dock for room for its slots, and the drawer for 880 by 520', async () => {

@@ -1,7 +1,7 @@
-import type { WorkSlot } from '../rpc/types';
+import type { Language, WorkSlot } from '../rpc/types';
+import { messages } from './i18n';
 
 const DAY_MS = 86_400_000;
-const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'] as const;
 
 const pad = (n: number): string => String(n).padStart(2, '0');
 
@@ -45,11 +45,6 @@ export function periodStart(key: string, dayStartHour: number): number {
   return d.getTime();
 }
 
-export function periodLabel(key: string): string {
-  const d = parseDateKey(key);
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${WEEKDAYS[d.getDay()] ?? ''}`;
-}
-
 /** 42s, 14m, 1h05, 3d: short enough for a tray chip, stable with tabular figures. */
 export function formatElapsed(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -74,12 +69,8 @@ export function formatStamp(ms: number, now: number): string {
   return dateKey(d);
 }
 
-export function formatDeadline(deadline: string, today: string): string {
-  const days = daysBetween(today, deadline);
-  if (days < 0) return `逾期 ${-days} 天`;
-  if (days === 0) return '今天截止';
-  if (days === 1) return '明天截止';
-  return `${deadline.slice(5)} 截止`;
+export function formatDeadline(deadline: string, today: string, language: Language = 'zh'): string {
+  return messages(language).tasks.deadline(daysBetween(today, deadline), deadline);
 }
 
 // ---- Reminder hairline ----

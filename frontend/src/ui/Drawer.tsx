@@ -1,16 +1,15 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { EXPANDED, SPRING } from '../lib/geometry';
-import { periodLabel } from '../lib/time';
-import { useAppState, useStore } from '../state/react';
-import { themeChoiceOf, type ThemeChoice } from '../state/store';
-import { BAR_MODES, type BarMode } from '../rpc/types';
-import { Kbd, Segmented } from './bits';
-import { ChevronDown, Monitor, Moon, Pin, Search, Sun, Volume, VolumeOff } from './icons';
+import { noticeText } from '../lib/i18n';
+import { useAppState, useStore, useT } from '../state/react';
+import { Kbd } from './bits';
+import { ChevronDown, Pin, Search } from './icons';
 import { isImeKey } from './InlineText';
 import { NotesPanel } from './NotesPanel';
 import { NowDeck } from './NowDeck';
-import { BAR_MODE_LABEL, paletteItems, runPaletteAction } from './palette';
+import { paletteItems, runPaletteAction } from './palette';
+import { SettingsButton } from './SettingsPopover';
 import { TaskPanel } from './TaskPanel';
 
 /** The drawer is laid out at its full size and anchored to the bottom, so the growing shell reveals it upward. */
@@ -21,6 +20,7 @@ const DRAWER_HEIGHT = EXPANDED.height - DRAWER_INSET * 2 - 2;
 export function Drawer({ fill = false }: { fill?: boolean }) {
   const { ui } = useAppState();
   const store = useStore();
+  const t = useT();
   return (
     <motion.div
       className="drawer"
@@ -48,7 +48,7 @@ export function Drawer({ fill = false }: { fill?: boolean }) {
             transition={SPRING}
             onClick={() => store.dismissNotice()}
           >
-            {ui.notice}
+            {noticeText(t, ui.notice)}
           </motion.button>
         )}
       </AnimatePresence>
@@ -56,55 +56,26 @@ export function Drawer({ fill = false }: { fill?: boolean }) {
   );
 }
 
+/** The wordmark, the search, and three quiet buttons: settings, pin, collapse. */
 function HeaderBar() {
   const store = useStore();
-  const state = useAppState();
-  const { settings, periodKey } = state;
+  const { settings } = useAppState();
+  const t = useT();
 
   return (
     <header className="head">
       <div className="head-left">
-        <span className="wordmark">羽记</span>
-        <span className="head-date">{periodLabel(periodKey)}</span>
-        <span className="head-sub tnum">{settings.dayStartHour}:00 换日</span>
+        <span className="wordmark">{t.appName}</span>
       </div>
       <SearchBox />
       <div className="head-right">
-        <Segmented<BarMode>
-          id="bar-mode"
-          label="常驻条"
-          compact
-          value={settings.barMode}
-          onChange={(mode) => void store.setBarMode(mode)}
-          options={BAR_MODES.map((mode) => ({ value: mode, label: BAR_MODE_LABEL[mode], name: `常驻条：${BAR_MODE_LABEL[mode]}` }))}
-        />
-        <Segmented<ThemeChoice>
-          id="theme"
-          label="主题"
-          compact
-          value={themeChoiceOf(state)}
-          onChange={(choice) => store.setThemeChoice(choice)}
-          options={[
-            { value: 'stone', label: <Sun />, name: '纸石浅色' },
-            { value: 'graphite', label: <Moon />, name: '石墨暗色' },
-            { value: 'system', label: <Monitor />, name: '跟随系统' },
-          ]}
-        />
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label={settings.sound ? '关闭音效' : '打开音效'}
-          title={settings.sound ? '音效：开' : '音效：关'}
-          onClick={() => void store.toggleSound()}
-        >
-          {settings.sound ? <Volume /> : <VolumeOff />}
-        </button>
+        <SettingsButton />
         <button
           type="button"
           className="icon-btn pin-btn"
           aria-pressed={settings.pinned}
-          aria-label={settings.pinned ? '取消钉住' : '钉住面板'}
-          title={settings.pinned ? '取消钉住 · Ctrl+P' : '钉住面板 · Ctrl+P'}
+          aria-label={settings.pinned ? t.head.unpin : t.head.pin}
+          title={settings.pinned ? t.head.unpinHint : t.head.pinHint}
           onClick={() => void store.togglePin()}
         >
           <Pin />
@@ -112,9 +83,9 @@ function HeaderBar() {
         <button
           type="button"
           className="icon-btn"
-          aria-label="收起"
+          aria-label={t.head.collapse}
           aria-expanded={true}
-          title="收起 · Esc"
+          title={t.head.collapseHint}
           onClick={() => store.setExpanded(false)}
         >
           <ChevronDown />
@@ -127,6 +98,7 @@ function HeaderBar() {
 function SearchBox() {
   const store = useStore();
   const state = useAppState();
+  const t = useT();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -174,11 +146,11 @@ function SearchBox() {
       <input
         ref={input}
         role="combobox"
-        aria-label="搜索槽位、任务或命令"
+        aria-label={t.search.label}
         aria-expanded={open && items.length > 0}
         aria-controls="palette"
         aria-activedescendant={open && items[active] ? `palette-${active}` : undefined}
-        placeholder="跳到槽位、任务或命令…"
+        placeholder={t.search.placeholder}
         value={query}
         spellCheck={false}
         autoComplete="off"
@@ -192,7 +164,7 @@ function SearchBox() {
       />
       <Kbd>Ctrl K</Kbd>
       {open && items.length > 0 && (
-        <ul className="palette" id="palette" role="listbox" aria-label="搜索结果">
+        <ul className="palette" id="palette" role="listbox" aria-label={t.search.results}>
           {items.map((item, i) => (
             <li
               key={item.key}
@@ -205,7 +177,7 @@ function SearchBox() {
               onMouseEnter={() => setActive(i)}
               onClick={() => run(i)}
             >
-              <span className="palette-group">{item.group}</span>
+              <span className="palette-group">{t.palette.groups[item.group]}</span>
               <span className="palette-label">{item.label}</span>
               {item.hint && <span className="palette-hint tnum">{item.hint}</span>}
             </li>

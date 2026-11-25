@@ -2,14 +2,15 @@ import { motion } from 'motion/react';
 import type { MouseEvent, ReactNode } from 'react';
 import { SPRING } from '../lib/geometry';
 import { formatElapsed } from '../lib/time';
-import { useNow } from '../state/react';
+import { useNow, useT } from '../state/react';
 import { Check, Minus, Plus } from './icons';
 
 /** The one loud mark: a printed, inverted bookmark label. Nothing glows. */
 export function ReadyTag() {
+  const t = useT();
   return (
-    <span className="ready-tag" title="跑完了，等你接手">
-      待看
+    <span className="ready-tag" title={t.ready.title}>
+      {t.ready.label}
     </span>
   );
 }
@@ -110,6 +111,7 @@ export function QuotaStepper({
   onStep: (delta: 1 | -1) => void;
   label: string;
 }) {
+  const t = useT();
   const full = current >= target;
   const step = (delta: 1 | -1) => (e: MouseEvent) => {
     e.stopPropagation();
@@ -117,14 +119,14 @@ export function QuotaStepper({
     onStep(delta);
   };
   return (
-    <span className="quota" role="group" aria-label={`${label} ${current}/${target}`} data-full={full || undefined}>
-      <button type="button" aria-label={`${label}减一`} className="quota-step" onClick={step(-1)} disabled={current <= 0}>
+    <span className="quota" role="group" aria-label={t.quota.group(label, current, target)} data-full={full || undefined}>
+      <button type="button" aria-label={t.quota.minus(label)} className="quota-step" onClick={step(-1)} disabled={current <= 0}>
         <Minus />
       </button>
       <button
         type="button"
         className="quota-count tnum"
-        aria-label={`${label}加一（右键减一）`}
+        aria-label={t.quota.count(label)}
         onClick={step(1)}
         onContextMenu={step(-1)}
       >
@@ -132,7 +134,7 @@ export function QuotaStepper({
         <span className="quota-sep">/</span>
         {target}
       </button>
-      <button type="button" aria-label={`${label}加一`} className="quota-step" onClick={step(1)} disabled={full}>
+      <button type="button" aria-label={t.quota.plus(label)} className="quota-step" onClick={step(1)} disabled={full}>
         <Plus />
       </button>
     </span>

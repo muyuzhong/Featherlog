@@ -1,19 +1,20 @@
 import { MOCK_STORAGE_KEY, LocalMockBridge } from '../rpc/mock';
-import { useAppState, useStore } from '../state/react';
+import { useAppState, useStore, useT } from '../state/react';
 
 /** Only in a browser tab: says what is running and stands in for the host's global shortcut. */
 export function PreviewBar() {
   const store = useStore();
   const { ui } = useAppState();
+  const t = useT();
   const bridge = store.bridge;
   if (!(bridge instanceof LocalMockBridge)) return null;
   return (
     <div className="preview-bar">
-      <span className="preview-name">羽记 v2 · 浏览器预览</span>
+      <span className="preview-name">{t.preview.name}</span>
       <span className="preview-sep">·</span>
-      <span>LocalMockBridge（数据存在 localStorage）</span>
+      <span>{t.preview.mock}</span>
       <button type="button" className="text-btn" onClick={() => bridge.toggleDock()}>
-        模拟全局快捷键（{ui.expanded ? '收起' : '展开'}）
+        {t.preview.shortcut(ui.expanded)}
       </button>
       <button
         type="button"
@@ -23,14 +24,14 @@ export function PreviewBar() {
           location.reload();
         }}
       >
-        重置示例数据
+        {t.preview.reset}
       </button>
       <span className="preview-sep">·</span>
       <a className="text-btn" href="?mode=bar" target="_blank" rel="noreferrer">
-        滚筒条窗口（?mode=bar）
+        {t.preview.bar}
       </a>
       <a className="text-btn" href="?mode=panel" target="_blank" rel="noreferrer">
-        面板窗口（?mode=panel）
+        {t.preview.panel}
       </a>
     </div>
   );

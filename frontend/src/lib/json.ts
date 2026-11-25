@@ -12,8 +12,9 @@ export function jsonClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+/** The error's own text; empty when it has none, for the UI to word in its language. */
 export function messageOf(err: unknown): string {
   if (err instanceof Error) return err.message;
   if (typeof err === 'string') return err;
-  return '未知错误';
+  return '';
 }
