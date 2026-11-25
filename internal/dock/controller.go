@@ -213,6 +213,9 @@ func (m MyGoWindow) NativeHandle() uintptr {
 }
 
 func (m MyGoWindow) RunOnMain(fn func()) {
+	if fn == nil || !mygo.App.IsReady() {
+		return
+	}
 	mygo.RunOnMain(fn)
 }
 
@@ -241,6 +244,9 @@ func (m MyGoWindow) IsDestroyed() bool {
 type MyGoScreen struct{}
 
 func (MyGoScreen) ActiveDisplay(current Rect) Display {
+	if !mygo.App.IsReady() {
+		return Display{}
+	}
 	var d mygo.Display
 	if current.Width > 0 && current.Height > 0 {
 		d = mygo.Screen.DisplayMatching(mygo.Rectangle{
@@ -276,6 +282,9 @@ func (MyGoScreen) ActiveDisplay(current Rect) Display {
 }
 
 func (MyGoScreen) OnDisplaysChanged(fn func()) func() {
+	if !mygo.App.IsReady() {
+		return func() {}
+	}
 	return mygo.Screen.OnDisplaysChanged(fn)
 }
 
@@ -283,12 +292,18 @@ func (MyGoScreen) OnDisplaysChanged(fn func()) func() {
 type MyGoShortcuts struct{}
 
 func (MyGoShortcuts) Register(accelerator, description string, fn func()) error {
+	if !mygo.App.IsReady() {
+		return errors.New("dock/not-ready: application is not ready")
+	}
 	return mygo.GlobalShortcut.RegisterWith(accelerator, mygo.GlobalShortcutOptions{
 		Description: description,
 	}, fn)
 }
 
 func (MyGoShortcuts) Unregister(accelerator string) {
+	if !mygo.App.IsReady() {
+		return
+	}
 	mygo.GlobalShortcut.Unregister(accelerator)
 }
 
@@ -516,6 +531,9 @@ func (c *Controller) ensureDisplayWatcher() {
 // Attach binds a window to the controller, anchors it at bottom-center, and
 // wires display-change and blur-to-collapse listeners.
 func (c *Controller) Attach(win Window) Rect {
+	if win == nil {
+		return Rect{}
+	}
 	c.mu.Lock()
 	c.win = win
 	w, h, inset := c.width, c.height, c.bottomInset
@@ -540,6 +558,9 @@ func (c *Controller) Attach(win Window) Rect {
 // debounced drag persistence if supported, evaluates adaptive placement policy,
 // and shows (via ShowInactive) or hides the Mini-Bar accordingly.
 func (c *Controller) AttachMiniBar(win Window) Rect {
+	if win == nil {
+		return Rect{}
+	}
 	c.mu.Lock()
 	c.miniWin = win
 	c.miniVisible = false
@@ -619,16 +640,15 @@ func (c *Controller) Resize(geom Geometry) Rect {
 		listeners := c.snapshotExpandedListenersLocked()
 		c.mu.Unlock()
 
+		next := cur
 		if win != nil && !win.IsDestroyed() {
 			win.RunOnMain(win.Hide)
+			display := screen.ActiveDisplay(cur)
+			next = ComputeBounds(display, w, h, inset)
+			c.mu.Lock()
+			c.lastBounds = next
+			c.mu.Unlock()
 		}
-
-		display := screen.ActiveDisplay(cur)
-		next := ComputeBounds(display, w, h, inset)
-
-		c.mu.Lock()
-		c.lastBounds = next
-		c.mu.Unlock()
 
 		if wasExpanded {
 			if cb != nil {
@@ -654,6 +674,9 @@ func (c *Controller) Resize(geom Geometry) Rect {
 	if !c.visible {
 		cur := c.lastBounds
 		c.mu.Unlock()
+		if win == nil || win.IsDestroyed() {
+			return cur
+		}
 		display := screen.ActiveDisplay(cur)
 		next := ComputeBounds(display, w, h, inset)
 		c.mu.Lock()
@@ -849,7 +872,11 @@ func (c *Controller) applyBounds(win Window, w, h, inset int) Rect {
 	layer := c.layer
 	c.mu.Unlock()
 
-	if win != nil && !win.IsDestroyed() && (cur.Width == 0 || cur.Height == 0) {
+	if win == nil || win.IsDestroyed() {
+		return cur
+	}
+
+	if cur.Width == 0 || cur.Height == 0 {
 		win.RunOnMain(func() {
 			if !win.IsDestroyed() {
 				cur = win.Bounds()
@@ -861,20 +888,18 @@ func (c *Controller) applyBounds(win Window, w, h, inset int) Rect {
 	marginBottom := ComputeBottomMargin(display, next, inset)
 
 	anchored := false
-	if win != nil && !win.IsDestroyed() {
-		win.RunOnMain(func() {
-			if win.IsDestroyed() {
-				return
+	win.RunOnMain(func() {
+		if win.IsDestroyed() {
+			return
+		}
+		win.SetBounds(next)
+		if layer != nil && layer.Available() {
+			handle := win.NativeHandle()
+			if handle != 0 {
+				anchored = layer.AnchorBottomCenter(handle, marginBottom)
 			}
-			win.SetBounds(next)
-			if layer != nil && layer.Available() {
-				handle := win.NativeHandle()
-				if handle != 0 {
-					anchored = layer.AnchorBottomCenter(handle, marginBottom)
-				}
-			}
-		})
-	}
+		}
+	})
 
 	c.mu.Lock()
 	c.lastBounds = next
@@ -891,6 +916,7 @@ func (c *Controller) syncMiniBar() Rect {
 		c.mu.Unlock()
 		return last
 	}
+	miniWin := c.miniWin
 	screen := c.screen
 	barMode := c.barMode
 	barX := cloneIntPtr(c.barX)
@@ -899,9 +925,26 @@ func (c *Controller) syncMiniBar() Rect {
 	goos := c.platformOS
 	kdeSession := c.kdeSession
 	plasmoidInstalled := c.plasmoidInstalled
+	shouldShow := ShouldShowMiniBar(barMode, extActive, goos, kdeSession, plasmoidInstalled)
+	if miniWin == nil {
+		// Defer screen queries until AttachMiniBar binds the real window inside App.WhenReady.
+		c.miniVisible = shouldShow
+		last := c.lastMiniBounds
+		c.mu.Unlock()
+		return last
+	}
 	c.mu.Unlock()
 
-	shouldShow := ShouldShowMiniBar(barMode, extActive, goos, kdeSession, plasmoidInstalled)
+	if miniWin.IsDestroyed() {
+		c.mu.Lock()
+		if !c.closed && c.miniWin == miniWin {
+			c.miniVisible = shouldShow
+		}
+		last := c.lastMiniBounds
+		c.mu.Unlock()
+		return last
+	}
+
 	target := computeMiniBarRectForScreen(screen, barX, barY)
 
 	c.mu.Lock()
@@ -910,7 +953,7 @@ func (c *Controller) syncMiniBar() Rect {
 		c.mu.Unlock()
 		return last
 	}
-	miniWin := c.miniWin
+	miniWin = c.miniWin
 	c.miniVisible = shouldShow
 	c.lastMiniBounds = target
 

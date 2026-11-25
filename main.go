@@ -288,9 +288,6 @@ func runGUI(dataDir string, devMode, showOnStart bool, httpPort int) error {
 	}
 	log.Printf("featherlog: bar HTTP API listening on %s", barSrv.URL())
 
-	offBarActivity := barSrv.OnClientActivity(application.Dock.SetExternalBarActive)
-	application.Dock.SetExternalBarActive(barSrv.HasActiveClient())
-
 	kwinPlacer := dock.NewKWinPlacer(dock.KWinConfig{
 		DataDir:      dataDir,
 		Caption:      dock.PanelWindowTitle,
@@ -305,20 +302,25 @@ func runGUI(dataDir string, devMode, showOnStart bool, httpPort int) error {
 	}
 
 	var (
-		trayMu   sync.Mutex
-		trayCtrl *tray.Controller
+		hostMu         sync.Mutex
+		hostClosed     bool
+		trayCtrl       *tray.Controller
+		offBarActivity func()
 	)
 
 	var cleanupOnce sync.Once
 	cleanup := func() {
 		cleanupOnce.Do(func() {
-			if offBarActivity != nil {
-				offBarActivity()
-			}
-			trayMu.Lock()
+			hostMu.Lock()
+			hostClosed = true
+			offAct := offBarActivity
+			offBarActivity = nil
 			tc := trayCtrl
 			trayCtrl = nil
-			trayMu.Unlock()
+			hostMu.Unlock()
+			if offAct != nil {
+				offAct()
+			}
 			if tc != nil {
 				tc.Close()
 			}
@@ -392,6 +394,19 @@ func runGUI(dataDir string, devMode, showOnStart bool, httpPort int) error {
 		})
 		application.Dock.AttachMiniBar(dock.MyGoWindow{W: miniWin})
 
+		// Wire external /api/bar client activity only once MyGo is ready and
+		// the Mini-Bar window exists so display queries never fire pre-ready.
+		offAct := barSrv.OnClientActivity(application.Dock.SetExternalBarActive)
+		hostMu.Lock()
+		if hostClosed || quitting.Load() {
+			hostMu.Unlock()
+			offAct()
+		} else {
+			offBarActivity = offAct
+			hostMu.Unlock()
+			application.Dock.SetExternalBarActive(barSrv.HasActiveClient())
+		}
+
 		tc, err := tray.Start(tray.Config{
 			App:      application,
 			QuitFunc: func() { mygo.App.Quit() },
@@ -399,13 +414,13 @@ func runGUI(dataDir string, devMode, showOnStart bool, httpPort int) error {
 		if err != nil {
 			log.Printf("featherlog: system tray unavailable: %v", err)
 		} else if tc != nil {
-			trayMu.Lock()
-			if quitting.Load() {
-				trayMu.Unlock()
+			hostMu.Lock()
+			if hostClosed || quitting.Load() {
+				hostMu.Unlock()
 				tc.Close()
 			} else {
 				trayCtrl = tc
-				trayMu.Unlock()
+				hostMu.Unlock()
 			}
 		}
 
