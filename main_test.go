@@ -237,3 +237,36 @@ func TestSplitGlobalArgsAndHTTPPortResolution(t *testing.T) {
 		t.Fatalf("env FEATHERLOG_HTTP_PORT = (%d, %v), want (45555, nil)", p, err)
 	}
 }
+
+func TestVersionFlagAndSubcommand(t *testing.T) {
+	if version != "2.0.0" {
+		t.Fatalf("default version = %q, want %q", version, "2.0.0")
+	}
+
+	for _, arg := range []string{"version", "-v", "--version"} {
+		var out, errBuf bytes.Buffer
+		code := run([]string{arg}, &out, &errBuf)
+		if code != 0 {
+			t.Fatalf("%s exited %d: %s", arg, code, errBuf.String())
+		}
+		if errBuf.Len() != 0 {
+			t.Fatalf("%s wrote unexpected stderr: %q", arg, errBuf.String())
+		}
+		want := "featherlog 2.0.0\n"
+		if out.String() != want {
+			t.Fatalf("%s stdout = %q, want %q", arg, out.String(), want)
+		}
+	}
+
+	prev := version
+	version = "2.1.0-rc.1"
+	t.Cleanup(func() { version = prev })
+
+	var out, errBuf bytes.Buffer
+	if code := run([]string{"--version"}, &out, &errBuf); code != 0 {
+		t.Fatalf("--version with overridden version exited %d: %s", code, errBuf.String())
+	}
+	if out.String() != "featherlog 2.1.0-rc.1\n" {
+		t.Fatalf("--version stdout = %q, want %q", out.String(), "featherlog 2.1.0-rc.1\n")
+	}
+}

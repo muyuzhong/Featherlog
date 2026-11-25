@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Featherlog
+Name[zh_CN]=羽记
+GenericName=Concurrent Workbench
+GenericName[zh_CN]=并发工作台
+Comment=Lightweight concurrent workbench panel, KDE Plasma 6 dock applet, and CLI hooks
+Comment[zh_CN]=轻量级并发工作台、KDE Plasma 6 底部 Dock 状态条与终端 CLI
+Exec=featherlog --show
+Icon=featherlog
+Terminal=false
+Categories=Utility;Office;
+Keywords=workbench;tasks;notes;dock;featherlog;羽记;
+StartupNotify=false
+StartupWMClass=featherlog

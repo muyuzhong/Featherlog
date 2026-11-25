@@ -19,19 +19,21 @@ export PATH="$staging/bin:$PATH"
 
 recipe="$staging/featherlog-bin/PKGBUILD"
 sed -i 's/^pkgrel=.*/pkgrel=9/' "$recipe"
-"$staging/update.sh" 1.2.3
-image_sha=$(printf 'downloaded:Featherlog-1.2.3-x86_64.AppImage\n' | sha256sum)
+"$staging/update.sh" 2.1.0
+archive_sha=$(printf 'downloaded:featherlog-2.1.0-linux-amd64.tar.gz\n' | sha256sum)
 license_sha=$(printf 'downloaded:LICENSE\n' | sha256sum)
-grep -qx 'pkgver=1.2.3' "$recipe"
+grep -qx 'pkgver=2.1.0' "$recipe"
 grep -qx 'pkgrel=1' "$recipe"
-grep -q "${image_sha%% *}" "$recipe"
+grep -q "${archive_sha%% *}" "$recipe"
 grep -q "${license_sha%% *}" "$recipe"
 (cd "$staging/featherlog-bin" && makepkg --printsrcinfo) > "$staging/expected"
 cmp "$staging/expected" "$staging/featherlog-bin/.SRCINFO"
+grep -q 'featherlog-2.1.0-linux-amd64.tar.gz' "$staging/featherlog-bin/.SRCINFO"
+grep -q 'depends = webkit2gtk-4.1' "$staging/featherlog-bin/.SRCINFO"
 cp "$recipe" "$staging/before"
 cp "$staging/featherlog-bin/.SRCINFO" "$staging/before-info"
 
-if FAIL_DOWNLOAD=1 "$staging/update.sh" 2.0.0; then exit 1; fi
+if FAIL_DOWNLOAD=1 "$staging/update.sh" 2.2.0; then exit 1; fi
 if "$staging/update.sh" '../bad'; then exit 1; fi
 if "$staging/update.sh"; then exit 1; fi
 cat > "$staging/bin/makepkg" <<'MAKEPKG'
@@ -39,7 +41,7 @@ cat > "$staging/bin/makepkg" <<'MAKEPKG'
 exit 1
 MAKEPKG
 chmod +x "$staging/bin/makepkg"
-if "$staging/update.sh" 2.0.0; then exit 1; fi
+if "$staging/update.sh" 2.2.0; then exit 1; fi
 cmp "$staging/before" "$recipe"
 cmp "$staging/before-info" "$staging/featherlog-bin/.SRCINFO"
 printf 'AUR update script checks passed\n'

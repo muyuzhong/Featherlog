@@ -28,6 +28,9 @@ import (
 
 const defaultDevURL = "http://localhost:5173"
 
+// version is embedded at build time via -ldflags "-X main.version=...".
+var version = "2.0.0"
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
@@ -56,6 +59,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	if subcmd == "help" || subcmd == "-h" || subcmd == "--help" {
 		printUsage(stdout)
+		return 0
+	}
+
+	if subcmd == "version" || subcmd == "-v" || subcmd == "--version" {
+		_, _ = fmt.Fprintf(stdout, "featherlog %s\n", version)
 		return 0
 	}
 
@@ -760,5 +768,8 @@ Usage:
 
   featherlog toggle [--expand | --collapse] [--json]
       Toggle the running desktop Workspace Panel.
+
+  featherlog version | -v | --version
+      Print the featherlog version and exit.
 `)
 }

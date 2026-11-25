@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate release tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Tag '${GITHUB_REF_NAME}' is not a valid semver tag (expected vX.Y.Z)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: '11'
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install, typecheck, test, and build frontend
+        run: |
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend typecheck
+          pnpm --dir frontend test
+          pnpm --dir frontend build
+
+      - name: Vet and test Go backend
+        run: |
+          CGO_ENABLED=0 go vet ./...
+          go test -race -count=1 ./...
+
+      - name: Build cross-platform release artifacts
+        run: ./scripts/build-release.sh "${GITHUB_REF_NAME#v}"
+
+      - name: Smoke-test release artifacts
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+
+          (cd dist/release && sha256sum -c SHA256SUMS.txt)
+
+          tmp="$(mktemp -d)"
+          trap 'rm -rf -- "$tmp"' EXIT
+
+          tar -xzf "dist/release/featherlog-${version}-linux-amd64.tar.gz" -C "$tmp"
+          bin="${tmp}/featherlog-${version}-linux-amd64/featherlog"
+
+          got_version="$("${bin}" --version)"
+          echo "Binary version: ${got_version}"
+          test "${got_version}" = "featherlog ${version}"
+
+          status_table="$("${bin}" --data-dir "${tmp}/data" status)"
+          echo "CLI status: ${status_table}"
+          test "${status_table}" = "No active work slots."
+
+          status_json="$("${bin}" --data-dir "${tmp}/data" status --json)"
+          test "${status_json}" = "[]"
+
+          dpkg-deb --info "dist/release/featherlog_${version}_amd64.deb"
+          dpkg-deb --contents "dist/release/featherlog_${version}_amd64.deb"
+
+          plasmoid_files="$(unzip -Z1 "dist/release/io.github.muyuzhong.featherlog-${version}.plasmoid")"
+          grep -Fxq 'metadata.json' <<< "${plasmoid_files}"
+          grep -Fxq 'contents/ui/main.qml' <<< "${plasmoid_files}"
+
+          win_files="$(unzip -Z1 "dist/release/featherlog-${version}-windows-amd64.zip")"
+          grep -Fxq "featherlog-${version}-windows-amd64/featherlog.exe" <<< "${win_files}"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            gh release create "${GITHUB_REF_NAME}" dist/release/* --verify-tag --generate-notes --prerelease
+          else
+            gh release create "${GITHUB_REF_NAME}" dist/release/* --verify-tag --generate-notes --latest
+          fi
