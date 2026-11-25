@@ -1,6 +1,6 @@
 pkgbase = featherlog-bin
 	pkgdesc = Lightweight concurrent workbench panel, KDE Plasma 6 dock applet, and CLI hooks (羽记)
-	pkgver = 2.1.0
+	pkgver = 2.1.1
 	pkgrel = 1
 	url = https://github.com/muyuzhong/Featherlog
 	arch = x86_64
@@ -17,9 +17,9 @@ pkgbase = featherlog-bin
 	conflicts = featherlog
 	options = !strip
 	options = !debug
-	source = featherlog-2.1.0-linux-amd64.tar.gz::https://github.com/muyuzhong/Featherlog/releases/download/v2.1.0/featherlog-2.1.0-linux-amd64.tar.gz
-	source = LICENSE-2.1.0::https://raw.githubusercontent.com/muyuzhong/Featherlog/v2.1.0/LICENSE
-	sha256sums = a3f497899d35a3012f69629f6416f7b045b05a804b8133c7b3da62ca76288fa6
+	source = featherlog-2.1.1-linux-amd64.tar.gz::https://github.com/muyuzhong/Featherlog/releases/download/v2.1.1/featherlog-2.1.1-linux-amd64.tar.gz
+	source = LICENSE-2.1.1::https://raw.githubusercontent.com/muyuzhong/Featherlog/v2.1.1/LICENSE
+	sha256sums = 8e12f1b93a0453d51cb772248eb2cdc7844243ba2945df87ad249167da1dbd2f
 	sha256sums = 869313596787f2dfd98d34c7c9d3c000f263bfe3b09162654de7aa1d054e3cda
 
 pkgname = featherlog-bin
