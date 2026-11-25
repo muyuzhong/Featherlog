@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -888,4 +889,192 @@ func TestControllerMiniBarAsyncRunOnMainConvergence(t *testing.T) {
 			t.Fatalf("canceled show flashed window: shownInactive=%d hidden=%d", miniWin.shownInactive, miniWin.hidden)
 		}
 	})
+}
+
+type guardedScreen struct {
+	t       *testing.T
+	allowed atomic.Bool
+	inner   *fakeScreen
+}
+
+func (g *guardedScreen) ActiveDisplay(r Rect) Display {
+	if !g.allowed.Load() {
+		g.t.Fatalf("ActiveDisplay(%+v) queried before Attach/AttachMiniBar", r)
+	}
+	return g.inner.ActiveDisplay(r)
+}
+
+func (g *guardedScreen) OnDisplaysChanged(fn func()) func() {
+	if !g.allowed.Load() {
+		g.t.Fatalf("OnDisplaysChanged queried before Attach/AttachMiniBar")
+	}
+	return g.inner.OnDisplaysChanged(fn)
+}
+
+func TestControllerPreAttachDoesNotQueryScreen(t *testing.T) {
+	primary := Display{
+		ID:       1,
+		Bounds:   Rect{X: 0, Y: 0, Width: 1920, Height: 1080},
+		WorkArea: Rect{X: 0, Y: 0, Width: 1920, Height: 1032},
+		Primary:  true,
+	}
+
+	t.Run("pre_attach_mutations_defer_screen_queries_until_attach", func(t *testing.T) {
+		screen := &guardedScreen{
+			t:     t,
+			inner: &fakeScreen{display: primary},
+		}
+		ctrl := NewController(Config{
+			Screen:            screen,
+			Layer:             &fakeLayerShell{available: false},
+			StartHidden:       true,
+			PlatformOS:        "windows",
+			KDESession:        boolPtr(false),
+			PlasmoidInstalled: boolPtr(false),
+			InitialBarMode:    "auto",
+		})
+		defer ctrl.Close()
+
+		// All pre-attach updates must succeed without touching Screen.
+		ctrl.SetExternalBarActive(true)
+		if vis, bounds := ctrl.MiniBarState(); vis || bounds != (Rect{}) {
+			t.Fatalf("after pre-attach SetExternalBarActive(true): vis=%v bounds=%+v, want false/zero", vis, bounds)
+		}
+
+		ctrl.SetBarPrefs("standalone", intPtr(1200), intPtr(1036))
+		if vis, bounds := ctrl.MiniBarState(); !vis || bounds != (Rect{}) {
+			t.Fatalf("after pre-attach SetBarPrefs(standalone): vis=%v bounds=%+v, want true/zero", vis, bounds)
+		}
+
+		ctrl.SetTheme("graphite")
+		ctrl.Resize(Geometry{Width: PanelWidth, Height: PanelHeight, Expanded: true})
+		ctrl.Toggle(boolPtr(true))
+		ctrl.Resize(Geometry{Width: PanelWidth, Height: PanelHeight, Expanded: false})
+		ctrl.Toggle(boolPtr(false))
+
+		// Switch back to auto + no external client before attach; custom coords stay pending.
+		ctrl.SetBarPrefs("auto", intPtr(1200), intPtr(1036))
+		if vis, _ := ctrl.MiniBarState(); vis {
+			t.Fatalf("expected auto + externalBarActive=true to compute miniVisible=false")
+		}
+		ctrl.SetExternalBarActive(false)
+		if vis, _ := ctrl.MiniBarState(); !vis {
+			t.Fatalf("expected auto + externalBarActive=false to compute miniVisible=true")
+		}
+
+		// Once App.WhenReady attaches the windows, Screen queries are allowed and applied.
+		screen.allowed.Store(true)
+		panelWin := &fakeWindow{}
+		miniWin := &fakeWindow{}
+		ctrl.Attach(panelWin)
+		applied := ctrl.AttachMiniBar(miniWin)
+
+		wantBounds := Rect{X: 1200, Y: 1036, Width: MiniBarWidth, Height: MiniBarHeight}
+		if applied != wantBounds {
+			t.Fatalf("AttachMiniBar bounds = %+v, want %+v", applied, wantBounds)
+		}
+		if vis, curBounds := ctrl.MiniBarState(); !vis || curBounds != wantBounds {
+			t.Fatalf("MiniBarState after attach = (%v, %+v), want (true, %+v)", vis, curBounds, wantBounds)
+		}
+		if miniWin.shownInactive != 1 || miniWin.focused != 0 || miniWin.bounds != wantBounds {
+			t.Fatalf("miniWin after attach: shownInactive=%d focused=%d bounds=%+v",
+				miniWin.shownInactive, miniWin.focused, miniWin.bounds)
+		}
+
+		// Once miniWin is destroyed, subsequent syncs must not query Screen either.
+		miniWin.destroyed = true
+		screen.allowed.Store(false)
+		ctrl.SetExternalBarActive(true)
+		if vis, _ := ctrl.MiniBarState(); vis {
+			t.Fatalf("expected destroyed miniWin sync to update miniVisible=false")
+		}
+		ctrl.SetBarPrefs("standalone", nil, nil)
+		if vis, _ := ctrl.MiniBarState(); !vis {
+			t.Fatalf("expected destroyed miniWin sync to update miniVisible=true")
+		}
+	})
+
+	t.Run("pre_attach_external_active_keeps_minibar_hidden_on_attach", func(t *testing.T) {
+		screen := &guardedScreen{
+			t:     t,
+			inner: &fakeScreen{display: primary},
+		}
+		ctrl := NewController(Config{
+			Screen:            screen,
+			Layer:             &fakeLayerShell{available: false},
+			StartHidden:       true,
+			PlatformOS:        "windows",
+			KDESession:        boolPtr(false),
+			PlasmoidInstalled: boolPtr(false),
+			InitialBarMode:    "auto",
+		})
+		defer ctrl.Close()
+
+		ctrl.SetExternalBarActive(true)
+		screen.allowed.Store(true)
+
+		miniWin := &fakeWindow{}
+		ctrl.AttachMiniBar(miniWin)
+		if vis, _ := ctrl.MiniBarState(); vis {
+			t.Fatalf("expected MiniBar hidden on attach when external client already active")
+		}
+		if miniWin.shownInactive != 0 || miniWin.shown != 0 {
+			t.Fatalf("expected hidden MiniBar never shown, got shown=%d shownInactive=%d",
+				miniWin.shown, miniWin.shownInactive)
+		}
+	})
+}
+
+func TestMyGoScreenSafeBeforeAppRun(t *testing.T) {
+	var s MyGoScreen
+	if got := s.ActiveDisplay(Rect{}); got != (Display{}) {
+		t.Fatalf("ActiveDisplay(zero) before App.Run = %+v, want zero Display", got)
+	}
+	if got := s.ActiveDisplay(Rect{X: 100, Y: 100, Width: MiniBarWidth, Height: MiniBarHeight}); got != (Display{}) {
+		t.Fatalf("ActiveDisplay(rect) before App.Run = %+v, want zero Display", got)
+	}
+	off := s.OnDisplaysChanged(func() {})
+	if off == nil {
+		t.Fatalf("OnDisplaysChanged before App.Run returned nil cleanup")
+	}
+	off()
+
+	var shortcuts MyGoShortcuts
+	if err := shortcuts.Register("Alt+Shift+Space", "Toggle", func() {}); err == nil {
+		t.Fatalf("MyGoShortcuts.Register before App.Run succeeded unexpectedly")
+	}
+	shortcuts.Unregister("Alt+Shift+Space")
+
+	ran := false
+	MyGoWindow{}.RunOnMain(func() { ran = true })
+	if ran {
+		t.Fatalf("MyGoWindow.RunOnMain ran before App.Run")
+	}
+
+	// Default Controller (using real MyGoScreen & MyGoShortcuts) must never panic
+	// or block in headless/CLI/pre-WhenReady paths.
+	ctrl := NewController(Config{
+		Layer:             &fakeLayerShell{available: false},
+		StartHidden:       true,
+		PlatformOS:        "windows",
+		KDESession:        boolPtr(false),
+		PlasmoidInstalled: boolPtr(false),
+	})
+	defer ctrl.Close()
+
+	if r := ctrl.InitialRect(); r.Width != PanelWidth || r.Height != PanelHeight {
+		t.Fatalf("InitialRect before App.Run = %+v, want %dx%d", r, PanelWidth, PanelHeight)
+	}
+	if r := ctrl.InitialMiniBarRect(); r.Width != MiniBarWidth || r.Height != MiniBarHeight {
+		t.Fatalf("InitialMiniBarRect before App.Run = %+v, want %dx%d", r, MiniBarWidth, MiniBarHeight)
+	}
+	ctrl.SetExternalBarActive(true)
+	ctrl.SetBarPrefs("standalone", intPtr(400), intPtr(800))
+	ctrl.SetTheme("graphite")
+	ctrl.Resize(Geometry{Width: PanelWidth, Height: PanelHeight, Expanded: false})
+	ctrl.Toggle(boolPtr(true))
+	ctrl.Toggle(boolPtr(false))
+	if _, err := ctrl.RegisterShortcut(nil); err == nil {
+		t.Fatalf("RegisterShortcut before App.Run succeeded unexpectedly")
+	}
 }
