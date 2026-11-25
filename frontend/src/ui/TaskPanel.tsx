@@ -4,7 +4,7 @@ import { SPRING } from '../lib/geometry';
 import { itemProgress, parseQuickTask, todoView } from '../lib/tasks';
 import { formatDeadline } from '../lib/time';
 import type { Task } from '../rpc/types';
-import { useAppState, useStore } from '../state/react';
+import { useAppState, useStore, useT } from '../state/react';
 import { Checkbox, QuotaStepper } from './bits';
 import { ArrowUpRight, ChevronRight, Plus, X } from './icons';
 import { InlineText, isImeKey } from './InlineText';
@@ -12,6 +12,7 @@ import { InlineText, isImeKey } from './InlineText';
 /** The lower left: one flat list of equal todos, edited where they stand. */
 export function TaskPanel() {
   const { tasks, ui } = useAppState();
+  const t = useT();
   const [showDone, setShowDone] = useState(false);
   const [revealId, setRevealId] = useState<string | null>(null);
   const { open, done } = todoView(tasks);
@@ -22,26 +23,26 @@ export function TaskPanel() {
   }, [ui.selectedTaskId, done]);
 
   return (
-    <section className="panel tasks" aria-label="待办">
+    <section className="panel tasks" aria-label={t.tasks.title}>
       <div className="panel-head">
-        <h2 className="section-title">待办</h2>
-        <span className="panel-tally tnum" aria-label={`完成 ${done.length}，共 ${open.length + done.length}`}>
+        <h2 className="section-title">{t.tasks.title}</h2>
+        <span className="panel-tally tnum" aria-label={t.tasks.tally(done.length, open.length + done.length)}>
           {done.length}/{open.length + done.length}
         </span>
       </div>
       <QuickAdd onCreated={setRevealId} />
-      <ul className="task-list" aria-label="待办列表">
+      <ul className="task-list" aria-label={t.tasks.list}>
         <AnimatePresence initial={false}>
           {open.map((task) => (
             <TaskRow key={task.id} task={task} reveal={task.id === revealId} />
           ))}
         </AnimatePresence>
-        {open.length === 0 && <li className="empty">{done.length > 0 ? '都做完了。' : '没有待办，写一条吧。'}</li>}
+        {open.length === 0 && <li className="empty">{done.length > 0 ? t.tasks.allDone : t.tasks.empty}</li>}
         {done.length > 0 && (
           <li className="done-fold">
             <button type="button" className="text-btn" aria-expanded={showDone} onClick={() => setShowDone((v) => !v)}>
               <ChevronRight className={showDone ? 'turned' : undefined} />
-              已完成 <span className="tnum">{done.length}</span>
+              {t.tasks.doneFold} <span className="tnum">{done.length}</span>
             </button>
           </li>
         )}
@@ -56,6 +57,7 @@ export function TaskPanel() {
 function QuickAdd({ onCreated }: { onCreated: (id: string) => void }) {
   const store = useStore();
   const { periodKey } = useAppState();
+  const t = useT();
   const [text, setText] = useState('');
   const composing = useRef(false);
 
@@ -76,8 +78,8 @@ function QuickAdd({ onCreated }: { onCreated: (id: string) => void }) {
     <form className="quick-add" onSubmit={(e) => void submit(e)}>
       <Plus />
       <input
-        aria-label="新建待办"
-        placeholder="新建待办，回车即建（末尾写 ×5 设次数）"
+        aria-label={t.tasks.newLabel}
+        placeholder={t.tasks.newPlaceholder}
         value={text}
         spellCheck={false}
         autoComplete="off"
@@ -99,7 +101,8 @@ function QuickAdd({ onCreated }: { onCreated: (id: string) => void }) {
 
 function TaskRow({ task, reveal }: { task: Task; reveal: boolean }) {
   const store = useStore();
-  const { ui, periodKey, slots } = useAppState();
+  const { ui, periodKey, slots, settings } = useAppState();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const ref = useRef<HTMLLIElement>(null);
@@ -130,48 +133,46 @@ function TaskRow({ task, reveal }: { task: Task; reveal: boolean }) {
       transition={SPRING}
       onFocus={() => store.selectTask(task.id)}
     >
-      <Checkbox checked={completed} label={`完成「${task.title}」`} onChange={(c) => void store.completeTask(task.id, c)} />
+      <Checkbox checked={completed} label={t.tasks.complete(task.title)} onChange={(c) => void store.completeTask(task.id, c)} />
       <div className="task-main">
         <InlineText
           className="task-title"
           value={task.title}
-          label="待办标题"
+          label={t.tasks.itemTitle}
           maxLength={120}
           onCommit={(title) => void store.updateTask({ id: task.id, title })}
         />
         {(task.deadline || progress.total > 0 || onStage) && (
           <div className="task-meta">
             {task.deadline && (
-              <span className={task.overdue ? 'overdue' : undefined}>{formatDeadline(task.deadline, periodKey)}</span>
+              <span className={task.overdue ? 'overdue' : undefined}>{formatDeadline(task.deadline, periodKey, settings.language)}</span>
             )}
             {progress.total > 0 && (
-              <span className="tnum">
-                子项 {progress.done}/{progress.total}
-              </span>
+              <span className="tnum">{t.tasks.steps(progress.done, progress.total)}</span>
             )}
-            {onStage && <span className="on-stage">在台上</span>}
+            {onStage && <span className="on-stage">{t.tasks.onDeck}</span>}
           </div>
         )}
       </div>
       <div className="task-side">
         {task.quota && (
           <QuotaStepper
-            label="次数"
+            label={t.tasks.count}
             current={task.quota.current}
             target={task.quota.target}
             onStep={(d) => void store.stepQuota(task.id, d)}
           />
         )}
         {!completed && !onStage && (
-          <button type="button" className="promote" title="挂到上面的并发台并专注" onClick={() => void store.promoteTask(task.id)}>
-            上台
+          <button type="button" className="promote" title={t.tasks.promoteHint} onClick={() => void store.promoteTask(task.id)}>
+            {t.tasks.promote}
             <ArrowUpRight />
           </button>
         )}
         <button
           type="button"
           className="icon-btn tiny"
-          aria-label={open ? '收起详情' : '展开详情'}
+          aria-label={open ? t.tasks.hideDetails : t.tasks.showDetails}
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
         >
@@ -192,11 +193,11 @@ function TaskRow({ task, reveal }: { task: Task; reveal: boolean }) {
               <DailyReset task={task} />
               {confirmDelete ? (
                 <button type="button" className="text-btn strong" onClick={() => void store.deleteTask(task.id)}>
-                  再点一次删除
+                  {t.tasks.confirmDelete}
                 </button>
               ) : (
                 <button type="button" className="text-btn" onClick={() => setConfirmDelete(true)}>
-                  删除待办
+                  {t.tasks.delete}
                 </button>
               )}
             </div>
@@ -211,6 +212,7 @@ function TaskRow({ task, reveal }: { task: Task; reveal: boolean }) {
 function DailyReset({ task }: { task: Task }) {
   const store = useStore();
   const { settings } = useAppState();
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const daily = task.kind === 'daily';
   return (
@@ -230,12 +232,10 @@ function DailyReset({ task }: { task: Task }) {
         <span className="switch-track" aria-hidden="true">
           <span className="switch-knob" />
         </span>
-        每日重置
+        {t.tasks.dailyReset}
       </button>
       <span className="daily-hint tnum">
-        {daily
-          ? `每天 ${settings.dayStartHour}:00 清零${(task.streak ?? 0) > 0 ? ` · 已连续 ${task.streak} 天` : ''}`
-          : '每天清零次数和勾选'}
+        {daily ? t.tasks.dailyOn(settings.dayStartHour, task.streak ?? 0) : t.tasks.dailyOff}
       </span>
     </span>
   );
@@ -244,6 +244,7 @@ function DailyReset({ task }: { task: Task }) {
 /** Sub-steps tick off in any order; editing or removing one rewrites the list. */
 function Checklist({ task }: { task: Task }) {
   const store = useStore();
+  const t = useT();
   const [text, setText] = useState('');
   const composing = useRef(false);
   const items = task.items;
@@ -255,19 +256,19 @@ function Checklist({ task }: { task: Task }) {
   };
 
   return (
-    <ul className="checklist" aria-label="子项">
+    <ul className="checklist" aria-label={t.tasks.checklist}>
       {items.map((item) => (
         <li key={item.id} className="item" data-done={item.done || undefined}>
           <Checkbox checked={item.done} label={item.text} onChange={(done) => void store.toggleItem(task.id, item.id, done)} />
           <InlineText
             className="item-text"
             value={item.text}
-            label="子项"
+            label={t.tasks.item}
             onCommit={(next) => void store.setItems(task.id, items.map((i) => (i.id === item.id ? { ...i, text: next } : i)))}
           />
           {item.target != null && (
             <QuotaStepper
-              label="子项次数"
+              label={t.tasks.stepCount}
               current={item.current ?? 0}
               target={item.target}
               onStep={(d) => void store.stepQuota(task.id, d, item.id)}
@@ -276,7 +277,7 @@ function Checklist({ task }: { task: Task }) {
           <button
             type="button"
             className="icon-btn tiny"
-            aria-label={`删除子项「${item.text}」`}
+            aria-label={t.tasks.deleteItem(item.text)}
             onClick={() => void store.setItems(task.id, items.filter((i) => i.id !== item.id))}
           >
             <X />
@@ -286,8 +287,8 @@ function Checklist({ task }: { task: Task }) {
       <li className="item item-add">
         <Plus />
         <input
-          aria-label="添加子项"
-          placeholder="加一个子步骤，回车"
+          aria-label={t.tasks.addItem}
+          placeholder={t.tasks.addItemPlaceholder}
           value={text}
           spellCheck={false}
           onChange={(e) => setText(e.target.value)}

@@ -1,5 +1,6 @@
+import { messages } from '../lib/i18n';
 import { todoView } from '../lib/tasks';
-import { BAR_MODES, type BarMode, type ThemeMode } from '../rpc/types';
+import type { Language, ThemeMode } from '../rpc/types';
 import type { AppState, AppStore } from '../state/store';
 
 export type PaletteAction =
@@ -9,40 +10,45 @@ export type PaletteAction =
   | { type: 'new-slot' }
   | { type: 'compose' }
   | { type: 'theme'; theme: ThemeMode }
+  | { type: 'language'; language: Language }
   | { type: 'pin' }
   | { type: 'sound' }
   | { type: 'collapse' }
-  | { type: 'bar-mode'; mode: BarMode }
   | { type: 'reset-bar-position' }
   | { type: 'quit' };
 
+export type PaletteGroup = 'slot' | 'task' | 'command';
+
 export interface PaletteItem {
   key: string;
-  group: '槽位' | '待办' | '命令';
+  group: PaletteGroup;
   label: string;
   hint?: string;
+  /** more words that find the item, in either language */
+  keywords?: readonly string[];
   action: PaletteAction;
 }
 
 const LIMIT = 10;
 
-/** The always-on bar's three modes, as the header's switch and Ctrl+K name them. */
-export const BAR_MODE_LABEL: Record<BarMode, string> = { auto: '自动', standalone: '滚筒', 'tray-only': '托盘' };
+/** The language command answers to its name in both languages, whichever one is showing. */
+const LANGUAGE_KEYWORDS = ['语言', '中文', '英文', 'language', 'english', 'chinese'] as const;
 
 function matches(query: string, ...texts: Array<string | undefined>): boolean {
   if (!query) return true;
   return texts.some((t) => t?.toLowerCase().includes(query));
 }
 
-/** What Ctrl+K offers for a query: slots, the todos the panel shows, then commands. */
+/** What Ctrl+K offers for a query: slots, the todos the panel shows, then commands, worded in the UI's language. */
 export function paletteItems(state: AppState, raw: string): PaletteItem[] {
+  const t = messages(state.settings.language);
   const query = raw.trim().toLowerCase();
   const items: PaletteItem[] = [];
   state.slots.forEach((slot, i) => {
     if (matches(query, slot.title, slot.tag, slot.breadcrumb)) {
       items.push({
         key: `slot:${slot.id}`,
-        group: '槽位',
+        group: 'slot',
         label: slot.title,
         hint: `Alt+${i + 1}`,
         action: { type: 'focus-slot', id: slot.id },
@@ -55,43 +61,47 @@ export function paletteItems(state: AppState, raw: string): PaletteItem[] {
       if (!matches(query, task.title)) continue;
       items.push({
         key: `task:${task.id}`,
-        group: '待办',
+        group: 'task',
         label: task.title,
-        hint: task.status === 'completed' ? '已完成' : undefined,
+        hint: task.status === 'completed' ? t.palette.done : undefined,
         action: { type: 'show-task', id: task.id },
       });
     }
   }
-  const { pinned, sound, theme, barMode } = state.settings;
+  const { pinned, sound, theme, language, barX, barY } = state.settings;
+  // Only a bar that was dragged somewhere has a place to forget.
+  const resetBar: PaletteItem[] =
+    barX != null || barY != null
+      ? [{ key: 'cmd:reset-bar', group: 'command', label: t.settings.resetBar, action: { type: 'reset-bar-position' } }]
+      : [];
   const commands: PaletteItem[] = [
-    { key: 'cmd:new-slot', group: '命令', label: '新建并发槽', hint: 'Alt+N', action: { type: 'new-slot' } },
-    { key: 'cmd:compose', group: '命令', label: '随手记一笔', action: { type: 'compose' } },
+    { key: 'cmd:new-slot', group: 'command', label: t.palette.newSlot, hint: 'Alt+N', action: { type: 'new-slot' } },
+    { key: 'cmd:compose', group: 'command', label: t.palette.compose, action: { type: 'compose' } },
     {
       key: 'cmd:theme',
-      group: '命令',
-      label: theme === 'stone' ? '换成石墨暗色' : '换成纸石浅色',
+      group: 'command',
+      label: theme === 'stone' ? t.palette.toGraphite : t.palette.toStone,
       action: { type: 'theme', theme: theme === 'stone' ? 'graphite' : 'stone' },
     },
-    { key: 'cmd:pin', group: '命令', label: pinned ? '取消钉住面板' : '钉住面板', hint: 'Ctrl+P', action: { type: 'pin' } },
-    { key: 'cmd:sound', group: '命令', label: sound ? '关闭音效' : '打开音效', action: { type: 'sound' } },
-    { key: 'cmd:collapse', group: '命令', label: '收起到底部卡槽', hint: 'Esc', action: { type: 'collapse' } },
-    ...BAR_MODES.filter((m) => m !== barMode).map(
-      (mode): PaletteItem => ({
-        key: `cmd:bar-mode:${mode}`,
-        group: '命令',
-        label: `常驻条改为「${BAR_MODE_LABEL[mode]}」`,
-        action: { type: 'bar-mode', mode },
-      }),
-    ),
-    { key: 'cmd:reset-bar', group: '命令', label: '重置滚筒条位置', action: { type: 'reset-bar-position' } },
-    { key: 'cmd:quit', group: '命令', label: '退出羽记', action: { type: 'quit' } },
+    {
+      key: 'cmd:language',
+      group: 'command',
+      label: t.palette.language,
+      keywords: LANGUAGE_KEYWORDS,
+      action: { type: 'language', language: language === 'zh' ? 'en' : 'zh' },
+    },
+    { key: 'cmd:pin', group: 'command', label: pinned ? t.palette.unpin : t.palette.pin, hint: 'Ctrl+P', action: { type: 'pin' } },
+    { key: 'cmd:sound', group: 'command', label: sound ? t.palette.soundOff : t.palette.soundOn, action: { type: 'sound' } },
+    { key: 'cmd:collapse', group: 'command', label: t.palette.collapse, hint: 'Esc', action: { type: 'collapse' } },
+    ...resetBar,
+    { key: 'cmd:quit', group: 'command', label: t.palette.quit, action: { type: 'quit' } },
   ];
-  const found = commands.filter((c) => matches(query, c.label));
+  const found = commands.filter((c) => matches(query, c.label, ...(c.keywords ?? [])));
   if (query) {
     found.unshift({
       key: 'cmd:search-notes',
-      group: '命令',
-      label: `在随笔里搜「${raw.trim()}」`,
+      group: 'command',
+      label: t.palette.searchNotes(raw.trim()),
       action: { type: 'search-notes', query: raw.trim() },
     });
   }
@@ -120,6 +130,9 @@ export function runPaletteAction(store: AppStore, action: PaletteAction): void {
     case 'theme':
       store.setThemeChoice(action.theme);
       return;
+    case 'language':
+      void store.setLanguage(action.language);
+      return;
     case 'pin':
       void store.togglePin();
       return;
@@ -128,9 +141,6 @@ export function runPaletteAction(store: AppStore, action: PaletteAction): void {
       return;
     case 'collapse':
       store.setExpanded(false);
-      return;
-    case 'bar-mode':
-      void store.setBarMode(action.mode);
       return;
     case 'reset-bar-position':
       void store.resetBarPosition();

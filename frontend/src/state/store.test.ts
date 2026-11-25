@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
+import { ManualClock } from '../lib/clock';
 import { SETTLE_MS } from '../lib/geometry';
+import { messages, noticeText } from '../lib/i18n';
+import { LocalMockBridge } from '../rpc/mock';
 import { flush, MIN, setup, T0 } from '../test/fixtures';
-import { resolvedTheme, themeChoiceOf } from './store';
+import { AppStore, resolvedTheme, themeChoiceOf } from './store';
 
 describe('AppStore', () => {
   it('loads slots, tasks, settings and notes, and sizes the collapsed dock', async () => {
@@ -123,7 +126,10 @@ describe('AppStore', () => {
     await store.init();
     vi.spyOn(bridge.workbench, 'setState').mockRejectedValueOnce(new Error('workbench/busy'));
     await store.setSlotState('s-2', 'focus');
-    expect(store.getState().ui.notice).toBe('切换状态失败：workbench/busy');
+    const notice = store.getState().ui.notice;
+    expect(notice).toEqual({ action: 'setState', detail: 'workbench/busy' });
+    expect(noticeText(messages('zh'), notice!)).toBe('切换状态失败：workbench/busy');
+    expect(noticeText(messages('en'), notice!)).toBe('Switching state failed: workbench/busy');
     expect(store.getState().slots[0]?.state).toBe('focus');
     clock.advance(4000);
     expect(store.getState().ui.notice).toBeNull();
@@ -228,7 +234,7 @@ describe('AppStore', () => {
       await store.init();
       vi.spyOn(bridge.tasks, 'update').mockRejectedValueOnce(new Error('tasks/busy'));
       await store.setDailyReset('t-1', true);
-      expect(store.getState().ui.notice).toBe('切换每日重置失败：tasks/busy');
+      expect(store.getState().ui.notice).toEqual({ action: 'dailyReset', detail: 'tasks/busy' });
       expect((await bridge.tasks.list()).tasks.find((t) => t.id === 't-1')?.kind).toBe('side');
       expect((await bridge.notes.list({ taskId: 't-1' })).length).toBe(1);
     });
@@ -303,23 +309,72 @@ describe('AppStore', () => {
       await store.init();
       vi.spyOn(bridge.dock, 'toggle').mockRejectedValueOnce(new Error('dock/unavailable'));
       await store.togglePanel();
-      expect(store.getState().ui).toMatchObject({ panelOpen: false, notice: '切换工作台失败：dock/unavailable' });
+      expect(store.getState().ui).toMatchObject({ panelOpen: false, notice: { action: 'togglePanel', detail: 'dock/unavailable' } });
     });
   });
 
-  describe('bar settings', () => {
-    it('switches the bar mode and resets the dragged position', async () => {
+  describe('settings', () => {
+    it('resets the dragged bar position with nulls, and has no bar mode to choose', async () => {
       const { store, bridge } = setup();
       await store.init();
       const update = vi.spyOn(bridge.settings, 'update');
-      await store.setBarMode('standalone');
-      await store.setBarMode('standalone');
-      expect(store.getState().settings.barMode).toBe('standalone');
       await bridge.settings.update({ barX: 40, barY: 900 });
+      await flush();
+      expect(store.getState().settings).toMatchObject({ barX: 40, barY: 900 });
       await store.resetBarPosition();
       expect(update).toHaveBeenLastCalledWith({ barX: null, barY: null });
-      expect(update.mock.calls.filter(([p]) => 'barMode' in p)).toHaveLength(1);
       expect(store.getState().settings).not.toHaveProperty('barX');
+      expect(store.getState().settings).not.toHaveProperty('barMode');
+      expect('setBarMode' in store).toBe(false);
+    });
+
+    it('switches the language once, and words a failure in whichever language is current', async () => {
+      const { store, bridge } = setup();
+      await store.init();
+      const update = vi.spyOn(bridge.settings, 'update');
+      await store.setLanguage('en');
+      await store.setLanguage('en');
+      expect(store.getState().settings.language).toBe('en');
+      expect(update.mock.calls).toEqual([[{ language: 'en' }]]);
+      vi.spyOn(bridge.notes, 'delete').mockRejectedValueOnce('');
+      await store.deleteNote('n-1');
+      const notice = store.getState().ui.notice!;
+      expect(noticeText(messages(store.getState().settings.language), notice)).toBe('Deleting the note failed: unknown error');
+      await store.setLanguage('zh');
+      expect(noticeText(messages(store.getState().settings.language), notice)).toBe('删除随笔失败：未知错误');
+    });
+
+    it('steps the day rollover around the clock and rolls the period with it', async () => {
+      const { store } = setup({ start: new Date(2026, 10, 25, 4, 30).getTime() });
+      await store.init();
+      expect(store.getState().periodKey).toBe('2026-11-25');
+      await store.setDayStartHour(5);
+      await flush();
+      expect(store.getState().settings.dayStartHour).toBe(5);
+      expect(store.getState().periodKey).toBe('2026-11-24');
+      await store.setDayStartHour(-1);
+      expect(store.getState().settings.dayStartHour).toBe(23);
+      await store.setDayStartHour(24);
+      expect(store.getState().settings.dayStartHour).toBe(0);
+    });
+
+    it('remembers the last language locally, so the next window starts in it', async () => {
+      const kept = new Map<string, string>();
+      const prefs = { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v) };
+      const clock = new ManualClock(T0);
+      const bridge = new LocalMockBridge({ clock, storage: null });
+      const first = new AppStore({ bridge, clock, prefs });
+      await first.init();
+      await first.setLanguage('en');
+      first.dispose();
+      const next = new AppStore({ bridge: new LocalMockBridge({ clock, storage: null }), clock, prefs });
+      // Before the backend answers, the window already speaks English…
+      expect(next.getState().settings.language).toBe('en');
+      // …and the backend has the last word.
+      await next.init();
+      expect(next.getState().settings.language).toBe('zh');
+      expect(JSON.parse(kept.get('featherlog.ui.v2')!)).toMatchObject({ language: 'zh' });
+      bridge.dispose();
     });
   });
 

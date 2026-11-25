@@ -64,19 +64,40 @@ describe('MyGoBridge', () => {
     ]);
   });
 
-  it('reads Toggle\'s answer, and fills settings a backend from before barMode leaves out', async () => {
+  it('reads Toggle\'s answer, and fills the language a backend from before it leaves out', async () => {
     const rt = fakeRuntime((method) => {
       if (method === 'DockService.Toggle') return { expanded: true };
       if (method === 'SettingsService.Get') return { theme: 'graphite', dayStartHour: 4, sound: true, volume: 5, pinned: false };
-      if (method === 'SettingsService.Update') return { theme: 'stone', dayStartHour: 4, sound: true, volume: 5, pinned: false, barMode: 'weird', barX: null };
+      if (method === 'SettingsService.Update') return { theme: 'stone', dayStartHour: 4, sound: true, volume: 5, pinned: false, barX: null };
       return null;
     });
     const bridge = new MyGoBridge(rt);
     expect(await bridge.dock.toggle()).toEqual({ expanded: true });
-    expect((await bridge.settings.get()).barMode).toBe('auto');
+    expect((await bridge.settings.get()).language).toBe('zh');
     const updated = await bridge.settings.update({ barX: null, barY: null });
-    expect(updated).toMatchObject({ barMode: 'auto', barX: null });
+    expect(updated).toMatchObject({ language: 'zh', barX: null });
     expect(rt.calls.at(-1)).toEqual(['SettingsService.Update', [{ barX: null, barY: null }]]);
+  });
+
+  it('reads "zh-CN" as zh, keeps en, and falls back to zh on a language it does not speak', async () => {
+    let language: unknown = 'zh-CN';
+    const rt = fakeRuntime((method) =>
+      method === 'SettingsService.Get' ? { theme: 'stone', dayStartHour: 4, sound: true, volume: 5, pinned: false, language } : null,
+    );
+    const bridge = new MyGoBridge(rt);
+    expect((await bridge.settings.get()).language).toBe('zh');
+    language = 'en';
+    expect((await bridge.settings.get()).language).toBe('en');
+    language = 'en-GB';
+    expect((await bridge.settings.get()).language).toBe('en');
+    language = 'fr';
+    expect((await bridge.settings.get()).language).toBe('zh');
+    language = 42;
+    expect((await bridge.settings.get()).language).toBe('zh');
+    const seen: string[] = [];
+    bridge.on('settings:changed', (s) => seen.push(s.language));
+    rt.emit('settings:changed', { theme: 'stone', dayStartHour: 4, sound: true, volume: 5, pinned: false, language: 'zh-Hans' });
+    expect(seen).toEqual(['zh']);
   });
 
   it('treats a missing Toggle answer as closed', async () => {

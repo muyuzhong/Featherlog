@@ -1,7 +1,7 @@
+import { normalizeLanguage } from '../lib/i18n';
 import { omitUndefined } from '../lib/json';
 import { LocalMockBridge, type MockOptions } from './mock';
 import {
-  BAR_MODES,
   DEFAULT_SETTINGS,
   type BridgeEventName,
   type BridgeEvents,
@@ -104,10 +104,10 @@ export function normalizeTaskList(list: TaskList): TaskList {
   return { periodKey: list.periodKey, tasks: (list.tasks ?? []).map(normalizeTask) };
 }
 
-/** A backend from before barMode reads as "auto"; an unknown mode too. */
+/** A backend from before language reads as "zh", and so does a language the UI does not speak; "zh-CN" is "zh". */
 export function normalizeSettings(settings: Settings): Settings {
   const s = { ...DEFAULT_SETTINGS, ...omitUndefined(settings ?? {}) };
-  if (!BAR_MODES.includes(s.barMode)) s.barMode = DEFAULT_SETTINGS.barMode;
+  s.language = normalizeLanguage(s.language);
   return s;
 }
 

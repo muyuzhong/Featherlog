@@ -786,26 +786,12 @@ html[data-mode="bar"] body,
   letter-spacing: 0.08em;
 }
 
-.head-date {
-  color: var(--ink-2);
-  font-size: 12px;
-}
-
-.head-sub {
-  color: var(--ink-3);
-  font-size: 10.5px;
-}
-
 .head-right {
   display: flex;
   align-items: center;
   gap: 2px;
   margin-left: auto;
   flex: none;
-}
-
-.head-right .seg {
-  margin-right: 4px;
 }
 
 .search {
@@ -881,6 +867,11 @@ html[data-mode="bar"] body,
   color: var(--ink-3);
   font-size: 10px;
   flex: none;
+}
+
+/* "Command" is wider than 命令. */
+:lang(en) .palette-group {
+  width: 46px;
 }
 
 .palette-label {
@@ -1687,6 +1678,83 @@ svg.turned {
   resize: none;
   outline: none;
   overflow: hidden;
+}
+
+/* ---------- settings popover ---------- */
+
+.settings-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.settings-btn[aria-expanded="true"] {
+  background: var(--press);
+  color: var(--ink);
+}
+
+/* A sheet of the focus card's paper, hung under the gear by a 1px rule and a soft ink shadow. */
+.settings-pop {
+  --app-region: no-drag;
+  -webkit-app-region: no-drag;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 45;
+  display: grid;
+  gap: 8px;
+  width: max-content;
+  min-width: 264px;
+  padding: 10px 10px 10px 12px;
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: var(--card-focus);
+  box-shadow: var(--float);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 26px;
+}
+
+.settings-label {
+  color: var(--ink-2);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.settings-pop .seg-item svg {
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+}
+
+.hour-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.hour-value {
+  min-width: 46px;
+  padding: 2px 0;
+  border-radius: var(--r-control);
+  color: var(--ink);
+  font: 500 12px/1.2 var(--font-mono);
+  text-align: center;
+}
+
+.hour-value:hover {
+  background: var(--hover);
+}
+
+.settings-foot {
+  justify-content: flex-end;
+  min-height: 22px;
+  padding-top: 6px;
+  border-top: 1px solid var(--hair);
 }
 
 /* ---------- floating ---------- */

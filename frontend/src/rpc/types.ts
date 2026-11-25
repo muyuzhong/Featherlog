@@ -80,15 +80,10 @@ export interface Note {
 
 export type ThemeMode = 'stone' | 'graphite';
 
-/**
- * Which always-on bar the user gets:
- * - auto: the host decides (the KDE Plasma applet where there is one, the standalone drum bar elsewhere);
- * - standalone: always the standalone 3D drum bar window (?mode=bar);
- * - tray-only: no standalone bar, only the system tray / KDE applet.
- */
-export type BarMode = 'auto' | 'standalone' | 'tray-only';
+/** The UI language: 简体中文 or English. */
+export type Language = 'zh' | 'en';
 
-export const BAR_MODES: readonly BarMode[] = ['auto', 'standalone', 'tray-only'];
+export const LANGUAGES: readonly Language[] = ['zh', 'en'];
 
 export interface Settings {
   theme: ThemeMode;
@@ -100,8 +95,8 @@ export interface Settings {
   volume: number;
   /** default false */
   pinned: boolean;
-  /** default "auto" */
-  barMode: BarMode;
+  /** default "zh"; a missing or unknown value reads as "zh", and "zh-CN" as "zh" */
+  language: Language;
   /** Where the user dragged the standalone bar (screen px); null or absent: the host's default place. */
   barX?: number | null;
   barY?: number | null;
@@ -120,7 +115,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sound: true,
   volume: 5,
   pinned: false,
-  barMode: 'auto',
+  language: 'zh',
 };
 
 // ---- Service inputs (one JSON object per call) ----

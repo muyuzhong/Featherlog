@@ -2,6 +2,7 @@ import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { useEffect, useLayoutEffect } from 'react';
 import { COLLAPSED, dockGeometry, SPRING } from './lib/geometry';
 import { isTypingTarget, keyAction } from './lib/keys';
+import { messages } from './lib/i18n';
 import { useAppState, useStore } from './state/react';
 import { resolvedTheme } from './state/store';
 import { Drawer, DRAWER_INSET } from './ui/Drawer';
@@ -15,6 +16,7 @@ export function App() {
   const state = useAppState();
   const theme = resolvedTheme(state);
   const { expanded } = state.ui;
+  const { language } = state.settings;
   const mode = store.mode;
 
   useLayoutEffect(() => {
@@ -23,6 +25,13 @@ export function App() {
     root.dataset.mode = mode;
     root.style.colorScheme = theme === 'graphite' ? 'dark' : 'light';
   }, [theme, mode]);
+
+  // Screen readers, hyphenation and the CJK font fallback all read <html lang>.
+  useLayoutEffect(() => {
+    const t = messages(language);
+    document.documentElement.lang = t.htmlLang;
+    document.title = t.appName;
+  }, [language]);
 
   useEffect(() => {
     const mq = typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : null;

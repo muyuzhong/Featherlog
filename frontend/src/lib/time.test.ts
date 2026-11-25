@@ -7,7 +7,6 @@ import {
   formatElapsed,
   formatStamp,
   periodKeyOf,
-  periodLabel,
   periodStart,
   reminderProgress,
   trackReminders,
@@ -40,9 +39,8 @@ describe('date keys', () => {
     expect(daysBetween('2026-11-25', '2026-11-24')).toBe(-1);
   });
 
-  it('knows the weekday and labels the period', () => {
+  it('knows the weekday', () => {
     expect(weekdayOf('2026-11-25')).toBe(3);
-    expect(periodLabel('2026-11-25')).toBe('11月25日 周三');
   });
 
   it('starts a period at dayStartHour', () => {
@@ -66,6 +64,14 @@ describe('formatDeadline and formatStamp', () => {
     expect(formatDeadline('2026-11-25', '2026-11-25')).toBe('今天截止');
     expect(formatDeadline('2026-11-26', '2026-11-25')).toBe('明天截止');
     expect(formatDeadline('2026-11-28', '2026-11-25')).toBe('11-28 截止');
+  });
+
+  it('names them in English too', () => {
+    expect(formatDeadline('2026-11-24', '2026-11-25', 'en')).toBe('1 day overdue');
+    expect(formatDeadline('2026-11-23', '2026-11-25', 'en')).toBe('2 days overdue');
+    expect(formatDeadline('2026-11-25', '2026-11-25', 'en')).toBe('Due today');
+    expect(formatDeadline('2026-11-26', '2026-11-25', 'en')).toBe('Due tomorrow');
+    expect(formatDeadline('2026-11-28', '2026-11-25', 'en')).toBe('Due 11-28');
   });
 
   it('drops the date on the same day', () => {

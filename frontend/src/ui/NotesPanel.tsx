@@ -3,7 +3,7 @@ import { type KeyboardEvent, type RefObject, useEffect, useLayoutEffect, useRef,
 import { SPRING } from '../lib/geometry';
 import { formatStamp } from '../lib/time';
 import type { Note } from '../rpc/types';
-import { useAppState, useNow, useStore } from '../state/react';
+import { useAppState, useNow, useStore, useT } from '../state/react';
 import type { NotesScope } from '../state/store';
 import { Segmented } from './bits';
 import { ArrowUpRight, Search, Trash, X } from './icons';
@@ -26,30 +26,31 @@ function useAutosize(ref: RefObject<HTMLTextAreaElement | null>, value: string) 
 export function NotesPanel() {
   const store = useStore();
   const state = useAppState();
+  const t = useT();
   const { notes, ui, tasks } = state;
   const contextId = store.notesContextTaskId(state);
-  const contextTask = contextId ? tasks.find((t) => t.id === contextId) : undefined;
-  const titleOf = (id: string | null) => (id ? tasks.find((t) => t.id === id)?.title : undefined);
+  const contextTask = contextId ? tasks.find((task) => task.id === contextId) : undefined;
+  const titleOf = (id: string | null) => (id ? tasks.find((task) => task.id === id)?.title : undefined);
   const blocked = ui.notesScope === 'focus' && !contextId;
 
   return (
-    <section className="panel notes" aria-label="随笔与手记">
+    <section className="panel notes" aria-label={t.notes.region}>
       <div className="panel-head">
         <Segmented<NotesScope>
           id="notes-scope"
-          label="随笔范围"
+          label={t.notes.scope}
           value={ui.notesScope}
           onChange={(s) => store.setNotesScope(s)}
           options={[
-            { value: 'all', label: '全部随笔' },
-            { value: 'focus', label: '焦点手记' },
+            { value: 'all', label: t.notes.all },
+            { value: 'focus', label: t.notes.focus },
           ]}
         />
         <label className="mini-search">
           <Search />
           <input
-            aria-label="搜索随笔"
-            placeholder="搜索"
+            aria-label={t.notes.search}
+            placeholder={t.notes.searchPlaceholder}
             value={ui.notesQuery}
             spellCheck={false}
             onChange={(e) => store.setNotesQuery(e.target.value)}
@@ -66,28 +67,28 @@ export function NotesPanel() {
         <div className="notes-context">
           {contextTask ? (
             <>
-              <span>挂在</span>
+              <span>{t.notes.on}</span>
               <strong>{contextTask.title}</strong>
               {ui.selectedTaskId && (
-                <button type="button" className="icon-btn tiny" aria-label="改回焦点槽位的任务" onClick={() => store.selectTask(null)}>
+                <button type="button" className="icon-btn tiny" aria-label={t.notes.backToFocus} onClick={() => store.selectTask(null)}>
                   <X />
                 </button>
               )}
             </>
           ) : (
-            <span>焦点槽位没关联任务：在左边点一个任务，或把任务「上台」。</span>
+            <span>{t.notes.noContext}</span>
           )}
         </div>
       )}
       <Composer disabled={blocked} />
-      <ul className="note-list" aria-label="随笔">
+      <ul className="note-list" aria-label={t.notes.list}>
         <AnimatePresence initial={false}>
           {notes.map((note) => (
             <NoteItem key={note.id} note={note} taskTitle={ui.notesScope === 'all' ? titleOf(note.taskId) : undefined} />
           ))}
         </AnimatePresence>
         {notes.length === 0 && !blocked && (
-          <li className="empty">{ui.notesQuery.trim() ? '没有匹配的随笔。' : '还没有随笔，落一笔吧。'}</li>
+          <li className="empty">{ui.notesQuery.trim() ? t.notes.noMatch : t.notes.empty}</li>
         )}
       </ul>
     </section>
@@ -97,6 +98,7 @@ export function NotesPanel() {
 function Composer({ disabled }: { disabled: boolean }) {
   const store = useStore();
   const { ui } = useAppState();
+  const t = useT();
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -130,15 +132,15 @@ function Composer({ disabled }: { disabled: boolean }) {
       <textarea
         ref={ref}
         rows={1}
-        aria-label="新随笔"
-        placeholder={ui.notesScope === 'focus' ? '给这件事记一笔…' : '随手记…'}
+        aria-label={t.notes.composer}
+        placeholder={ui.notesScope === 'focus' ? t.notes.composeFocus : t.notes.composeAll}
         value={text}
         disabled={disabled}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKeyDown}
       />
       <button type="button" className="text-btn strong" disabled={disabled || !text.trim() || saving} onClick={() => void save()}>
-        存下 <kbd>Ctrl ↵</kbd>
+        {t.notes.save} <kbd>Ctrl ↵</kbd>
       </button>
     </div>
   );
@@ -146,6 +148,7 @@ function Composer({ disabled }: { disabled: boolean }) {
 
 function NoteItem({ note, taskTitle }: { note: Note; taskTitle?: string }) {
   const store = useStore();
+  const t = useT();
   const now = useNow(60_000);
   const [draft, setDraft] = useState(note.content);
   const [editing, setEditing] = useState(false);
@@ -196,19 +199,19 @@ function NoteItem({ note, taskTitle }: { note: Note; taskTitle?: string }) {
       <div className="note-head">
         <span className="stamp tnum">{formatStamp(note.createdAt, now)}</span>
         {taskTitle && (
-          <span className="note-task" title={`手记：${taskTitle}`}>
+          <span className="note-task" title={t.notes.taskNote(taskTitle)}>
             <ArrowUpRight />
             {taskTitle}
           </span>
         )}
-        {status === 'saved' && !editing && <span className="saved">已存</span>}
+        {status === 'saved' && !editing && <span className="saved">{t.notes.saved}</span>}
         <span className="spacer" />
         {confirm ? (
           <button type="button" className="text-btn strong" onClick={() => void store.deleteNote(note.id)}>
-            确认删除
+            {t.notes.confirmDelete}
           </button>
         ) : (
-          <button type="button" className="icon-btn tiny note-delete" aria-label="删除这条随笔" onClick={() => setConfirm(true)}>
+          <button type="button" className="icon-btn tiny note-delete" aria-label={t.notes.delete} onClick={() => setConfirm(true)}>
             <Trash />
           </button>
         )}
@@ -217,7 +220,7 @@ function NoteItem({ note, taskTitle }: { note: Note; taskTitle?: string }) {
         ref={ref}
         className="note-body"
         rows={1}
-        aria-label="随笔内容"
+        aria-label={t.notes.body}
         value={draft}
         spellCheck={false}
         onFocus={() => setEditing(true)}

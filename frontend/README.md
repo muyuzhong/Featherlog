@@ -47,16 +47,36 @@ panel 模式对应现在的宿主分工：收起态由 KDE 底部状态栏插件
 - 同一次收起里 `Esc` 之后紧跟的失焦只发一次请求（500ms 内去重）。
 - panel 模式下前端**不主动发** `expanded: true` 或收起条尺寸；窗口何时显示、多大由宿主决定。收到 `dock:toggle` 也不改视图（宿主已经自己显示或隐藏了）。
 - `?mode=panel` 不带 MyGo 时用 mock 后端，可以在浏览器里预览弹窗本身。
-- 顶栏新增「常驻条」切换：自动 / 滚筒 / 托盘（`Settings.barMode` 的 `auto` / `standalone` / `tray-only`）。Ctrl+K 里也能切换，并有「重置滚筒条位置」（`SettingsService.Update({ barX: null, barY: null })`）。
+- 常驻条不再让用户选择模式：只有宿主自动决定的单滚筒条（有 KDE 插件就用插件，否则用 `?mode=bar` 滚筒条窗口）。前端已彻底移除 `barMode` 类型、分段开关和 Ctrl+K 命令。
+
+### 顶栏与设置浮层
+
+- 顶栏左侧只有应用名（「羽记」/「Featherlog」），不再显示日期和换日时间；中间是搜索框；右侧只剩 3 个图标按钮：设置（齿轮）、钉住、收起。
+- 点齿轮在按钮正下方展开单色设置浮层（1px 边框 + 柔和墨色阴影，无任何色点），点外部、再点齿轮或按 `Esc` 关闭；浮层里的 `Esc` 只关浮层，不会收起面板。窗口失焦时浮层也一并关闭，面板下次弹出时是干净的。浮层里只有：
+  1. **语言 / Language**：简体中文 `zh` / English `en`，即时切换整个界面；
+  2. **外观 / Theme**：纸石 `stone` / 石墨 `graphite` / 跟随系统 `system`；
+  3. **提示音 / Sound**：开启 / 静音一个开关（没有音量条，`Settings.volume` 仍按契约保留，界面不再提供调节）；
+  4. **换日时间 / Day Rollover**：`−  04:00  +` 步进，00:00–23:00 循环，焦点在时间上时方向键 / Home / End 也能调，写 `SettingsService.Update({ dayStartHour })`；
+  5. **重置滚筒位置 / Reset Bar Position**：只在 `settings.barX != null`（滚筒条被拖动过）时出现，调用 `SettingsService.Update({ barX: null, barY: null })`。Ctrl+K 的同名命令也只在被拖动过时出现。
+
+### 中英双语
+
+- 所有界面文案集中在 `src/lib/i18n.ts`：`zh` 与 `en` 两套目录逐键对齐（`Messages = typeof zh`，英文缺一个键就编译不过），组件通过 `useT()` 读取当前语言，切换时整个工作台、滚筒条（「待看」↔「READY」签条）、Ctrl+K 命令面板和错误提示同时变化，不需要刷新。
+- 失败提示在 store 里存成 `{ action, detail }`，渲染时才按当前语言拼成「切换状态失败：workbench/busy」/「Switching state failed: workbench/busy」，所以提示显示期间切换语言也会跟着变；后端的机器错误码原样显示。
+- `<html lang>` 随语言设为 `zh-CN` / `en`（中文带地区码，保证 CJK 字形回退选简体字形），`document.title` 也跟着换。
+- 上次的语言另存一份在 localStorage（`featherlog.ui.v2`），新窗口第一帧就用它，后端返回后以后端为准。
+- Ctrl+K 里有「切换语言为 English」/「Switch language to 简体中文」，中英文关键词（语言、中文、language、english…）都能搜到。
+- 用户自己写的内容（槽位、待办、随笔、示例数据）不翻译。
 
 ### 契约变更（前端已改，Go 与 `docs/design.md` 需要跟进）
 
 这次只改了 `frontend/`，按 AGENTS.md 第 7 条，下面这些需要后端和设计文档同步：
 
-1. `Settings` 新增 `barMode: "auto" | "standalone" | "tray-only"`（默认 `"auto"`），以及可选的 `barX?: number | null`、`barY?: number | null`（滚筒条被拖到的屏幕坐标；`null` 或缺省表示用宿主的默认位置）。前端读到没有 `barMode` 或值不认识时按 `"auto"` 处理，所以旧后端也能用。
-2. `DockService` 新增 `Toggle(input?: { expanded?: boolean }) → { expanded: boolean }`：显示或隐藏 880×520 工作台窗口，不带 `expanded` 时翻转；前端调用 `window.mygo.call("DockService.Toggle", input ?? {})`。宿主应在之后向所有窗口（包括 bar 窗口）广播 `dock:toggle { expanded }`。
-3. 期望宿主做的事（前端不做）：
-   - 按 `barMode` 决定是否开 `?mode=bar` 窗口：312×40、无边框、不透明、置顶、不进任务栏；
+1. `Settings` **移除** `barMode`（前端不再读写，mock 读到旧数据里的 `barMode` 会丢掉）；保留可选的 `barX?: number | null`、`barY?: number | null`（滚筒条被拖到的屏幕坐标；`null` 或缺省表示用宿主的默认位置）。
+2. `Settings` **新增** `language: "zh" | "en"`（默认 `"zh"`）。前端读到缺省或不认识的值时按 `"zh"` 处理，`"zh-CN"` / `"zh_Hans"` 等归一为 `"zh"`，`"en-US"` 等归一为 `"en"`，所以旧后端也能用。前端写入时只会发 `"zh"` 或 `"en"`；mock 对其它值保持原值不变（与 `theme` 一致），建议 Go 侧对非法值返回 `settings/invalid`。
+3. `DockService` 新增 `Toggle(input?: { expanded?: boolean }) → { expanded: boolean }`：显示或隐藏 880×520 工作台窗口，不带 `expanded` 时翻转；前端调用 `window.mygo.call("DockService.Toggle", input ?? {})`。宿主应在之后向所有窗口（包括 bar 窗口）广播 `dock:toggle { expanded }`。
+4. 期望宿主做的事（前端不做）：
+   - 自动决定是否开 `?mode=bar` 窗口（有 KDE 插件时不开）：312×40、无边框、不透明、置顶、不进任务栏；
    - 用户拖动后把位置写进 `barX/barY`（前端只会写 `null` 来重置），收到 `settings:changed` 里位置被清空时把窗口放回默认位置；
    - bar 窗口不要因失焦隐藏。
 
@@ -66,13 +86,14 @@ panel 模式对应现在的宿主分工：收起态由 KDE 底部状态栏插件
 
 ```
 src/
-  rpc/types.ts      契约类型（说明书 §4.1–4.3 原样）+ 各方法的输入类型 + 事件表
+  rpc/types.ts      契约类型（说明书 §4.1–4.3 原样，含 Settings.language）+ 各方法的输入类型 + 事件表
   rpc/bridge.ts     Bridge 接口；MyGoBridge（window.__FEATHERLOG_MYGO__ / window.mygo）；createBridge()
   rpc/mock.ts       LocalMockBridge：同一套服务和事件，localStorage 持久化，注入时钟
   lib/              纯逻辑：槽位状态规则、任务/配额/周期、时间格式、窗口尺寸、按键映射、合成音效、Clock
+  lib/i18n.ts       中英文案目录、语言归一（parseLanguage / normalizeLanguage）、失败提示措辞
   state/store.ts    AppStore：唯一状态源，乐观更新 + 以后端返回为准，事件订阅，窗口尺寸同步
-  state/react.tsx   useSyncExternalStore 绑定、useNow()
-  ui/               Tray（收起条）、Drawer（展开态顶栏 + 搜索）、NowDeck、TaskPanel、NotesPanel
+  state/react.tsx   useSyncExternalStore 绑定、useNow()、useT()
+  ui/               Tray（收起条）、Drawer（展开态顶栏 + 搜索）、SettingsPopover（设置浮层）、NowDeck、TaskPanel、NotesPanel
   styles/           tokens.css（纸石 / 石墨两套色阶、同心圆角）、app.css
 ```
 
@@ -115,13 +136,15 @@ src/
 
 ## 测试覆盖
 
-`pnpm test` 共 154 条，主要规则：
+`pnpm test` 共 215 条，主要规则：
 
 - 并发槽三态：至多一个 focus、切 focus 时旧 focus 退回 running、提醒到点转 ready、`+10m` 后 1px 进度线推进、完成下台可连带完成任务、上台复用已有槽位；收起条单击切专注、双击展开定位、右键原位挂起/待看/完成。
 - 断点备忘原位编辑：回车保存、Esc 还原且不收起面板、输入法组字时回车不保存。
 - 待办：平铺列表与完成数（没有任何主线 / 支线 / 日常字样）、已完成折叠、一行新建（支持省略或传 `kind: side`、`×N` 设次数）、子项任意顺序勾选、增删子项、配额左键 +1 / 右键 −1 / 到目标自动完成 / 回退重开、每日重置开关原地 `TaskService.Update` 双向切换（保留原 ID、子项、次数、完成状态、槽位关联与手记）、扁平 `Reorder`、Ctrl+K 不带类型标签、跨 `dayStartHour` 换周期（03:59 仍属前一天）、weekly 只在指定星期到期、逾期。
 - 随笔：全部 / 焦点手记过滤、关键词搜索（经时钟防抖）、Ctrl+Enter 新建、原位编辑停笔自动保存、二次确认删除。
 - 键盘：Alt+1…9（按物理键）、Alt+N、Ctrl+P 钉住、Ctrl+K 搜索、Esc 只在未钉住时收起。
+- 顶栏与设置浮层：顶栏只剩应用名、搜索和「设置 / 钉住 / 收起」三个按钮（没有日期、换日、常驻条模式）；浮层只有语言、外观、提示音开关、换日时间，没有音量控件；Esc / 点外部 / 再点齿轮关闭且不收起面板；换日时间按钮与方向键步进并跨午夜循环；「重置滚筒位置」只在拖动过后出现并发 `{ barX: null, barY: null }`。
+- 中英双语：浮层或 Ctrl+K 切换后顶栏、搜索、并发卡片、待办（截止日、次数、子项、每日重置）、随笔、滚筒条（READY 签条）、失败提示即时换语言并能切回；`<html lang>` 跟随；界面上除用户内容外不残留中文；两套目录逐键对齐、英文单复数；`zh-CN` 归一、缺省与未知值回退 `zh`（bridge 与 mock）；上次语言写入本地偏好。
 - 窗口：先长后缩的 Resize 顺序、收起宽度 460–900。
 - bridge：Go 方法名、只传一个 JSON 对象、不发送 `undefined`、Go 的 `null` / nil slice 归一化、事件归一化、无运行时自动用 mock。
 - 样式守卫：样式表里不得出现带色相的颜色（通道差 > 16）、色名或 `@keyframes`；“待看”必须是两套主题下的反白签条；同心圆角由 `calc()` 推出。

@@ -1,4 +1,5 @@
 import { createContext, type ReactNode, useContext, useEffect, useState, useSyncExternalStore } from 'react';
+import { type Messages, messages } from '../lib/i18n';
 import type { AppState, AppStore } from './store';
 
 const StoreContext = createContext<AppStore | null>(null);
@@ -16,6 +17,11 @@ export function useStore(): AppStore {
 export function useAppState(): AppState {
   const store = useStore();
   return useSyncExternalStore(store.subscribe, store.getState, store.getState);
+}
+
+/** The UI's words in the language the settings name; a change re-renders every caller at once. */
+export function useT(): Messages {
+  return messages(useAppState().settings.language);
 }
 
 /** The store clock's time, refreshed every intervalMs. */

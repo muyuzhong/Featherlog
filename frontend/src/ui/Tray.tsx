@@ -12,13 +12,12 @@ import {
   wrapIndex,
 } from '../lib/drum';
 import { SPRING } from '../lib/geometry';
+import { noticeText } from '../lib/i18n';
 import { todoTally } from '../lib/tasks';
 import type { WorkSlot } from '../rpc/types';
-import { useAppState, useStore } from '../state/react';
+import { useAppState, useStore, useT } from '../state/react';
 import { Elapsed, ReadyTag } from './bits';
 import { ChevronDown, ChevronUp, Grip, Plus } from './icons';
-
-const STATE_NAME = { focus: '专注中', running: '后台运行', ready: '待看' } as const;
 
 /**
  * The always-on bar: a drag grip, the 3D drum of slots, and the way into the
@@ -28,6 +27,7 @@ const STATE_NAME = { focus: '专注中', running: '后台运行', ready: '待看
 export function Tray() {
   const store = useStore();
   const { tasks, ui } = useAppState();
+  const t = useT();
   const tally = todoTally(tasks);
   const open = store.bar ? ui.panelOpen : ui.expanded;
 
@@ -40,19 +40,19 @@ export function Tray() {
       exit={{ opacity: 0, y: 8, transition: { duration: 0.1 } }}
       transition={SPRING}
     >
-      <span className="tray-handle" title="拖动常驻条" aria-hidden="true">
+      <span className="tray-handle" title={t.tray.drag} aria-hidden="true">
         <Grip />
       </span>
       <Drum />
       <div className="tray-quick">
-        <button type="button" className="icon-btn" aria-label="新并发槽" title="新并发槽 · Alt+N" onClick={() => store.requestNewSlot()}>
+        <button type="button" className="icon-btn" aria-label={t.tray.newSlot} title={t.tray.newSlotHint} onClick={() => store.requestNewSlot()}>
           <Plus />
         </button>
         <button
           type="button"
           className="tray-tally tnum"
-          aria-label={`待办：完成 ${tally.done}，共 ${tally.total}`}
-          title="待办"
+          aria-label={t.tray.tally(tally.done, tally.total)}
+          title={t.tray.todos}
           onClick={() => store.openTasks()}
         >
           {tally.done}
@@ -62,9 +62,9 @@ export function Tray() {
         <button
           type="button"
           className="icon-btn"
-          aria-label={open ? '收起工作台' : '展开工作台'}
+          aria-label={open ? t.tray.closePanel : t.tray.openPanel}
           aria-expanded={open}
-          title={open ? '收起工作台' : '展开工作台'}
+          title={open ? t.tray.closePanel : t.tray.openPanel}
           onClick={() => void store.togglePanel()}
         >
           {open ? <ChevronDown /> : <ChevronUp />}
@@ -82,6 +82,7 @@ export function Tray() {
 function Drum() {
   const store = useStore();
   const { slots, ui } = useAppState();
+  const t = useT();
   const n = slots.length;
   const reduce = useReducedMotion();
   const [target, setTarget] = useState(() => restingIndex(slots));
@@ -184,10 +185,10 @@ function Drum() {
     <div className="drum" data-target={target} data-count={n} onWheel={onWheel} onKeyDown={onKeyDown}>
       {n === 0 ? (
         <button type="button" className="drum-empty" onClick={() => store.requestNewSlot()}>
-          手上没有并发 · Alt+N 开一张
+          {t.tray.empty}
         </button>
       ) : (
-        <ol className="drum-cards" aria-label="并发工作槽">
+        <ol className="drum-cards" aria-label={t.tray.cards}>
           {slots.map((slot, i) => (
             <DrumCard
               key={slot.id}
@@ -206,16 +207,16 @@ function Drum() {
         <button
           type="button"
           className="drum-hidden-ready tnum"
-          aria-label={`背面还有 ${behind.count} 张待看`}
-          title="转到待看的那张"
+          aria-label={t.tray.hiddenReady(behind.count)}
+          title={t.tray.toReady}
           onClick={() => focusAt(behind.firstIndex)}
         >
-          待看 {behind.count}
+          {t.tray.hiddenReadyChip(behind.count)}
         </button>
       )}
       {ui.notice && (
-        <span className="drum-notice" role="status" title={ui.notice}>
-          {ui.notice}
+        <span className="drum-notice" role="status" title={noticeText(t, ui.notice)}>
+          {noticeText(t, ui.notice)}
         </span>
       )}
     </div>
@@ -246,6 +247,7 @@ function DrumCard({
   const zIndex = useTransform(pos, (p) => pose(p).zIndex);
   const shadeLeft = useTransform(pos, (p) => pose(p).shadeLeft);
   const shadeRight = useTransform(pos, (p) => pose(p).shadeRight);
+  const t = useT();
   const place = placeOf(offset);
   const focus = slot.state === 'focus';
 
@@ -256,7 +258,7 @@ function DrumCard({
         className="drum-face"
         tabIndex={place === 'back' ? -1 : 0}
         aria-pressed={focus}
-        aria-label={`${index + 1}. ${slot.title}，${STATE_NAME[slot.state]}`}
+        aria-label={t.tray.cardLabel(index + 1, slot.title, t.tray.states[slot.state])}
         title={slot.breadcrumb ? `${slot.title} — ${slot.breadcrumb}` : slot.title}
         onClick={onPick}
         // Middle-click must not start the browser's autoscroll.

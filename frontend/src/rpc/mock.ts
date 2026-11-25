@@ -1,11 +1,11 @@
 import { type Clock, systemClock } from '../lib/clock';
+import { normalizeLanguage, parseLanguage } from '../lib/i18n';
 import { jsonClone, omitUndefined } from '../lib/json';
 import { applySlotState, fireDueReminders, MINUTE_MS, sortSlots } from '../lib/slots';
 import { rollDaily, setCompleted, stepQuota, toggleItem, withDue } from '../lib/tasks';
 import { addDays, periodKeyOf } from '../lib/time';
 import type { Bridge } from './bridge';
 import {
-  BAR_MODES,
   type BridgeEventName,
   type BridgeEvents,
   DEFAULT_SETTINGS,
@@ -499,7 +499,9 @@ export class LocalMockBridge implements Bridge {
           if (typeof patch.volume === 'number') next.volume = clampInt(patch.volume, 0, 10);
           if (typeof patch.sound === 'boolean') next.sound = patch.sound;
           if (typeof patch.pinned === 'boolean') next.pinned = patch.pinned;
-          if (patch.barMode !== undefined && BAR_MODES.includes(patch.barMode)) next.barMode = patch.barMode;
+          // "zh-CN" is "zh"; a language the UI does not speak is ignored, as an unknown theme is.
+          const language = parseLanguage(patch.language);
+          if (language) next.language = language;
           // null forgets where the bar was dragged; the host puts it back in its default place.
           for (const key of ['barX', 'barY'] as const) {
             const v = patch[key];
@@ -680,9 +682,10 @@ export class LocalMockBridge implements Bridge {
       if (!raw) return null;
       const data = JSON.parse(raw) as Partial<MockData>;
       if (data.version !== 2 || !Array.isArray(data.slots) || !Array.isArray(data.tasks) || !Array.isArray(data.notes)) return null;
-      // Data saved before barMode existed reads as "auto".
+      // Data saved before language existed reads as "zh"; the bar mode the UI once offered is gone.
       const settings: Settings = { ...DEFAULT_SETTINGS, ...data.settings };
-      if (!BAR_MODES.includes(settings.barMode)) settings.barMode = DEFAULT_SETTINGS.barMode;
+      settings.language = normalizeLanguage(settings.language);
+      delete (settings as Settings & { barMode?: unknown }).barMode;
       return {
         version: 2,
         seq: typeof data.seq === 'number' ? data.seq : 1000,
