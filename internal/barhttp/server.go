@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/muyuzhong/featherlog/internal/app"
+	"github.com/muyuzhong/featherlog/internal/clock"
 	"github.com/muyuzhong/featherlog/internal/settings"
 	"github.com/muyuzhong/featherlog/internal/store"
 	"github.com/muyuzhong/featherlog/internal/tasks"
@@ -31,6 +32,9 @@ const (
 	URLFileName = "bar-http.url"
 	// MaxWaitSeconds caps long-poll duration on GET /api/bar.
 	MaxWaitSeconds = 25
+	// ClientActiveWindow is how long an external /api/bar consumer (such as the
+	// KDE Plasma 6 applet) is considered active after its most recent request.
+	ClientActiveWindow = 35 * time.Second
 
 	maxRequestBodyBytes = 64 << 10
 )
@@ -82,6 +86,11 @@ type ErrorResponse struct {
 	Error ErrorDetail `json:"error"`
 }
 
+type activityListener struct {
+	id uint64
+	fn func(active bool)
+}
+
 // Server serves the loopback-only HTTP status & control API for the KDE Plasma 6 dock applet.
 type Server struct {
 	app       *app.App
@@ -95,11 +104,17 @@ type Server struct {
 	serveDone chan struct{}
 	closeOnce sync.Once
 
-	mu      sync.Mutex
-	rev     uint64
-	notify  chan struct{}
-	waiters int
-	closed  bool
+	mu                   sync.Mutex
+	rev                  uint64
+	notify               chan struct{}
+	waiters              int
+	closed               bool
+	lastClientAt         time.Time
+	clientActive         bool
+	clientExpiryGen      uint64
+	clientExpiryStop     clock.StopFunc
+	nextActivityListener uint64
+	activityListeners    []activityListener
 }
 
 // Start binds strictly to 127.0.0.1:<cfg.Port>, subscribes to domain & dock
@@ -202,6 +217,146 @@ func (s *Server) WaiterCount() int {
 	return s.waiters
 }
 
+func (s *Server) clock() clock.Clock {
+	if s.app != nil && s.app.Clock != nil {
+		return s.app.Clock
+	}
+	return clock.NewReal()
+}
+
+// HasActiveClient reports whether an external /api/bar consumer (such as the
+// KDE Plasma 6 applet) is currently connected or polled within ClientActiveWindow.
+func (s *Server) HasActiveClient() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return false
+	}
+	if s.waiters > 0 {
+		return true
+	}
+	if s.lastClientAt.IsZero() {
+		return false
+	}
+	return s.clock().Now().Sub(s.lastClientAt) <= ClientActiveWindow
+}
+
+// OnClientActivity subscribes to transitions in external /api/bar client
+// presence (true when a client connects, false on timeout or Close).
+// The returned function unsubscribes.
+func (s *Server) OnClientActivity(fn func(active bool)) func() {
+	if fn == nil {
+		return func() {}
+	}
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return func() {}
+	}
+	s.nextActivityListener++
+	id := s.nextActivityListener
+	s.activityListeners = append(s.activityListeners, activityListener{id: id, fn: fn})
+	s.mu.Unlock()
+
+	return func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for i, entry := range s.activityListeners {
+			if entry.id == id {
+				s.activityListeners = append(s.activityListeners[:i], s.activityListeners[i+1:]...)
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) snapshotActivityListenersLocked() []func(bool) {
+	if len(s.activityListeners) == 0 {
+		return nil
+	}
+	out := make([]func(bool), len(s.activityListeners))
+	for i, l := range s.activityListeners {
+		out[i] = l.fn
+	}
+	return out
+}
+
+func (s *Server) touchClientActivity() {
+	clk := s.clock()
+	now := clk.Now()
+
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	s.lastClientAt = now
+	becameActive := !s.clientActive
+	s.clientActive = true
+	s.scheduleClientExpiryLocked(clk, ClientActiveWindow+time.Millisecond)
+	var listeners []func(bool)
+	if becameActive {
+		listeners = s.snapshotActivityListenersLocked()
+	}
+	s.mu.Unlock()
+
+	for _, fn := range listeners {
+		fn(true)
+	}
+}
+
+func (s *Server) scheduleClientExpiryLocked(clk clock.Clock, delay time.Duration) {
+	if s.clientExpiryStop != nil {
+		s.clientExpiryStop()
+		s.clientExpiryStop = nil
+	}
+	if s.closed {
+		return
+	}
+	if delay < time.Millisecond {
+		delay = time.Millisecond
+	}
+	s.clientExpiryGen++
+	gen := s.clientExpiryGen
+	s.clientExpiryStop = clk.AfterFunc(delay, func() {
+		s.handleClientExpiry(gen)
+	})
+}
+
+func (s *Server) handleClientExpiry(gen uint64) {
+	clk := s.clock()
+	now := clk.Now()
+
+	s.mu.Lock()
+	if s.closed || gen != s.clientExpiryGen || !s.clientActive {
+		s.mu.Unlock()
+		return
+	}
+	if s.waiters > 0 {
+		// Defer expiration while a long-poll request is actively parked; the
+		// waiter's exit handler refreshes and reschedules expiry.
+		s.clientExpiryStop = nil
+		s.mu.Unlock()
+		return
+	}
+	if !s.lastClientAt.IsZero() {
+		elapsed := now.Sub(s.lastClientAt)
+		if elapsed <= ClientActiveWindow {
+			s.scheduleClientExpiryLocked(clk, ClientActiveWindow-elapsed+time.Millisecond)
+			s.mu.Unlock()
+			return
+		}
+	}
+	s.clientActive = false
+	s.clientExpiryStop = nil
+	listeners := s.snapshotActivityListenersLocked()
+	s.mu.Unlock()
+
+	for _, fn := range listeners {
+		fn(false)
+	}
+}
+
 // NotifyChange increments the monotonic revision counter and wakes all parked
 // long-poll clients.
 func (s *Server) NotifyChange() uint64 {
@@ -228,12 +383,28 @@ func (s *Server) Close() error {
 		}
 		s.unsubs = nil
 
+		var activityListeners []func(bool)
 		s.mu.Lock()
+		if s.clientExpiryStop != nil {
+			s.clientExpiryStop()
+			s.clientExpiryStop = nil
+		}
+		s.clientExpiryGen++
+		if s.clientActive {
+			s.clientActive = false
+			activityListeners = s.snapshotActivityListenersLocked()
+		}
+		s.lastClientAt = time.Time{}
+		s.activityListeners = nil
 		if !s.closed {
 			s.closed = true
 			close(s.notify)
 		}
 		s.mu.Unlock()
+
+		for _, fn := range activityListeners {
+			fn(false)
+		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
@@ -284,6 +455,8 @@ func (s *Server) handleBar(w http.ResponseWriter, r *http.Request) {
 		waitSec = v
 	}
 
+	s.touchClientActivity()
+
 	if clientRev > 0 && waitSec > 0 {
 		s.waitForChange(r.Context(), clientRev, waitSec)
 		if r.Context().Err() != nil {
@@ -310,11 +483,38 @@ func (s *Server) waitForChange(ctx context.Context, clientRev uint64, waitSec in
 	s.mu.Unlock()
 
 	defer func() {
+		clk := s.clock()
+		now := clk.Now()
+		var listeners []func(bool)
+
 		s.mu.Lock()
 		s.waiters--
+		if !s.closed {
+			if ctx.Err() == nil {
+				s.lastClientAt = now
+			}
+			if s.waiters == 0 && s.clientActive {
+				if s.lastClientAt.IsZero() || now.Sub(s.lastClientAt) > ClientActiveWindow {
+					s.clientActive = false
+					if s.clientExpiryStop != nil {
+						s.clientExpiryStop()
+						s.clientExpiryStop = nil
+					}
+					listeners = s.snapshotActivityListenersLocked()
+				} else {
+					s.scheduleClientExpiryLocked(clk, ClientActiveWindow-now.Sub(s.lastClientAt)+time.Millisecond)
+				}
+			}
+		}
 		s.mu.Unlock()
+
+		for _, fn := range listeners {
+			fn(false)
+		}
 	}()
 
+	// HTTP long-poll timeout uses a real transport timer so advancing FakeClock
+	// for domain reminder/rollover tests does not prematurely cut short a wait.
 	timer := time.NewTimer(time.Duration(waitSec) * time.Second)
 	defer timer.Stop()
 

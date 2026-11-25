@@ -47,6 +47,7 @@ const PreloadScript = `(() => {
     }),
     DockService: Object.freeze({
       resize: (geom) => invoke("DockService.Resize", geom),
+      toggle: (input) => (input === undefined ? invoke("DockService.Toggle") : invoke("DockService.Toggle", input)),
       quit: () => invoke("DockService.Quit"),
     }),
     events: Object.freeze({

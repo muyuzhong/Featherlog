@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ import (
 	"github.com/muyuzhong/featherlog/internal/ipcsock"
 	"github.com/muyuzhong/featherlog/internal/notes"
 	"github.com/muyuzhong/featherlog/internal/store"
+	"github.com/muyuzhong/featherlog/internal/tray"
 	"github.com/muyuzhong/featherlog/internal/workbench"
 )
 
@@ -32,6 +34,7 @@ const defaultDevURL = "http://localhost:5173"
 var version = "2.0.0"
 
 func main() {
+	attachParentConsoleIfCLI(os.Args)
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
@@ -285,6 +288,9 @@ func runGUI(dataDir string, devMode, showOnStart bool, httpPort int) error {
 	}
 	log.Printf("featherlog: bar HTTP API listening on %s", barSrv.URL())
 
+	offBarActivity := barSrv.OnClientActivity(application.Dock.SetExternalBarActive)
+	application.Dock.SetExternalBarActive(barSrv.HasActiveClient())
+
 	kwinPlacer := dock.NewKWinPlacer(dock.KWinConfig{
 		DataDir:      dataDir,
 		Caption:      dock.PanelWindowTitle,
@@ -298,9 +304,24 @@ func runGUI(dataDir string, devMode, showOnStart bool, httpPort int) error {
 		}
 	}
 
+	var (
+		trayMu   sync.Mutex
+		trayCtrl *tray.Controller
+	)
+
 	var cleanupOnce sync.Once
 	cleanup := func() {
 		cleanupOnce.Do(func() {
+			if offBarActivity != nil {
+				offBarActivity()
+			}
+			trayMu.Lock()
+			tc := trayCtrl
+			trayCtrl = nil
+			trayMu.Unlock()
+			if tc != nil {
+				tc.Close()
+			}
 			_ = barSrv.Close()
 			_ = ipcSrv.Close()
 			_ = kwinPlacer.Close()
@@ -311,6 +332,9 @@ func runGUI(dataDir string, devMode, showOnStart bool, httpPort int) error {
 
 	mygo.App.SetName("Featherlog")
 	mygo.App.SetPath(mygo.PathUserData, dataDir)
+	if runtime.GOOS == "darwin" {
+		mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
+	}
 	application.BindMyGo()
 
 	var quitting atomic.Bool
@@ -322,14 +346,14 @@ func runGUI(dataDir string, devMode, showOnStart bool, httpPort int) error {
 	})
 	mygo.App.OnWindowAllClosed(func() {
 		// Keep daemon alive while the Workspace Panel is hidden; only quit on
-		// DockService.Quit / SIGTERM / SIGINT.
+		// DockService.Quit / tray Quit / SIGTERM / SIGINT.
 	})
 	mygo.App.OnQuit(cleanup)
 
 	mygo.App.WhenReady(func() {
 		initial := application.Dock.InitialRect()
 		theme := string(application.Settings.Get().Theme)
-		opts := dock.WindowOptions("/", app.PreloadScript, initial,
+		opts := dock.WindowOptions("/?mode=panel", app.PreloadScript, initial,
 			dock.WithTheme(theme),
 			dock.WithHidden(!showOnStart),
 		)
@@ -350,6 +374,39 @@ func runGUI(dataDir string, devMode, showOnStart bool, httpPort int) error {
 		application.Dock.Attach(dock.MyGoWindow{W: win})
 		if showOnStart {
 			win.Focus()
+		}
+
+		miniInitial := application.Dock.InitialMiniBarRect()
+		miniOpts := dock.MiniBarWindowOptions("/?mode=bar", app.PreloadScript, miniInitial, theme)
+		miniWin := mygo.NewWindow(miniOpts)
+		if page := miniWin.Page(); page != nil {
+			page.OnPageTitleUpdated(func(e *mygo.TitleEvent) {
+				// Preserve native title "featherlog-bar".
+				e.PreventDefault()
+			})
+		}
+		miniWin.OnClose(func(e *mygo.CloseEvent) {
+			if !quitting.Load() {
+				e.PreventDefault()
+			}
+		})
+		application.Dock.AttachMiniBar(dock.MyGoWindow{W: miniWin})
+
+		tc, err := tray.Start(tray.Config{
+			App:      application,
+			QuitFunc: func() { mygo.App.Quit() },
+		})
+		if err != nil {
+			log.Printf("featherlog: system tray unavailable: %v", err)
+		} else if tc != nil {
+			trayMu.Lock()
+			if quitting.Load() {
+				trayMu.Unlock()
+				tc.Close()
+			} else {
+				trayCtrl = tc
+				trayMu.Unlock()
+			}
 		}
 
 		if acc, err := application.Dock.RegisterShortcut(nil); err != nil {
@@ -738,7 +795,7 @@ func shortID(id string) string {
 }
 
 func printUsage(w io.Writer) {
-	_, _ = fmt.Fprint(w, `Featherlog v2 — KDE Plasma 6 dock workbench panel & CLI hooks
+	_, _ = fmt.Fprint(w, `Featherlog v2 — Cross-platform concurrent workbench, 3D Drum Mini-Bar, tray & CLI hooks
 
 Usage:
   featherlog [--show] [--dev] [--data-dir <dir>] [--http-port <port>]

@@ -3,12 +3,17 @@ package dock
 import (
 	"errors"
 	"fmt"
+	"os"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/muyuzhong/featherlog/internal/clock"
 )
+
+const miniBarMoveDebounce = 400 * time.Millisecond
 
 // DefaultToggleShortcuts are tried in order when registering the global dock toggle shortcut.
 var DefaultToggleShortcuts = []string{
@@ -29,6 +34,12 @@ type Window interface {
 	RunOnMain(fn func())
 	OnBlur(fn func()) func()
 	IsDestroyed() bool
+}
+
+// MovableWindow is optionally implemented by Window adapters that expose native
+// move notifications (used by the draggable standalone Mini-Bar window).
+type MovableWindow interface {
+	OnMove(fn func()) func()
 }
 
 // Screen abstracts monitor queries and display change events.
@@ -96,13 +107,48 @@ func WindowOptions(url, preloadScript string, initial Rect, opts ...WindowOption
 		Frameless:         true,
 		Transparent:       false,
 		DisableShadow:     false,
+		CornerRadius:      18,
 		AlwaysOnTop:       true,
 		SkipTaskbar:       true,
 		DisableResize:     true,
 		DisableMaximize:   true,
 		DisableMinimize:   true,
 		DisableFullScreen: true,
+		Panel:             runtime.GOOS == "darwin",
 		BackgroundColor:   ThemeBackgroundColor(cfg.theme),
+		Page: mygo.PageOptions{
+			PreloadScript: preloadScript,
+		},
+	}
+}
+
+// MiniBarWindowOptions returns the MyGo WindowOptions for the opaque 312x40
+// standalone 3D Drum Mini-Bar window ("featherlog-bar").
+func MiniBarWindowOptions(url, preloadScript string, initial Rect, theme string) mygo.WindowOptions {
+	return mygo.WindowOptions{
+		Title:             MiniBarWindowTitle,
+		URL:               url,
+		X:                 initial.X,
+		Y:                 initial.Y,
+		Width:             MiniBarWidth,
+		Height:            MiniBarHeight,
+		MinWidth:          MiniBarWidth,
+		MinHeight:         MiniBarHeight,
+		MaxWidth:          MiniBarWidth,
+		MaxHeight:         MiniBarHeight,
+		Hidden:            true,
+		Frameless:         true,
+		Transparent:       false,
+		DisableShadow:     false,
+		CornerRadius:      14,
+		AlwaysOnTop:       true,
+		SkipTaskbar:       true,
+		DisableResize:     true,
+		DisableMaximize:   true,
+		DisableMinimize:   true,
+		DisableFullScreen: true,
+		Panel:             runtime.GOOS == "darwin",
+		BackgroundColor:   ThemeBackgroundColor(theme),
 		Page: mygo.PageOptions{
 			PreloadScript: preloadScript,
 		},
@@ -177,6 +223,13 @@ func (m MyGoWindow) OnBlur(fn func()) func() {
 	return m.W.OnBlur(fn)
 }
 
+func (m MyGoWindow) OnMove(fn func()) func() {
+	if m.W == nil {
+		return func() {}
+	}
+	return m.W.OnMove(fn)
+}
+
 func (m MyGoWindow) IsDestroyed() bool {
 	if m.W == nil {
 		return true
@@ -245,7 +298,8 @@ type expandedListener struct {
 }
 
 // Controller manages bottom-center anchoring, show/hide popup panel lifecycle,
-// layer-shell placement, blur-to-collapse, and global toggle shortcut state.
+// optional standalone Mini-Bar visibility/placement, layer-shell placement,
+// blur-to-collapse, and global toggle shortcut state.
 type Controller struct {
 	mu              sync.Mutex
 	screen          Screen
@@ -253,6 +307,7 @@ type Controller struct {
 	shortcuts       ShortcutRegistrar
 	clk             clock.Clock
 	win             Window
+	miniWin         Window
 	bottomInset     int
 	blurToggleGrace time.Duration
 
@@ -266,6 +321,27 @@ type Controller struct {
 	lastCollapseAt time.Time
 	lastBlurHideAt time.Time
 
+	platformOS            string
+	kdeSession            bool
+	plasmoidInstalled     bool
+	barMode               string
+	barX                  *int
+	barY                  *int
+	externalBarActive     bool
+	miniVisible           bool
+	miniApplied           bool
+	lastMiniBounds        Rect
+	miniApplyGen          uint64
+	miniProgrammaticDepth int
+	onMiniBarMoved        func(x, y int)
+	moveDebounceGen       uint64
+	moveDebounceStop      clock.StopFunc
+	pendingMoveX          int
+	pendingMoveY          int
+
+	displayWatcherWired bool
+	closed              bool
+
 	registeredShortcut string
 	onToggle           func(expanded bool)
 	nextListener       uint64
@@ -275,16 +351,40 @@ type Controller struct {
 
 // Config configures a Controller.
 type Config struct {
-	Screen          Screen
-	Layer           LayerShell
-	Shortcuts       ShortcutRegistrar
-	Clock           clock.Clock
-	BottomInset     int
-	InitialPin      bool
-	InitialExpanded bool
-	StartHidden     bool
-	BlurToggleGrace time.Duration
-	OnToggle        func(expanded bool)
+	Screen                Screen
+	Layer                 LayerShell
+	Shortcuts             ShortcutRegistrar
+	Clock                 clock.Clock
+	BottomInset           int
+	InitialPin            bool
+	InitialExpanded       bool
+	StartHidden           bool
+	BlurToggleGrace       time.Duration
+	OnToggle              func(expanded bool)
+	InitialBarMode        string
+	InitialBarX           *int
+	InitialBarY           *int
+	InitialExternalActive bool
+	PlatformOS            string
+	KDESession            *bool
+	PlasmoidInstalled     *bool
+	OnMiniBarMoved        func(x, y int)
+}
+
+func cloneIntPtr(v *int) *int {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	return &cp
+}
+
+func normalizeBarMode(mode string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(mode))
+	if trimmed == "" {
+		return "auto"
+	}
+	return trimmed
 }
 
 // NewController creates a new dock controller.
@@ -309,20 +409,50 @@ func NewController(cfg Config) *Controller {
 	if inset <= 0 {
 		inset = DefaultBottomInset
 	}
+	goos := strings.TrimSpace(cfg.PlatformOS)
+	if goos == "" {
+		goos = runtime.GOOS
+	}
+
+	var kdeSession, plasmoidInstalled bool
+	if cfg.KDESession != nil && cfg.PlasmoidInstalled != nil {
+		kdeSession = *cfg.KDESession
+		plasmoidInstalled = *cfg.PlasmoidInstalled
+	} else {
+		if goos == "linux" {
+			home, _ := os.UserHomeDir()
+			kdeSession, plasmoidInstalled = DetectKDEPlasmoid(os.Getenv, home)
+		}
+		if cfg.KDESession != nil {
+			kdeSession = *cfg.KDESession
+		}
+		if cfg.PlasmoidInstalled != nil {
+			plasmoidInstalled = *cfg.PlasmoidInstalled
+		}
+	}
+
 	visible := cfg.InitialExpanded || !cfg.StartHidden
 	return &Controller{
-		screen:          screen,
-		layer:           layer,
-		shortcuts:       shortcuts,
-		clk:             clk,
-		bottomInset:     inset,
-		blurToggleGrace: cfg.BlurToggleGrace,
-		width:           PanelWidth,
-		height:          PanelHeight,
-		expanded:        cfg.InitialExpanded,
-		visible:         visible,
-		pinned:          cfg.InitialPin,
-		onToggle:        cfg.OnToggle,
+		screen:            screen,
+		layer:             layer,
+		shortcuts:         shortcuts,
+		clk:               clk,
+		bottomInset:       inset,
+		blurToggleGrace:   cfg.BlurToggleGrace,
+		width:             PanelWidth,
+		height:            PanelHeight,
+		expanded:          cfg.InitialExpanded,
+		visible:           visible,
+		pinned:            cfg.InitialPin,
+		onToggle:          cfg.OnToggle,
+		platformOS:        goos,
+		kdeSession:        kdeSession,
+		plasmoidInstalled: plasmoidInstalled,
+		barMode:           normalizeBarMode(cfg.InitialBarMode),
+		barX:              cloneIntPtr(cfg.InitialBarX),
+		barY:              cloneIntPtr(cfg.InitialBarY),
+		externalBarActive: cfg.InitialExternalActive,
+		onMiniBarMoved:    cfg.OnMiniBarMoved,
 	}
 }
 
@@ -334,6 +464,52 @@ func (c *Controller) InitialRect() Rect {
 	c.mu.Unlock()
 	display := screen.ActiveDisplay(Rect{})
 	return ComputeBounds(display, w, h, inset)
+}
+
+// InitialMiniBarRect computes the initial rectangle for the standalone 312x40
+// Mini-Bar window using any persisted custom coordinates (validated against the
+// matching display's physical bounds) or falling back to default bottom-center.
+func (c *Controller) InitialMiniBarRect() Rect {
+	c.mu.Lock()
+	screen := c.screen
+	barX := cloneIntPtr(c.barX)
+	barY := cloneIntPtr(c.barY)
+	c.mu.Unlock()
+	return computeMiniBarRectForScreen(screen, barX, barY)
+}
+
+func computeMiniBarRectForScreen(screen Screen, barX, barY *int) Rect {
+	var query Rect
+	if barX != nil && barY != nil {
+		query = Rect{X: *barX, Y: *barY, Width: MiniBarWidth, Height: MiniBarHeight}
+	}
+	display := screen.ActiveDisplay(query)
+	return ComputeMiniBarBounds(display, barX, barY)
+}
+
+func (c *Controller) ensureDisplayWatcher() {
+	c.mu.Lock()
+	if c.displayWatcherWired || c.closed {
+		c.mu.Unlock()
+		return
+	}
+	c.displayWatcherWired = true
+	screen := c.screen
+	c.mu.Unlock()
+
+	offDisplays := screen.OnDisplaysChanged(func() {
+		c.reanchorCurrent()
+	})
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		if offDisplays != nil {
+			offDisplays()
+		}
+		return
+	}
+	c.cleanups = append(c.cleanups, offDisplays)
+	c.mu.Unlock()
 }
 
 // Attach binds a window to the controller, anchors it at bottom-center, and
@@ -349,15 +525,71 @@ func (c *Controller) Attach(win Window) Rect {
 	offBlur := win.OnBlur(func() {
 		c.handleBlur()
 	})
-	offDisplays := c.screen.OnDisplaysChanged(func() {
-		c.reanchorCurrent()
-	})
 
 	c.mu.Lock()
-	c.cleanups = append(c.cleanups, offBlur, offDisplays)
+	c.cleanups = append(c.cleanups, offBlur)
 	c.mu.Unlock()
 
+	c.ensureDisplayWatcher()
+
 	return applied
+}
+
+// AttachMiniBar binds the optional standalone 312x40 Mini-Bar window, wires
+// debounced drag persistence if supported, evaluates adaptive placement policy,
+// and shows (via ShowInactive) or hides the Mini-Bar accordingly.
+func (c *Controller) AttachMiniBar(win Window) Rect {
+	c.mu.Lock()
+	c.miniWin = win
+	c.miniApplied = false
+	c.miniVisible = false
+	c.mu.Unlock()
+
+	if mv, ok := win.(MovableWindow); ok {
+		offMove := mv.OnMove(func() {
+			c.handleMiniBarMove()
+		})
+		c.mu.Lock()
+		c.cleanups = append(c.cleanups, offMove)
+		c.mu.Unlock()
+	}
+
+	c.ensureDisplayWatcher()
+	return c.syncMiniBar()
+}
+
+// SetBarPrefs updates the Mini-Bar mode and custom coordinates and reconciles
+// Mini-Bar visibility and bounds immediately.
+func (c *Controller) SetBarPrefs(barMode string, barX, barY *int) {
+	c.mu.Lock()
+	if c.moveDebounceStop != nil {
+		c.moveDebounceStop()
+		c.moveDebounceStop = nil
+	}
+	c.moveDebounceGen++
+	c.barMode = normalizeBarMode(barMode)
+	c.barX = cloneIntPtr(barX)
+	c.barY = cloneIntPtr(barY)
+	c.mu.Unlock()
+
+	c.syncMiniBar()
+}
+
+// SetExternalBarActive reports whether an external /api/bar client (such as the
+// KDE Plasma 6 dock applet) is currently active, causing "auto" mode to yield.
+func (c *Controller) SetExternalBarActive(active bool) {
+	c.mu.Lock()
+	c.externalBarActive = active
+	c.mu.Unlock()
+
+	c.syncMiniBar()
+}
+
+// MiniBarState returns the current Mini-Bar visibility and last computed bounds.
+func (c *Controller) MiniBarState() (visible bool, bounds Rect) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.miniVisible, c.lastMiniBounds
 }
 
 // Resize applies new dock geometry. When geom.Expanded is false (e.g. Esc,
@@ -443,13 +675,27 @@ func (c *Controller) SetPinned(pinned bool) {
 	c.mu.Unlock()
 }
 
-// SetTheme updates the opaque native window background color to match theme.
+// SetTheme updates the opaque native window background color to match theme on
+// both the Workspace Panel and the optional standalone Mini-Bar window.
 func (c *Controller) SetTheme(theme string) {
 	c.mu.Lock()
 	win := c.win
+	miniWin := c.miniWin
 	c.mu.Unlock()
+	bg := ThemeBackgroundColor(theme)
 	if win != nil && !win.IsDestroyed() {
-		win.SetBackgroundColor(ThemeBackgroundColor(theme))
+		win.RunOnMain(func() {
+			if !win.IsDestroyed() {
+				win.SetBackgroundColor(bg)
+			}
+		})
+	}
+	if miniWin != nil && !miniWin.IsDestroyed() {
+		miniWin.RunOnMain(func() {
+			if !miniWin.IsDestroyed() {
+				miniWin.SetBackgroundColor(bg)
+			}
+		})
 	}
 }
 
@@ -561,9 +807,17 @@ func (c *Controller) RegisterShortcut(candidates []string) (string, error) {
 	return "", errors.Join(errs...)
 }
 
-// Close releases listeners and unregisters any global shortcut.
+// Close releases listeners, stops pending Mini-Bar move timers, and unregisters
+// any global shortcut.
 func (c *Controller) Close() {
 	c.mu.Lock()
+	c.closed = true
+	if c.moveDebounceStop != nil {
+		c.moveDebounceStop()
+		c.moveDebounceStop = nil
+	}
+	c.moveDebounceGen++
+	c.miniApplyGen++
 	acc := c.registeredShortcut
 	c.registeredShortcut = ""
 	cleanups := c.cleanups
@@ -590,7 +844,11 @@ func (c *Controller) applyBounds(win Window, w, h, inset int) Rect {
 	c.mu.Unlock()
 
 	if win != nil && !win.IsDestroyed() && (cur.Width == 0 || cur.Height == 0) {
-		cur = win.Bounds()
+		win.RunOnMain(func() {
+			if !win.IsDestroyed() {
+				cur = win.Bounds()
+			}
+		})
 	}
 	display := screen.ActiveDisplay(cur)
 	next := ComputeBounds(display, w, h, inset)
@@ -598,15 +856,18 @@ func (c *Controller) applyBounds(win Window, w, h, inset int) Rect {
 
 	anchored := false
 	if win != nil && !win.IsDestroyed() {
-		win.SetBounds(next)
-		if layer != nil && layer.Available() {
-			handle := win.NativeHandle()
-			if handle != 0 {
-				win.RunOnMain(func() {
-					anchored = layer.AnchorBottomCenter(handle, marginBottom)
-				})
+		win.RunOnMain(func() {
+			if win.IsDestroyed() {
+				return
 			}
-		}
+			win.SetBounds(next)
+			if layer != nil && layer.Available() {
+				handle := win.NativeHandle()
+				if handle != 0 {
+					anchored = layer.AnchorBottomCenter(handle, marginBottom)
+				}
+			}
+		})
 	}
 
 	c.mu.Lock()
@@ -615,6 +876,150 @@ func (c *Controller) applyBounds(win Window, w, h, inset int) Rect {
 	c.mu.Unlock()
 
 	return next
+}
+
+func (c *Controller) syncMiniBar() Rect {
+	c.mu.Lock()
+	if c.closed {
+		last := c.lastMiniBounds
+		c.mu.Unlock()
+		return last
+	}
+	screen := c.screen
+	barMode := c.barMode
+	barX := cloneIntPtr(c.barX)
+	barY := cloneIntPtr(c.barY)
+	extActive := c.externalBarActive
+	goos := c.platformOS
+	kdeSession := c.kdeSession
+	plasmoidInstalled := c.plasmoidInstalled
+	c.mu.Unlock()
+
+	shouldShow := ShouldShowMiniBar(barMode, extActive, goos, kdeSession, plasmoidInstalled)
+	target := computeMiniBarRectForScreen(screen, barX, barY)
+
+	c.mu.Lock()
+	if c.closed {
+		last := c.lastMiniBounds
+		c.mu.Unlock()
+		return last
+	}
+	miniWin := c.miniWin
+	wasVisible := c.miniVisible
+	needBounds := !c.miniApplied || target != c.lastMiniBounds
+	c.miniVisible = shouldShow
+	c.lastMiniBounds = target
+	c.miniApplied = true
+	c.miniApplyGen++
+	gen := c.miniApplyGen
+	c.mu.Unlock()
+
+	if miniWin == nil || miniWin.IsDestroyed() {
+		return target
+	}
+
+	if shouldShow {
+		if needBounds || !wasVisible {
+			miniWin.RunOnMain(func() {
+				if miniWin.IsDestroyed() {
+					return
+				}
+				c.mu.Lock()
+				if c.closed || c.miniWin != miniWin || gen != c.miniApplyGen {
+					c.mu.Unlock()
+					return
+				}
+				c.miniProgrammaticDepth++
+				c.mu.Unlock()
+
+				if needBounds || !wasVisible {
+					miniWin.SetBounds(target)
+				}
+
+				c.mu.Lock()
+				c.miniProgrammaticDepth--
+				c.mu.Unlock()
+
+				if !wasVisible {
+					miniWin.ShowInactive()
+				}
+			})
+		}
+	} else if wasVisible {
+		miniWin.RunOnMain(func() {
+			if miniWin.IsDestroyed() {
+				return
+			}
+			c.mu.Lock()
+			if c.closed || c.miniWin != miniWin || gen != c.miniApplyGen {
+				c.mu.Unlock()
+				return
+			}
+			c.mu.Unlock()
+			miniWin.Hide()
+		})
+	}
+
+	return target
+}
+
+func (c *Controller) handleMiniBarMove() {
+	c.mu.Lock()
+	if c.closed || c.miniProgrammaticDepth > 0 || !c.miniVisible || c.miniWin == nil {
+		c.mu.Unlock()
+		return
+	}
+	miniWin := c.miniWin
+	c.mu.Unlock()
+
+	if miniWin.IsDestroyed() {
+		return
+	}
+	bounds := miniWin.Bounds()
+
+	c.mu.Lock()
+	if c.closed || c.miniProgrammaticDepth > 0 || !c.miniVisible || c.miniWin != miniWin {
+		c.mu.Unlock()
+		return
+	}
+	if bounds.X == c.lastMiniBounds.X && bounds.Y == c.lastMiniBounds.Y {
+		c.mu.Unlock()
+		return
+	}
+	c.pendingMoveX = bounds.X
+	c.pendingMoveY = bounds.Y
+	if c.moveDebounceStop != nil {
+		c.moveDebounceStop()
+		c.moveDebounceStop = nil
+	}
+	c.moveDebounceGen++
+	gen := c.moveDebounceGen
+	clk := c.clk
+	c.moveDebounceStop = clk.AfterFunc(miniBarMoveDebounce, func() {
+		c.flushMiniBarMove(gen)
+	})
+	c.mu.Unlock()
+}
+
+func (c *Controller) flushMiniBarMove(gen uint64) {
+	c.mu.Lock()
+	if c.closed || gen != c.moveDebounceGen || !c.miniVisible {
+		c.mu.Unlock()
+		return
+	}
+	c.moveDebounceStop = nil
+	x, y := c.pendingMoveX, c.pendingMoveY
+	c.lastMiniBounds.X = x
+	c.lastMiniBounds.Y = y
+	bx, by := x, y
+	c.barX = &bx
+	c.barY = &by
+	cb := c.onMiniBarMoved
+	c.mu.Unlock()
+
+	if cb != nil {
+		cb(x, y)
+	}
 }
 
 func (c *Controller) handleBlur() {
@@ -645,9 +1050,15 @@ func (c *Controller) withinBlurGraceLocked(now time.Time) bool {
 func (c *Controller) reanchorCurrent() {
 	c.mu.Lock()
 	win := c.win
+	miniWin := c.miniWin
 	w, h, inset := c.width, c.height, c.bottomInset
 	c.mu.Unlock()
-	c.applyBounds(win, w, h, inset)
+	if win != nil {
+		c.applyBounds(win, w, h, inset)
+	}
+	if miniWin != nil {
+		c.syncMiniBar()
+	}
 }
 
 func (c *Controller) snapshotExpandedListenersLocked() []func(bool) {

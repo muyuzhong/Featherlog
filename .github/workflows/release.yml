@@ -89,6 +89,7 @@ jobs:
 
           win_files="$(unzip -Z1 "dist/release/featherlog-${version}-windows-amd64.zip")"
           grep -Fxq "featherlog-${version}-windows-amd64/featherlog.exe" <<< "${win_files}"
+          grep -Fxq "featherlog-${version}-windows-amd64/featherlog-cli.exe" <<< "${win_files}"
 
       - name: Publish GitHub Release
         env:

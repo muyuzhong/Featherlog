@@ -18,6 +18,10 @@ const (
 
 	// ErrCodeInvalid is returned when settings fail schema validation.
 	ErrCodeInvalid = "settings/invalid"
+
+	// MinBarCoord and MaxBarCoord bound persisted custom Mini-Bar coordinates.
+	MinBarCoord = -32768
+	MaxBarCoord = 32767
 )
 
 // ThemeMode selects the monochrome visual theme.
@@ -28,6 +32,15 @@ const (
 	ThemeGraphite ThemeMode = "graphite"
 )
 
+// BarMode selects how the ambient Featherlog status bar is presented.
+type BarMode string
+
+const (
+	BarModeAuto       BarMode = "auto"
+	BarModeStandalone BarMode = "standalone"
+	BarModeTrayOnly   BarMode = "tray-only"
+)
+
 // Settings holds all persisted Featherlog v2 application preferences.
 type Settings struct {
 	Theme        ThemeMode `json:"theme"`
@@ -35,15 +48,49 @@ type Settings struct {
 	Sound        bool      `json:"sound"`
 	Volume       int       `json:"volume"`
 	Pinned       bool      `json:"pinned"`
+	BarMode      BarMode   `json:"barMode"`
+	BarX         *int      `json:"barX,omitempty"`
+	BarY         *int      `json:"barY,omitempty"`
 }
 
 // Patch represents a partial update to Settings. Nil fields are left unchanged.
+// Passing JSON `"barX": null` / `"barY": null` or setting ClearBarX / ClearBarY
+// clears the corresponding saved Mini-Bar coordinate.
 type Patch struct {
 	Theme        *ThemeMode `json:"theme,omitempty"`
 	DayStartHour *int       `json:"dayStartHour,omitempty"`
 	Sound        *bool      `json:"sound,omitempty"`
 	Volume       *int       `json:"volume,omitempty"`
 	Pinned       *bool      `json:"pinned,omitempty"`
+	BarMode      *BarMode   `json:"barMode,omitempty"`
+	BarX         *int       `json:"barX,omitempty"`
+	BarY         *int       `json:"barY,omitempty"`
+	ClearBarX    bool       `json:"-"`
+	ClearBarY    bool       `json:"-"`
+}
+
+// UnmarshalJSON distinguishes omitted barX/barY fields from explicit JSON null.
+func (p *Patch) UnmarshalJSON(data []byte) error {
+	type alias Patch
+	var raw alias
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*p = Patch(raw)
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	if v, ok := fields["barX"]; ok && bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+		p.ClearBarX = true
+		p.BarX = nil
+	}
+	if v, ok := fields["barY"]; ok && bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+		p.ClearBarY = true
+		p.BarY = nil
+	}
+	return nil
 }
 
 // Default returns the default Featherlog v2 settings.
@@ -54,7 +101,44 @@ func Default() Settings {
 		Sound:        true,
 		Volume:       5,
 		Pinned:       false,
+		BarMode:      BarModeAuto,
 	}
+}
+
+// Equal reports whether two Settings values have identical field values,
+// comparing BarX/BarY pointee values rather than pointer addresses.
+func Equal(a, b Settings) bool {
+	return settingsEqual(a, b)
+}
+
+func settingsEqual(a, b Settings) bool {
+	return a.Theme == b.Theme &&
+		a.DayStartHour == b.DayStartHour &&
+		a.Sound == b.Sound &&
+		a.Volume == b.Volume &&
+		a.Pinned == b.Pinned &&
+		a.BarMode == b.BarMode &&
+		intPtrEqual(a.BarX, b.BarX) &&
+		intPtrEqual(a.BarY, b.BarY)
+}
+
+func intPtrEqual(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+func cloneSettings(s Settings) Settings {
+	if s.BarX != nil {
+		v := *s.BarX
+		s.BarX = &v
+	}
+	if s.BarY != nil {
+		v := *s.BarY
+		s.BarY = &v
+	}
+	return s
 }
 
 // Validate enforces the Settings schema constraints.
@@ -67,6 +151,20 @@ func Validate(s Settings) error {
 	}
 	if s.Volume < 0 || s.Volume > 10 {
 		return store.NewError(ErrCodeInvalid, fmt.Sprintf("invalid volume %d: must be in 0..10", s.Volume), nil)
+	}
+	if s.BarMode != BarModeAuto && s.BarMode != BarModeStandalone && s.BarMode != BarModeTrayOnly {
+		return store.NewError(ErrCodeInvalid, fmt.Sprintf("invalid barMode %q: must be %q, %q, or %q", s.BarMode, BarModeAuto, BarModeStandalone, BarModeTrayOnly), nil)
+	}
+	if (s.BarX == nil) != (s.BarY == nil) {
+		return store.NewError(ErrCodeInvalid, "barX and barY must both be set or both be null", nil)
+	}
+	if s.BarX != nil {
+		if *s.BarX < MinBarCoord || *s.BarX > MaxBarCoord {
+			return store.NewError(ErrCodeInvalid, fmt.Sprintf("invalid barX %d: must be in %d..%d", *s.BarX, MinBarCoord, MaxBarCoord), nil)
+		}
+		if *s.BarY < MinBarCoord || *s.BarY > MaxBarCoord {
+			return store.NewError(ErrCodeInvalid, fmt.Sprintf("invalid barY %d: must be in %d..%d", *s.BarY, MinBarCoord, MaxBarCoord), nil)
+		}
 	}
 	return nil
 }
@@ -179,14 +277,14 @@ func (s *Service) BackupPath() string {
 func (s *Service) Get() Settings {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.current
+	return cloneSettings(s.current)
 }
 
 // Update validates and applies patch, atomically persists settings.json if any
 // field changed, and notifies registered OnChange listeners.
 func (s *Service) Update(patch Patch) (Settings, error) {
 	s.mu.Lock()
-	next := s.current
+	next := cloneSettings(s.current)
 	if patch.Theme != nil {
 		next.Theme = *patch.Theme
 	}
@@ -202,13 +300,28 @@ func (s *Service) Update(patch Patch) (Settings, error) {
 	if patch.Pinned != nil {
 		next.Pinned = *patch.Pinned
 	}
+	if patch.BarMode != nil {
+		next.BarMode = *patch.BarMode
+	}
+	if patch.ClearBarX {
+		next.BarX = nil
+	} else if patch.BarX != nil {
+		v := *patch.BarX
+		next.BarX = &v
+	}
+	if patch.ClearBarY {
+		next.BarY = nil
+	} else if patch.BarY != nil {
+		v := *patch.BarY
+		next.BarY = &v
+	}
 
 	if err := Validate(next); err != nil {
 		s.mu.Unlock()
 		return Settings{}, err
 	}
-	if next == s.current {
-		cur := s.current
+	if settingsEqual(next, s.current) {
+		cur := cloneSettings(s.current)
 		s.mu.Unlock()
 		return cur, nil
 	}
@@ -216,14 +329,14 @@ func (s *Service) Update(patch Patch) (Settings, error) {
 		s.mu.Unlock()
 		return Settings{}, err
 	}
-	s.current = next
+	s.current = cloneSettings(next)
 	listeners := s.snapshotListenersLocked()
 	s.mu.Unlock()
 
 	for _, fn := range listeners {
-		fn(next)
+		fn(cloneSettings(next))
 	}
-	return next, nil
+	return cloneSettings(next), nil
 }
 
 // OnChange subscribes to settings updates. The returned function unsubscribes.
@@ -306,6 +419,35 @@ func parseSettingsJSON(raw []byte) (Settings, error) {
 			return Settings{}, store.NewError(ErrCodeInvalid, "pinned must be a boolean", err)
 		}
 		s.Pinned = b
+	}
+	if v, ok := fields["barMode"]; ok {
+		str, err := decodeStrictString(v)
+		if err != nil {
+			return Settings{}, store.NewError(ErrCodeInvalid, "barMode must be a string", err)
+		}
+		s.BarMode = BarMode(str)
+	}
+	if v, ok := fields["barX"]; ok {
+		if bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+			s.BarX = nil
+		} else {
+			n, err := decodeStrictInt(v)
+			if err != nil {
+				return Settings{}, store.NewError(ErrCodeInvalid, "barX must be an integer or null", err)
+			}
+			s.BarX = &n
+		}
+	}
+	if v, ok := fields["barY"]; ok {
+		if bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+			s.BarY = nil
+		} else {
+			n, err := decodeStrictInt(v)
+			if err != nil {
+				return Settings{}, store.NewError(ErrCodeInvalid, "barY must be an integer or null", err)
+			}
+			s.BarY = &n
+		}
 	}
 
 	if err := Validate(s); err != nil {

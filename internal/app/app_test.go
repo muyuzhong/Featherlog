@@ -143,6 +143,7 @@ func TestMyGoBindAndTypeScriptGeneration(t *testing.T) {
 		`"SettingsService.Update"`,
 		"export const DockService",
 		`"DockService.Resize"`,
+		`"DockService.Toggle"`,
 		`"DockService.Quit"`,
 		`"workbench:changed"`,
 		`"tasks:changed"`,
@@ -370,6 +371,23 @@ func TestJSONv2TriStateDecodingCompatibility(t *testing.T) {
 	if !noteList.FilterByTask || noteList.TaskID != nil || noteList.Query != "hi" {
 		t.Fatalf("unexpected noteList: %+v", noteList)
 	}
+
+	var settingsClear settings.Patch
+	if err := json.Unmarshal([]byte(`{"barX":null,"barY":null}`), &settingsClear); err != nil {
+		t.Fatalf("json/v2 settings.Patch clear: %v", err)
+	}
+	if !settingsClear.ClearBarX || !settingsClear.ClearBarY || settingsClear.BarX != nil || settingsClear.BarY != nil {
+		t.Fatalf("unexpected settingsClear: %+v", settingsClear)
+	}
+
+	var settingsSet settings.Patch
+	if err := json.Unmarshal([]byte(`{"barMode":"standalone","barX":420,"barY":980}`), &settingsSet); err != nil {
+		t.Fatalf("json/v2 settings.Patch set: %v", err)
+	}
+	if settingsSet.ClearBarX || settingsSet.ClearBarY || settingsSet.BarMode == nil || *settingsSet.BarMode != settings.BarModeStandalone ||
+		settingsSet.BarX == nil || *settingsSet.BarX != 420 || settingsSet.BarY == nil || *settingsSet.BarY != 980 {
+		t.Fatalf("unexpected settingsSet: %+v", settingsSet)
+	}
 }
 
 func TestEndToEndUnixSocketIPCCommands(t *testing.T) {
@@ -468,10 +486,11 @@ func TestEndToEndUnixSocketIPCCommands(t *testing.T) {
 }
 
 type fakeAppWindow struct {
-	bounds dock.Rect
-	shown  int
-	hidden int
-	bg     string
+	bounds       dock.Rect
+	shown        int
+	hidden       int
+	bg           string
+	moveHandlers []func()
 }
 
 func (f *fakeAppWindow) Bounds() dock.Rect           { return f.bounds }
@@ -484,7 +503,19 @@ func (f *fakeAppWindow) SetBackgroundColor(c string) { f.bg = c }
 func (f *fakeAppWindow) NativeHandle() uintptr       { return 0 }
 func (f *fakeAppWindow) RunOnMain(fn func())         { fn() }
 func (f *fakeAppWindow) OnBlur(func()) func()        { return func() {} }
-func (f *fakeAppWindow) IsDestroyed() bool           { return false }
+func (f *fakeAppWindow) OnMove(fn func()) func() {
+	f.moveHandlers = append(f.moveHandlers, fn)
+	idx := len(f.moveHandlers) - 1
+	return func() { f.moveHandlers[idx] = nil }
+}
+func (f *fakeAppWindow) triggerMove() {
+	for _, fn := range f.moveHandlers {
+		if fn != nil {
+			fn()
+		}
+	}
+}
+func (f *fakeAppWindow) IsDestroyed() bool { return false }
 
 func TestSettingsThemeSyncAndDockHideOnCollapse(t *testing.T) {
 	a, _, _ := openTestApp(t, time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC))
@@ -730,8 +761,9 @@ func TestOpenMigratesV1ElectronDataDirEndToEnd(t *testing.T) {
 		Sound:        false,
 		Volume:       7,
 		Pinned:       false,
+		BarMode:      settings.BarModeAuto,
 	}
-	if gotSettings != wantSettings {
+	if !settings.Equal(gotSettings, wantSettings) {
 		t.Fatalf("Settings = %+v, want %+v", gotSettings, wantSettings)
 	}
 	bakRaw, err := os.ReadFile(filepath.Join(dir, migrate.SettingsBackupFileName))
@@ -835,5 +867,91 @@ func TestOpenMigratesV1ElectronDataDirEndToEnd(t *testing.T) {
 		if !bytes.Equal(want, pluginsAfter[k]) {
 			t.Fatalf("plugins/%s was modified during app.Open migration", k)
 		}
+	}
+}
+
+func TestDockServiceToggleAndMiniBarSettingsWiring(t *testing.T) {
+	dir := t.TempDir()
+	clk := clock.NewFake(time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC))
+	sink := &recordingSink{}
+
+	kdeFalse := false
+	a, err := Open(Config{
+		DataDir: dir,
+		Clock:   clk,
+		Events:  sink,
+		DockCfg: dock.Config{
+			Screen:            noopScreen{},
+			Layer:             noopLayer{},
+			StartHidden:       true,
+			PlatformOS:        "windows",
+			KDESession:        &kdeFalse,
+			PlasmoidInstalled: &kdeFalse,
+		},
+		QuitFunc: func() {},
+	})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer a.Close()
+
+	panelWin := &fakeAppWindow{}
+	miniWin := &fakeAppWindow{}
+	a.Dock.Attach(panelWin)
+	a.Dock.AttachMiniBar(miniWin)
+
+	// PreloadScript exposes DockService.toggle.
+	if !strings.Contains(PreloadScript, `invoke("DockService.Toggle"`) {
+		t.Fatalf("PreloadScript missing DockService.Toggle")
+	}
+
+	// 1. DockService.Toggle toggles and sets explicit expanded state.
+	res, err := a.DockSvc.Toggle(nil)
+	if err != nil || !res.Expanded {
+		t.Fatalf("DockSvc.Toggle(nil) = (%+v, %v), want expanded=true", res, err)
+	}
+	collapse := false
+	res, err = a.DockSvc.Toggle(&DockToggleInput{Expanded: &collapse})
+	if err != nil || res.Expanded {
+		t.Fatalf("DockSvc.Toggle(false) = (%+v, %v), want expanded=false", res, err)
+	}
+
+	// 2. MiniBar shown initially in auto mode on Windows; drag persists to settings.json after 400ms.
+	if vis, _ := a.Dock.MiniBarState(); !vis {
+		t.Fatalf("expected MiniBar visible on Windows auto mode")
+	}
+	miniWin.bounds = dock.Rect{X: 1200, Y: 1036, Width: dock.MiniBarWidth, Height: dock.MiniBarHeight}
+	miniWin.triggerMove()
+	clk.Advance(400 * time.Millisecond)
+
+	st := a.SettingsSvc.Get()
+	if st.BarX == nil || *st.BarX != 1200 || st.BarY == nil || *st.BarY != 1036 {
+		t.Fatalf("dragged position not persisted to Settings: %+v", st)
+	}
+
+	// 3. Updating barMode to tray-only hides MiniBar; resetting barX/barY via JSON null clears coords.
+	trayOnly := settings.BarModeTrayOnly
+	if _, err := a.SettingsSvc.Update(settings.Patch{BarMode: &trayOnly}); err != nil {
+		t.Fatalf("Update tray-only: %v", err)
+	}
+	if vis, _ := a.Dock.MiniBarState(); vis {
+		t.Fatalf("expected MiniBar hidden in tray-only mode")
+	}
+
+	var resetPatch settings.Patch
+	if err := json.Unmarshal([]byte(`{"barMode":"standalone","barX":null,"barY":null}`), &resetPatch); err != nil {
+		t.Fatalf("unmarshal reset patch: %v", err)
+	}
+	updated, err := a.SettingsSvc.Update(resetPatch)
+	if err != nil {
+		t.Fatalf("Update resetPatch: %v", err)
+	}
+	if updated.BarMode != settings.BarModeStandalone || updated.BarX != nil || updated.BarY != nil {
+		t.Fatalf("unexpected updated settings after reset: %+v", updated)
+	}
+	vis, bounds := a.Dock.MiniBarState()
+	wantDefault := dock.ComputeMiniBarBounds(noopScreen{}.ActiveDisplay(dock.Rect{}), nil, nil)
+	if !vis || bounds != wantDefault {
+		t.Fatalf("after reset: vis=%v bounds=%+v, want true %+v", vis, bounds, wantDefault)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -50,7 +51,7 @@ func Listen(sockPath string, handler Handler) (*Server, error) {
 	}
 
 	if fi, err := os.Lstat(sockPath); err == nil {
-		if fi.Mode()&os.ModeSocket == 0 {
+		if !isStaleSocketCandidate(runtime.GOOS, fi) {
 			return nil, fmt.Errorf("ipcsock/path-conflict: %q exists and is not a Unix socket", sockPath)
 		}
 		if probeAlive(sockPath, 300*time.Millisecond) {
@@ -72,10 +73,12 @@ func Listen(sockPath string, handler Handler) (*Server, error) {
 		return nil, fmt.Errorf("ipcsock/listen: %w", err)
 	}
 
-	if err := os.Chmod(sockPath, 0o600); err != nil {
-		_ = ln.Close()
-		_ = os.Remove(sockPath)
-		return nil, fmt.Errorf("ipcsock/chmod: %w", err)
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(sockPath, 0o600); err != nil {
+			_ = ln.Close()
+			_ = os.Remove(sockPath)
+			return nil, fmt.Errorf("ipcsock/chmod: %w", err)
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -214,6 +217,21 @@ func writeResponse(w io.Writer, resp Response) {
 	}
 	b = append(b, '\n')
 	_, _ = w.Write(b)
+}
+
+func isStaleSocketCandidate(goos string, fi os.FileInfo) bool {
+	if fi == nil || fi.IsDir() {
+		return false
+	}
+	if fi.Mode()&os.ModeSocket != 0 {
+		return true
+	}
+	if goos == "windows" {
+		// Windows AF_UNIX sockets appear as NTFS reparse points (ModeIrregular /
+		// ModeSymlink) or zero-byte stubs depending on Go / Windows version.
+		return fi.Mode()&(os.ModeIrregular|os.ModeSymlink) != 0 || fi.Size() == 0
+	}
+	return false
 }
 
 func probeAlive(sockPath string, timeout time.Duration) bool {

@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestServerSingleInstancePermissionsAndRPC(t *testing.T) {
@@ -175,5 +176,49 @@ func TestServerConcurrentRequests(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		t.Fatalf("concurrent request failed: %v", err)
+	}
+}
+
+type fakeFileInfo struct {
+	name  string
+	size  int64
+	mode  os.FileMode
+	isDir bool
+}
+
+func (f fakeFileInfo) Name() string       { return f.name }
+func (f fakeFileInfo) Size() int64        { return f.size }
+func (f fakeFileInfo) Mode() os.FileMode  { return f.mode }
+func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
+func (f fakeFileInfo) IsDir() bool        { return f.isDir }
+func (f fakeFileInfo) Sys() any           { return nil }
+
+func TestIsStaleSocketCandidate(t *testing.T) {
+	cases := []struct {
+		name string
+		goos string
+		fi   os.FileInfo
+		want bool
+	}{
+		{"nil_info", "linux", nil, false},
+		{"dir_unix", "linux", fakeFileInfo{isDir: true, mode: os.ModeDir}, false},
+		{"dir_windows", "windows", fakeFileInfo{isDir: true, mode: os.ModeDir}, false},
+		{"socket_unix", "linux", fakeFileInfo{mode: os.ModeSocket}, true},
+		{"socket_windows", "windows", fakeFileInfo{mode: os.ModeSocket}, true},
+		{"regular_nonempty_unix", "linux", fakeFileInfo{size: 10, mode: 0o600}, false},
+		{"regular_nonempty_windows", "windows", fakeFileInfo{size: 10, mode: 0o600}, false},
+		{"zero_file_unix_rejected", "linux", fakeFileInfo{size: 0, mode: 0o600}, false},
+		{"zero_file_windows_allowed", "windows", fakeFileInfo{size: 0, mode: 0o600}, true},
+		{"irregular_windows_allowed", "windows", fakeFileInfo{size: 12, mode: os.ModeIrregular}, true},
+		{"symlink_windows_allowed", "windows", fakeFileInfo{size: 12, mode: os.ModeSymlink}, true},
+		{"symlink_unix_rejected", "linux", fakeFileInfo{size: 0, mode: os.ModeSymlink}, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isStaleSocketCandidate(tc.goos, tc.fi); got != tc.want {
+				t.Fatalf("isStaleSocketCandidate(%q, %+v) = %v, want %v", tc.goos, tc.fi, got, tc.want)
+			}
+		})
 	}
 }

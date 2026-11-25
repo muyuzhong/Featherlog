@@ -409,17 +409,19 @@ build_go_binary() {
   local goos="$1"
   local goarch="$2"
   local out_path="$3"
-  echo "==> Building Go binary for ${goos}/${goarch}"
+  local extra_ldflags="${4:-}"
+  echo "==> Building Go binary for ${goos}/${goarch}${extra_ldflags:+ (${extra_ldflags})}"
   (
     cd "${REPO_ROOT}"
     CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" \
-      go build -trimpath -ldflags "${LDFLAGS}" -o "${out_path}" .
+      go build -trimpath -ldflags "${LDFLAGS}${extra_ldflags:+ ${extra_ldflags}}" -o "${out_path}" .
   )
 }
 
 build_go_binary linux amd64 "${BIN_STAGE}/featherlog-linux-amd64"
 build_go_binary linux arm64 "${BIN_STAGE}/featherlog-linux-arm64"
-build_go_binary windows amd64 "${BIN_STAGE}/featherlog-windows-amd64.exe"
+build_go_binary windows amd64 "${BIN_STAGE}/featherlog-windows-amd64.exe" "-H=windowsgui"
+build_go_binary windows amd64 "${BIN_STAGE}/featherlog-cli-windows-amd64.exe"
 build_go_binary darwin arm64 "${BIN_STAGE}/featherlog-darwin-arm64"
 build_go_binary darwin amd64 "${BIN_STAGE}/featherlog-darwin-amd64"
 
@@ -505,6 +507,7 @@ win_name="featherlog-${VERSION}-windows-amd64"
 win_dir="${STAGING}/win-amd64"
 mkdir -p "${win_dir}"
 install -m755 "${BIN_STAGE}/featherlog-windows-amd64.exe" "${win_dir}/featherlog.exe"
+install -m755 "${BIN_STAGE}/featherlog-cli-windows-amd64.exe" "${win_dir}/featherlog-cli.exe"
 install -m644 "${LICENSE_SRC}" "${win_dir}/LICENSE"
 install -m644 "${README_SRC}" "${win_dir}/README.md"
 make_zip "${win_dir}" "${OUT_DIR}/${win_name}.zip" "${win_name}"
@@ -546,6 +549,8 @@ for arch in arm64 amd64; do
     <string>${VERSION}</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
+    <key>LSUIElement</key>
+    <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>
