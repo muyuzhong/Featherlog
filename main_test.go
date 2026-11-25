@@ -239,8 +239,8 @@ func TestSplitGlobalArgsAndHTTPPortResolution(t *testing.T) {
 }
 
 func TestVersionFlagAndSubcommand(t *testing.T) {
-	if version != "2.0.0" {
-		t.Fatalf("default version = %q, want %q", version, "2.0.0")
+	if version != "2.1.0" {
+		t.Fatalf("default version = %q, want %q", version, "2.1.0")
 	}
 
 	for _, arg := range []string{"version", "-v", "--version"} {
@@ -252,7 +252,7 @@ func TestVersionFlagAndSubcommand(t *testing.T) {
 		if errBuf.Len() != 0 {
 			t.Fatalf("%s wrote unexpected stderr: %q", arg, errBuf.String())
 		}
-		want := "featherlog 2.0.0\n"
+		want := "featherlog 2.1.0\n"
 		if out.String() != want {
 			t.Fatalf("%s stdout = %q, want %q", arg, out.String(), want)
 		}
