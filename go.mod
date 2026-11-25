@@ -3,7 +3,7 @@ module github.com/muyuzhong/featherlog
 go 1.27.4
 
 require (
-	github.com/ebitengine/purego v0.11.1
+	github.com/ebitengine/purego v0.11.3
 	github.com/egoist/mygo v0.10.0
 )
 
