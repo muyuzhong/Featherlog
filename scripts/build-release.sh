@@ -414,7 +414,7 @@ build_go_binary() {
   (
     cd "${REPO_ROOT}"
     CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" \
-      go build -trimpath -ldflags "${LDFLAGS}${extra_ldflags:+ ${extra_ldflags}}" -o "${out_path}" .
+      go build -trimpath -ldflags "${LDFLAGS}${extra_ldflags:+ ${extra_ldflags}}" -o "${out_path}" ./cmd/featherlog
   )
 }
 

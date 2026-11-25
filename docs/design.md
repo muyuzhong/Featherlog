@@ -33,10 +33,10 @@
 
 ```
 ┌─────────────────────────── featherlog 二进制 (Go + MyGo) ────────────────────────────┐
-│                                                                                      │
+│  cmd/featherlog/                                                                     │
 │  main.go ──┬── 无子命令 ──► MyGo 跨平台桌面常驻宿主                                   │
 │            │                   ├─ 不透明 880×520 弹出工作台 ("featherlog-panel")       │
-│            │                   │   └─ WebView 加载 /?mode=panel (embed 或 dev URL)    │
+│            │                   │   └─ WebView 加载 /?mode=panel (frontend.DistFS/dev)  │
 │            │                   ├─ 不透明 312×40 独立 3D 滚筒条 ("featherlog-bar")      │
 │            │                   │   └─ WebView 加载 /?mode=bar (自适应让位/可拖拽落盘)  │
 │            │                   ├─ internal/tray (32×32 单色模板托盘 + 菜单 + 状态字)   │
@@ -59,8 +59,8 @@
 
 | 路径 | 职责 |
 |---|---|
-| `main.go`、`console_windows.go`、`console_other.go` | 统一入口：CLI 参数解析（含 `--show`、`--http-port`）、单实例协调、macOS `ActivationPolicyAccessory`、Windows 父控制台附加、`MyGo` 双窗口（Panel + MiniBar）与系统托盘/`barhttp` 生命周期 |
-| `frontend_embed.go` / `frontend_noembed.go` | `embed.FS` 嵌入 `frontend/dist`（生产/默认构建）与无嵌入回退（纯 Go 测试/开发） |
+| `cmd/featherlog/` | 统一入口（`main.go`、`frontend.go`、`console_windows.go`、`console_other.go`）：CLI 参数解析（含 `--show`、`--http-port`）、单实例协调、macOS `ActivationPolicyAccessory`、Windows 父控制台附加、前端资源装载（嵌入或开发回退）、`MyGo` 双窗口（Panel + MiniBar）与系统托盘/`barhttp` 生命周期 |
+| `frontend/embed.go` / `frontend/noembed.go` | `package frontend`（仅依赖 stdlib `embed`/`io/fs`）：通过 `DistFS()` 暴露内嵌 `frontend/dist`（生产/默认构建）或无嵌入标记（`-tags noembed` 纯 Go 测试/开发） |
 | `internal/clock/` | 可注入时钟接口（`Now()`、`AfterFunc()`），真实时钟与确定性测试假时钟 |
 | `internal/store/` | 原子 JSON 持久化（`*.tmp` → `fsync` → `rename`）、损坏文件保护（`store/corrupt`）、目录隔离（`Featherlog` / `Featherlog-dev`） |
 | `internal/workbench/` | 并发工作槽领域逻辑、单焦点不变量、提醒定时器与睡眠恢复 |
@@ -249,7 +249,7 @@ MyGo 在页面文档加载起点注入 `window.mygo`：
 
 ---
 
-## 7. 本地 Unix Socket、Windows 双二进制与 CLI Hooks（`internal/ipcsock` & `main.go`）
+## 7. 本地 Unix Socket、Windows 双二进制与 CLI Hooks（`internal/ipcsock` & `cmd/featherlog`）
 
 ### 7.1 单实例 Socket 与 Windows 兼容
 
