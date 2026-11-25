@@ -50,6 +50,8 @@ PlasmoidItem {
     property bool panelOpen: false
     property bool pinned: false
     property string themeName: "stone"
+    property string language: "zh"
+    readonly property bool isEn: language === "en"
     property int todayDone: 0
     property int todayTotal: 0
     property var slots: []
@@ -73,23 +75,23 @@ PlasmoidItem {
     readonly property bool hasVisibleRunningSlot: checkVisibleRunning(slots)
 
     toolTipTextFormat: Text.PlainText
-    toolTipMainText: buildToolTipMainText(connected, launchingDaemon, tooltipSlot)
-    toolTipSubText: buildToolTipSubText(connected, launchingDaemon, tooltipSlot, nowMs, showTodayCount, todayDone, todayTotal)
+    toolTipMainText: buildToolTipMainText(connected, launchingDaemon, tooltipSlot, isEn)
+    toolTipSubText: buildToolTipSubText(connected, launchingDaemon, tooltipSlot, nowMs, showTodayCount, todayDone, todayTotal, isEn)
 
     Plasmoid.contextualActions: [
         PlasmaCore.Action {
-            text: root.panelOpen ? "收起羽记工作台" : "打开羽记工作台"
+            text: root.isEn ? "Toggle Workbench" : "打开/收起工作台"
             icon.name: "view-list-details"
             onTriggered: root.toggleOrLaunchPanel()
         },
         PlasmaCore.Action {
-            text: "启动羽记守护进程"
+            text: root.isEn ? "Start Featherlog" : "启动羽记后台服务"
             icon.name: "media-playback-start"
             visible: !root.connected
             onTriggered: root.launchDaemonAndOpen()
         },
         PlasmaCore.Action {
-            text: "重新连接羽记"
+            text: root.isEn ? "Reconnect Featherlog" : "重新连接羽记"
             icon.name: "view-refresh"
             onTriggered: root.reconnectNow()
         }
@@ -302,14 +304,14 @@ PlasmoidItem {
         return false;
     }
 
-    function stateLabel(state) {
+    function stateLabel(state, en) {
         if (state === "focus") {
-            return "正在做";
+            return en ? "Focusing" : "正在做";
         }
         if (state === "ready") {
-            return "待看";
+            return en ? "Ready" : "待看";
         }
-        return "后台运行";
+        return en ? "Running" : "后台运行";
     }
 
     function formatElapsed(stateChangedAt, currentMs) {
@@ -334,41 +336,49 @@ PlasmoidItem {
         return remHours > 0 ? (days + "d" + remHours + "h") : (days + "d");
     }
 
-    function buildToolTipMainText(isConnected, isLaunching, slot) {
+    function buildToolTipMainText(isConnected, isLaunching, slot, en) {
         if (!isConnected) {
+            if (en) {
+                return isLaunching ? "Featherlog · Starting…" : "Featherlog · Offline";
+            }
             return isLaunching ? "羽记 Featherlog · 启动中" : "羽记 Featherlog · 未运行";
         }
         if (!slot) {
-            return "羽记 Featherlog · 空闲";
+            return en ? "Featherlog · Idle" : "羽记 Featherlog · 空闲";
         }
         const tag = slot.tag ? (" · " + slot.tag) : "";
-        return (slot.title || "未命名槽位") + tag;
+        return (slot.title || (en ? "Untitled Slot" : "未命名槽位")) + tag;
     }
 
-    function buildToolTipSubText(isConnected, isLaunching, slot, currentMs, showToday, doneCount, totalCount) {
+    function buildToolTipSubText(isConnected, isLaunching, slot, currentMs, showToday, doneCount, totalCount, en) {
         if (!isConnected) {
-            return isLaunching ? "正在等待本地服务就绪…" : "点击启动羽记守护进程并打开工作台";
+            if (en) {
+                return isLaunching ? "Waiting for local service…" : "Click to start Featherlog and open Workbench";
+            }
+            return isLaunching ? "正在等待本地服务就绪…" : "点击启动羽记后台服务并打开工作台";
         }
         const lines = [];
         if (slot) {
             const crumb = (slot.breadcrumb || "").trim();
             if (crumb.length > 0) {
-                lines.push("下一步锚点：" + crumb);
+                lines.push((en ? "Next: " : "下一步锚点：") + crumb);
             }
-            let statusLine = "状态：" + stateLabel(slot.state);
+            let statusLine = (en ? "Status: " : "状态：") + stateLabel(slot.state, en);
             if (slot.state === "running" && slot.stateChangedAt > 0) {
-                statusLine += " · 已运行 " + formatElapsed(slot.stateChangedAt, currentMs);
+                statusLine += (en ? " · Running " : " · 已运行 ") + formatElapsed(slot.stateChangedAt, currentMs);
             }
             if (showToday && totalCount > 0) {
-                statusLine += " · 今日待办 " + doneCount + "/" + totalCount;
+                statusLine += (en ? " · Tasks " : " · 今日待办 ") + doneCount + "/" + totalCount;
             }
             lines.push(statusLine);
-            lines.push("滚轮拨动滚筒 · 点侧翼切焦点 · 点主槽开工作台 · 中键切待看");
+            lines.push(en
+                ? "Scroll to roll drum · Click wing to focus · Click front to open · Middle-click for Ready"
+                : "滚轮拨动滚筒 · 点侧翼切焦点 · 点主槽开工作台 · 中键切待看");
         } else {
             if (showToday && totalCount > 0) {
-                lines.push("今日待办：" + doneCount + "/" + totalCount);
+                lines.push((en ? "Tasks: " : "今日待办：") + doneCount + "/" + totalCount);
             }
-            lines.push("点击打开羽记工作台");
+            lines.push(en ? "Click to open Workbench" : "点击打开羽记工作台");
         }
         return lines.join("\n");
     }
@@ -413,6 +423,7 @@ PlasmoidItem {
         panelOpen = !!data.panelOpen;
         pinned = !!data.pinned;
         themeName = data.theme ? String(data.theme) : "stone";
+        language = data.language === "en" ? "en" : "zh";
         todayDone = Number(data.todayDone || 0);
         todayTotal = Number(data.todayTotal || 0);
         nowMs = Date.now();

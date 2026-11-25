@@ -143,6 +143,14 @@ func migrateSettings(st *store.Store) (int, bool, string, error) {
 			out.Volume = clampInt(v, 0, 10)
 		}
 	}
+	if rawLang, ok := firstNonEmptyString(
+		shellObj["language"],
+		shellObj["locale"],
+		top["language"],
+		top["locale"],
+	); ok && strings.HasPrefix(strings.ToLower(rawLang), "en") {
+		out.Language = settings.LangEN
+	}
 	if hasPlugins {
 		if questObj, ok := decodeJSONObject(pluginsObj["quest"]); ok {
 			if h, ok := decodeJSONInt(questObj["dayStartHour"]); ok {
@@ -995,12 +1003,31 @@ func truncateRunes(s string, maxRunes int) string {
 }
 
 func isJSONString(raw json.RawMessage) bool {
+	_, ok := decodeJSONString(raw)
+	return ok
+}
+
+func decodeJSONString(raw json.RawMessage) (string, bool) {
 	t := bytes.TrimSpace(raw)
 	if len(t) == 0 || t[0] != '"' {
-		return false
+		return "", false
 	}
 	var s string
-	return json.Unmarshal(t, &s) == nil
+	if err := json.Unmarshal(t, &s); err != nil {
+		return "", false
+	}
+	return s, true
+}
+
+func firstNonEmptyString(values ...json.RawMessage) (string, bool) {
+	for _, raw := range values {
+		if s, ok := decodeJSONString(raw); ok {
+			if trimmed := strings.TrimSpace(s); trimmed != "" {
+				return trimmed, true
+			}
+		}
+	}
+	return "", false
 }
 
 func decodeJSONObject(raw json.RawMessage) (map[string]json.RawMessage, bool) {

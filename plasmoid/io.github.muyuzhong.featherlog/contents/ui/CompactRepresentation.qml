@@ -17,6 +17,8 @@ Item {
     readonly property bool isConnected: plasmoidRoot ? !!plasmoidRoot.connected : false
     readonly property bool isLaunching: plasmoidRoot ? !!plasmoidRoot.launchingDaemon : false
     readonly property bool isPanelOpen: plasmoidRoot ? !!plasmoidRoot.panelOpen : false
+    readonly property string language: plasmoidRoot ? String(plasmoidRoot.language || "zh") : "zh"
+    readonly property bool isEn: language === "en"
     readonly property bool showTodayCount: plasmoidRoot ? !!plasmoidRoot.showTodayCount : true
     readonly property int todayDone: plasmoidRoot ? Number(plasmoidRoot.todayDone || 0) : 0
     readonly property int todayTotal: plasmoidRoot ? Number(plasmoidRoot.todayTotal || 0) : 0
@@ -474,7 +476,7 @@ Item {
             spacing: 2
 
             Text {
-                text: "羽"
+                text: compact.isEn ? "F" : "羽"
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 color: compact.tc
@@ -565,7 +567,9 @@ Item {
                 }
 
                 Text {
-                    text: compact.isLaunching ? "羽记 · 启动中…" : "羽记 · 未运行"
+                    text: compact.isLaunching
+                        ? (compact.isEn ? "Starting Featherlog…" : "正在启动羽记…")
+                        : (compact.isEn ? "Offline · Click to Start" : "羽记未运行 · 点此启动")
                     textFormat: Text.PlainText
                     renderType: Text.NativeRendering
                     color: compact.tc
@@ -644,7 +648,7 @@ Item {
                 }
 
                 Text {
-                    text: "羽记 · 空闲"
+                    text: compact.isEn ? "Empty · Open Workbench" : "空槽 · 点此开工作台"
                     textFormat: Text.PlainText
                     renderType: Text.NativeRendering
                     color: compact.tc
@@ -800,7 +804,7 @@ Item {
                     Text {
                         id: singleReadyText
                         anchors.centerIn: parent
-                        text: "待看"
+                        text: compact.isEn ? "READY" : "待看"
                         textFormat: Text.PlainText
                         renderType: Text.QtRendering
                         color: compact.inverseInk
@@ -1152,7 +1156,7 @@ Item {
                                 Text {
                                     id: wingReadyText
                                     anchors.centerIn: parent
-                                    text: "待看"
+                                    text: compact.isEn ? "READY" : "待看"
                                     textFormat: Text.PlainText
                                     renderType: Text.QtRendering
                                     color: compact.inverseInk
@@ -1194,7 +1198,7 @@ Item {
                                 Text {
                                     id: frontReadyText
                                     anchors.centerIn: parent
-                                    text: "待看"
+                                    text: compact.isEn ? "READY" : "待看"
                                     textFormat: Text.PlainText
                                     renderType: Text.QtRendering
                                     color: compact.inverseInk
@@ -1424,7 +1428,9 @@ Item {
                     Text {
                         id: hiddenReadyLabel
                         anchors.centerIn: parent
-                        text: compact.hiddenReadyCount > 1 ? ("待看" + compact.hiddenReadyCount) : "待看"
+                        text: compact.hiddenReadyCount > 1
+                            ? ((compact.isEn ? "READY " : "待看 ") + compact.hiddenReadyCount)
+                            : (compact.isEn ? "READY" : "待看")
                         textFormat: Text.PlainText
                         renderType: Text.NativeRendering
                         color: compact.inverseInk

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/muyuzhong/featherlog/internal/clock"
@@ -32,44 +33,60 @@ const (
 	ThemeGraphite ThemeMode = "graphite"
 )
 
-// BarMode selects how the ambient Featherlog status bar is presented.
-type BarMode string
+// LanguageMode selects the UI, system tray, and Plasmoid display language.
+type LanguageMode string
 
 const (
-	BarModeAuto       BarMode = "auto"
-	BarModeStandalone BarMode = "standalone"
-	BarModeTrayOnly   BarMode = "tray-only"
+	LangZH LanguageMode = "zh"
+	LangEN LanguageMode = "en"
 )
+
+// NormalizeLanguage normalizes common Chinese and English locale identifiers
+// ("zh", "zh-CN", "zh-Hans", "zh-TW" -> "zh"; "en", "en-US", "en-GB" -> "en")
+// into canonical LanguageMode values.
+func NormalizeLanguage(raw string) (LanguageMode, bool) {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	s = strings.ReplaceAll(s, "_", "-")
+	switch {
+	case s == "zh" || (strings.HasPrefix(s, "zh-") && len(s) > 3 && s[3] != '-'):
+		return LangZH, true
+	case s == "en" || (strings.HasPrefix(s, "en-") && len(s) > 3 && s[3] != '-'):
+		return LangEN, true
+	default:
+		return "", false
+	}
+}
 
 // Settings holds all persisted Featherlog v2 application preferences.
 type Settings struct {
-	Theme        ThemeMode `json:"theme"`
-	DayStartHour int       `json:"dayStartHour"`
-	Sound        bool      `json:"sound"`
-	Volume       int       `json:"volume"`
-	Pinned       bool      `json:"pinned"`
-	BarMode      BarMode   `json:"barMode"`
-	BarX         *int      `json:"barX,omitempty"`
-	BarY         *int      `json:"barY,omitempty"`
+	Theme        ThemeMode    `json:"theme"`
+	Language     LanguageMode `json:"language"`
+	DayStartHour int          `json:"dayStartHour"`
+	Sound        bool         `json:"sound"`
+	Volume       int          `json:"volume"`
+	Pinned       bool         `json:"pinned"`
+	BarX         *int         `json:"barX,omitempty"`
+	BarY         *int         `json:"barY,omitempty"`
 }
 
 // Patch represents a partial update to Settings. Nil fields are left unchanged.
 // Passing JSON `"barX": null` / `"barY": null` or setting ClearBarX / ClearBarY
 // clears the corresponding saved Mini-Bar coordinate.
 type Patch struct {
-	Theme        *ThemeMode `json:"theme,omitempty"`
-	DayStartHour *int       `json:"dayStartHour,omitempty"`
-	Sound        *bool      `json:"sound,omitempty"`
-	Volume       *int       `json:"volume,omitempty"`
-	Pinned       *bool      `json:"pinned,omitempty"`
-	BarMode      *BarMode   `json:"barMode,omitempty"`
-	BarX         *int       `json:"barX,omitempty"`
-	BarY         *int       `json:"barY,omitempty"`
-	ClearBarX    bool       `json:"-"`
-	ClearBarY    bool       `json:"-"`
+	Theme        *ThemeMode    `json:"theme,omitempty"`
+	Language     *LanguageMode `json:"language,omitempty"`
+	DayStartHour *int          `json:"dayStartHour,omitempty"`
+	Sound        *bool         `json:"sound,omitempty"`
+	Volume       *int          `json:"volume,omitempty"`
+	Pinned       *bool         `json:"pinned,omitempty"`
+	BarX         *int          `json:"barX,omitempty"`
+	BarY         *int          `json:"barY,omitempty"`
+	ClearBarX    bool          `json:"-"`
+	ClearBarY    bool          `json:"-"`
 }
 
-// UnmarshalJSON distinguishes omitted barX/barY fields from explicit JSON null.
+// UnmarshalJSON distinguishes omitted barX/barY fields from explicit JSON null
+// and normalizes locale aliases on language.
 func (p *Patch) UnmarshalJSON(data []byte) error {
 	type alias Patch
 	var raw alias
@@ -81,6 +98,18 @@ func (p *Patch) UnmarshalJSON(data []byte) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
+	}
+	if v, ok := fields["language"]; ok {
+		if bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+			return store.NewError(ErrCodeInvalid, "language must be a string", nil)
+		}
+		if p.Language != nil {
+			norm, valid := NormalizeLanguage(string(*p.Language))
+			if !valid {
+				return store.NewError(ErrCodeInvalid, fmt.Sprintf("invalid language %q: must be %q or %q", *p.Language, LangZH, LangEN), nil)
+			}
+			*p.Language = norm
+		}
 	}
 	if v, ok := fields["barX"]; ok && bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
 		p.ClearBarX = true
@@ -97,11 +126,11 @@ func (p *Patch) UnmarshalJSON(data []byte) error {
 func Default() Settings {
 	return Settings{
 		Theme:        ThemeStone,
+		Language:     LangZH,
 		DayStartHour: 4,
 		Sound:        true,
 		Volume:       5,
 		Pinned:       false,
-		BarMode:      BarModeAuto,
 	}
 }
 
@@ -113,11 +142,11 @@ func Equal(a, b Settings) bool {
 
 func settingsEqual(a, b Settings) bool {
 	return a.Theme == b.Theme &&
+		a.Language == b.Language &&
 		a.DayStartHour == b.DayStartHour &&
 		a.Sound == b.Sound &&
 		a.Volume == b.Volume &&
 		a.Pinned == b.Pinned &&
-		a.BarMode == b.BarMode &&
 		intPtrEqual(a.BarX, b.BarX) &&
 		intPtrEqual(a.BarY, b.BarY)
 }
@@ -146,14 +175,14 @@ func Validate(s Settings) error {
 	if s.Theme != ThemeStone && s.Theme != ThemeGraphite {
 		return store.NewError(ErrCodeInvalid, fmt.Sprintf("invalid theme %q: must be %q or %q", s.Theme, ThemeStone, ThemeGraphite), nil)
 	}
+	if s.Language != LangZH && s.Language != LangEN {
+		return store.NewError(ErrCodeInvalid, fmt.Sprintf("invalid language %q: must be %q or %q", s.Language, LangZH, LangEN), nil)
+	}
 	if s.DayStartHour < 0 || s.DayStartHour > 23 {
 		return store.NewError(ErrCodeInvalid, fmt.Sprintf("invalid dayStartHour %d: must be in 0..23", s.DayStartHour), nil)
 	}
 	if s.Volume < 0 || s.Volume > 10 {
 		return store.NewError(ErrCodeInvalid, fmt.Sprintf("invalid volume %d: must be in 0..10", s.Volume), nil)
-	}
-	if s.BarMode != BarModeAuto && s.BarMode != BarModeStandalone && s.BarMode != BarModeTrayOnly {
-		return store.NewError(ErrCodeInvalid, fmt.Sprintf("invalid barMode %q: must be %q, %q, or %q", s.BarMode, BarModeAuto, BarModeStandalone, BarModeTrayOnly), nil)
 	}
 	if (s.BarX == nil) != (s.BarY == nil) {
 		return store.NewError(ErrCodeInvalid, "barX and barY must both be set or both be null", nil)
@@ -288,6 +317,14 @@ func (s *Service) Update(patch Patch) (Settings, error) {
 	if patch.Theme != nil {
 		next.Theme = *patch.Theme
 	}
+	if patch.Language != nil {
+		norm, ok := NormalizeLanguage(string(*patch.Language))
+		if !ok {
+			s.mu.Unlock()
+			return Settings{}, store.NewError(ErrCodeInvalid, fmt.Sprintf("invalid language %q: must be %q or %q", *patch.Language, LangZH, LangEN), nil)
+		}
+		next.Language = norm
+	}
 	if patch.DayStartHour != nil {
 		next.DayStartHour = *patch.DayStartHour
 	}
@@ -299,9 +336,6 @@ func (s *Service) Update(patch Patch) (Settings, error) {
 	}
 	if patch.Pinned != nil {
 		next.Pinned = *patch.Pinned
-	}
-	if patch.BarMode != nil {
-		next.BarMode = *patch.BarMode
 	}
 	if patch.ClearBarX {
 		next.BarX = nil
@@ -392,6 +426,17 @@ func parseSettingsJSON(raw []byte) (Settings, error) {
 		}
 		s.Theme = ThemeMode(str)
 	}
+	if v, ok := fields["language"]; ok {
+		str, err := decodeStrictString(v)
+		if err != nil {
+			return Settings{}, store.NewError(ErrCodeInvalid, "language must be a string", err)
+		}
+		lang, valid := NormalizeLanguage(str)
+		if !valid {
+			return Settings{}, store.NewError(ErrCodeInvalid, fmt.Sprintf("invalid language %q: must be %q or %q", str, LangZH, LangEN), nil)
+		}
+		s.Language = lang
+	}
 	if v, ok := fields["dayStartHour"]; ok {
 		n, err := decodeStrictInt(v)
 		if err != nil {
@@ -420,13 +465,8 @@ func parseSettingsJSON(raw []byte) (Settings, error) {
 		}
 		s.Pinned = b
 	}
-	if v, ok := fields["barMode"]; ok {
-		str, err := decodeStrictString(v)
-		if err != nil {
-			return Settings{}, store.NewError(ErrCodeInvalid, "barMode must be a string", err)
-		}
-		s.BarMode = BarMode(str)
-	}
+	// Legacy "barMode" keys from earlier v2.1.0 files are intentionally ignored
+	// so existing user settings load cleanly without triggering corrupt backup.
 	if v, ok := fields["barX"]; ok {
 		if bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
 			s.BarX = nil

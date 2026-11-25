@@ -11,6 +11,8 @@ Item {
     readonly property bool isConnected: plasmoidRoot ? !!plasmoidRoot.connected : false
     readonly property bool isLaunching: plasmoidRoot ? !!plasmoidRoot.launchingDaemon : false
     readonly property bool isPanelOpen: plasmoidRoot ? !!plasmoidRoot.panelOpen : false
+    readonly property string language: plasmoidRoot ? String(plasmoidRoot.language || "zh") : "zh"
+    readonly property bool isEn: language === "en"
     readonly property int slotCount: (plasmoidRoot && Array.isArray(plasmoidRoot.slots)) ? plasmoidRoot.slots.length : 0
     readonly property var focusedSlot: plasmoidRoot ? plasmoidRoot.focusedSlot : null
     readonly property color tc: Kirigami.Theme.textColor
@@ -40,7 +42,7 @@ Item {
             }
 
             Text {
-                text: "羽记 Featherlog"
+                text: full.isEn ? "Featherlog" : "羽记 Featherlog"
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 color: full.tc
@@ -60,15 +62,23 @@ Item {
             wrapMode: Text.Wrap
             text: {
                 if (!full.isConnected) {
-                    return full.isLaunching ? "正在启动羽记守护进程…" : "羽记守护进程未运行";
+                    if (full.isLaunching) {
+                        return full.isEn ? "Starting Featherlog…" : "正在启动羽记…";
+                    }
+                    return full.isEn ? "Offline · Click to Start" : "羽记未运行 · 点此启动";
                 }
                 if (full.focusedSlot) {
+                    if (full.isEn) {
+                        return "Focusing: " + full.focusedSlot.title + (full.slotCount > 1 ? (" (" + full.slotCount + " active slots)") : "");
+                    }
                     return "正在做：" + full.focusedSlot.title + (full.slotCount > 1 ? ("（共 " + full.slotCount + " 个活跃槽位）") : "");
                 }
                 if (full.slotCount > 0) {
-                    return "当前有 " + full.slotCount + " 个活跃并发工作槽";
+                    return full.isEn
+                        ? (full.slotCount + " active work slots")
+                        : ("当前有 " + full.slotCount + " 个活跃并发工作槽");
                 }
-                return "当前空闲，暂无活跃工作槽";
+                return full.isEn ? "Empty · Open Workbench" : "空槽 · 点此开工作台";
             }
         }
 
@@ -79,8 +89,10 @@ Item {
         PlasmaComponents.Button {
             Layout.fillWidth: true
             text: !full.isConnected
-                ? "启动并打开工作台"
-                : (full.isPanelOpen ? "收起羽记工作台" : "打开羽记工作台")
+                ? (full.isEn ? "Start Featherlog" : "启动羽记后台服务")
+                : (full.isPanelOpen
+                    ? (full.isEn ? "Hide Workbench" : "收起工作台")
+                    : (full.isEn ? "Open Workbench" : "打开工作台"))
             onClicked: {
                 if (full.plasmoidRoot) {
                     full.plasmoidRoot.toggleOrLaunchPanel();

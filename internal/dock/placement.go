@@ -9,24 +9,18 @@ import (
 const plasmoidAppletID = "io.github.muyuzhong.featherlog"
 
 // ShouldShowMiniBar decides whether the standalone floating 3D Drum Mini-Bar
-// window should be shown given the user's barMode preference, active external
-// /api/bar client presence (e.g. KDE Plasma 6 applet), host OS, and local KDE
-// Plasmoid installation state.
-func ShouldShowMiniBar(barMode string, hasExternalClient bool, goos string, kdeSession bool, plasmoidInstalled bool) bool {
-	switch strings.ToLower(strings.TrimSpace(barMode)) {
-	case "tray-only":
+// window should be shown under the single automatic placement policy:
+// yield whenever an external /api/bar client (e.g. KDE Plasma 6 applet) is
+// active or when running on Linux KDE Plasma with the Plasmoid installed;
+// otherwise show the standalone 3D Drum Mini-Bar.
+func ShouldShowMiniBar(hasExternalClient bool, goos string, kdeSession bool, plasmoidInstalled bool) bool {
+	if hasExternalClient {
 		return false
-	case "standalone":
-		return true
-	default: // "auto" or empty
-		if hasExternalClient {
-			return false
-		}
-		if goos == "linux" && kdeSession && plasmoidInstalled {
-			return false
-		}
-		return true
 	}
+	if goos == "linux" && kdeSession && plasmoidInstalled {
+		return false
+	}
+	return true
 }
 
 // DetectKDEPlasmoid inspects session environment variables and standard Plasma

@@ -510,38 +510,46 @@ func TestMiniBarWindowOptions(t *testing.T) {
 	}
 }
 
-func TestShouldShowMiniBarMatrix(t *testing.T) {
+func TestShouldShowMiniBarAndNeedsMiniBarWindowMatrix(t *testing.T) {
 	cases := []struct {
 		name              string
-		barMode           string
 		hasExternalClient bool
 		goos              string
 		kdeSession        bool
 		plasmoidInstalled bool
-		want              bool
+		wantShow          bool
+		wantNeedsWin      bool
 	}{
-		{"tray-only_windows", "tray-only", false, "windows", false, false, false},
-		{"tray-only_darwin", "tray-only", false, "darwin", false, false, false},
-		{"tray-only_linux", "tray-only", false, "linux", false, false, false},
-		{"standalone_overrides_external", "standalone", true, "linux", true, true, true},
-		{"standalone_windows", "standalone", false, "windows", false, false, true},
-		{"auto_windows_no_ext", "auto", false, "windows", false, false, true},
-		{"auto_darwin_no_ext", "auto", false, "darwin", false, false, true},
-		{"auto_windows_with_ext_yields", "auto", true, "windows", false, false, false},
-		{"auto_linux_kde_plasmoid_yields", "auto", false, "linux", true, true, false},
-		{"auto_linux_kde_no_plasmoid_shows", "auto", false, "linux", true, false, true},
-		{"auto_linux_gnome_plasmoid_shows", "auto", false, "linux", false, true, true},
-		{"auto_linux_gnome_with_ext_yields", "auto", true, "linux", false, false, false},
-		{"empty_mode_acts_as_auto_linux_kde", "", false, "linux", true, true, false},
-		{"empty_mode_acts_as_auto_darwin", "", false, "darwin", false, false, true},
-		{"darwin_ignores_kde_flags", "auto", false, "darwin", true, true, true},
+		{"windows_no_ext", false, "windows", false, false, true, true},
+		{"darwin_no_ext", false, "darwin", false, false, true, true},
+		{"windows_with_ext_yields", true, "windows", false, false, false, true},
+		{"linux_kde_plasmoid_yields_and_skips_window", false, "linux", true, true, false, false},
+		{"linux_kde_plasmoid_with_ext_yields_and_skips_window", true, "linux", true, true, false, false},
+		{"linux_kde_no_plasmoid_shows", false, "linux", true, false, true, true},
+		{"linux_kde_no_plasmoid_with_ext_yields", true, "linux", true, false, false, true},
+		{"linux_gnome_plasmoid_shows", false, "linux", false, true, true, true},
+		{"linux_gnome_with_ext_yields", true, "linux", false, false, false, true},
+		{"darwin_ignores_kde_flags", false, "darwin", true, true, true, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ShouldShowMiniBar(tc.barMode, tc.hasExternalClient, tc.goos, tc.kdeSession, tc.plasmoidInstalled)
-			if got != tc.want {
-				t.Fatalf("ShouldShowMiniBar(%q, ext=%v, %q, kde=%v, plasmoid=%v) = %v, want %v",
-					tc.barMode, tc.hasExternalClient, tc.goos, tc.kdeSession, tc.plasmoidInstalled, got, tc.want)
+			got := ShouldShowMiniBar(tc.hasExternalClient, tc.goos, tc.kdeSession, tc.plasmoidInstalled)
+			if got != tc.wantShow {
+				t.Fatalf("ShouldShowMiniBar(ext=%v, %q, kde=%v, plasmoid=%v) = %v, want %v",
+					tc.hasExternalClient, tc.goos, tc.kdeSession, tc.plasmoidInstalled, got, tc.wantShow)
+			}
+			ctrl := NewController(Config{
+				Screen:                &fakeScreen{},
+				Layer:                 &fakeLayerShell{},
+				PlatformOS:            tc.goos,
+				KDESession:            boolPtr(tc.kdeSession),
+				PlasmoidInstalled:     boolPtr(tc.plasmoidInstalled),
+				InitialExternalActive: tc.hasExternalClient,
+			})
+			defer ctrl.Close()
+			if gotNeeds := ctrl.NeedsMiniBarWindow(); gotNeeds != tc.wantNeedsWin {
+				t.Fatalf("NeedsMiniBarWindow(%q, kde=%v, plasmoid=%v) = %v, want %v",
+					tc.goos, tc.kdeSession, tc.plasmoidInstalled, gotNeeds, tc.wantNeedsWin)
 			}
 		})
 	}
@@ -677,7 +685,6 @@ func TestControllerMiniBarLifecycleThemeAndDebouncedMove(t *testing.T) {
 		PlatformOS:        "windows",
 		KDESession:        boolPtr(false),
 		PlasmoidInstalled: boolPtr(false),
-		InitialBarMode:    "auto",
 		OnMiniBarMoved: func(x, y int) {
 			moves = append(moves, moveEvent{x: x, y: y})
 		},
@@ -689,7 +696,7 @@ func TestControllerMiniBarLifecycleThemeAndDebouncedMove(t *testing.T) {
 	ctrl.Attach(panelWin)
 	applied := ctrl.AttachMiniBar(miniWin)
 
-	// 1. On Windows "auto" without external client: MiniBar shows via ShowInactive (never Focus!).
+	// 1. On Windows without external client: MiniBar shows via ShowInactive (never Focus!).
 	wantDefault := ComputeMiniBarBounds(primary, nil, nil)
 	if applied != wantDefault {
 		t.Fatalf("AttachMiniBar bounds = %+v, want %+v", applied, wantDefault)
@@ -736,19 +743,20 @@ func TestControllerMiniBarLifecycleThemeAndDebouncedMove(t *testing.T) {
 		t.Fatalf("after secondary display unplug: vis=%v bounds=%+v, want true %+v", vis, curBounds, wantDefault)
 	}
 
-	// 5. External client connects (e.g. KDE Plasmoid) -> "auto" yields & hides MiniBar.
+	// 5. External client connects (e.g. KDE Plasmoid) -> single-bar policy yields & hides MiniBar.
 	ctrl.SetExternalBarActive(true)
 	if vis, _ := ctrl.MiniBarState(); vis {
-		t.Fatalf("expected MiniBar hidden when external client active in auto mode")
+		t.Fatalf("expected MiniBar hidden when external client active")
 	}
 	if miniWin.hidden != 1 {
 		t.Fatalf("expected Hide called once, got %d", miniWin.hidden)
 	}
 
-	// 6. Explicit "standalone" overrides external client and shows MiniBar with custom taskbar coords.
-	ctrl.SetBarPrefs("standalone", intPtr(1200), intPtr(1036))
+	// 6. External client disconnects + custom taskbar coords -> MiniBar reappears at saved coords.
+	ctrl.SetBarPosition(intPtr(1200), intPtr(1036))
+	ctrl.SetExternalBarActive(false)
 	if vis, curBounds := ctrl.MiniBarState(); !vis || curBounds.X != 1200 || curBounds.Y != 1036 {
-		t.Fatalf("standalone custom coords: vis=%v bounds=%+v", vis, curBounds)
+		t.Fatalf("custom coords restore: vis=%v bounds=%+v", vis, curBounds)
 	}
 	if miniWin.shownInactive != 2 {
 		t.Fatalf("expected ShowInactive=2, got %d", miniWin.shownInactive)
@@ -757,22 +765,13 @@ func TestControllerMiniBarLifecycleThemeAndDebouncedMove(t *testing.T) {
 	// 7. ResetBarPosition (nil, nil) moves back to default bottom-center and cancels pending drag.
 	miniWin.bounds = Rect{X: 900, Y: 900, Width: MiniBarWidth, Height: MiniBarHeight}
 	miniWin.triggerMove()
-	ctrl.SetBarPrefs("standalone", nil, nil)
+	ctrl.SetBarPosition(nil, nil)
 	clk.Advance(time.Second)
 	if len(moves) != 1 {
 		t.Fatalf("reset should cancel pending drag debounce, moves=%+v", moves)
 	}
 	if _, curBounds := ctrl.MiniBarState(); curBounds != wantDefault {
 		t.Fatalf("after reset: bounds=%+v, want %+v", curBounds, wantDefault)
-	}
-
-	// 8. "tray-only" hides MiniBar.
-	ctrl.SetBarPrefs("tray-only", nil, nil)
-	if vis, _ := ctrl.MiniBarState(); vis {
-		t.Fatalf("expected MiniBar hidden in tray-only mode")
-	}
-	if miniWin.hidden != 2 {
-		t.Fatalf("expected Hide=2, got %d", miniWin.hidden)
 	}
 }
 
@@ -811,7 +810,6 @@ func TestControllerMiniBarAsyncRunOnMainConvergence(t *testing.T) {
 			PlatformOS:        "windows",
 			KDESession:        boolPtr(false),
 			PlasmoidInstalled: boolPtr(false),
-			InitialBarMode:    "auto",
 		})
 		defer ctrl.Close()
 
@@ -820,7 +818,7 @@ func TestControllerMiniBarAsyncRunOnMainConvergence(t *testing.T) {
 		ctrl.AttachMiniBar(miniWin)
 		// Follow immediately with no-op syncMiniBar calls before main thread runs.
 		ctrl.SetExternalBarActive(false)
-		ctrl.SetBarPrefs("auto", nil, nil)
+		ctrl.SetBarPosition(nil, nil)
 
 		miniWin.drainMain()
 		wantDefault := ComputeMiniBarBounds(primary, nil, nil)
@@ -840,13 +838,13 @@ func TestControllerMiniBarAsyncRunOnMainConvergence(t *testing.T) {
 
 	t.Run("b_rapid_show_bounds_update_before_drain_still_shows_at_latest_bounds", func(t *testing.T) {
 		ctrl := NewController(Config{
-			Screen:            screen,
-			Layer:             &fakeLayerShell{available: false},
-			StartHidden:       true,
-			PlatformOS:        "windows",
-			KDESession:        boolPtr(false),
-			PlasmoidInstalled: boolPtr(false),
-			InitialBarMode:    "tray-only",
+			Screen:                screen,
+			Layer:                 &fakeLayerShell{available: false},
+			StartHidden:           true,
+			PlatformOS:            "windows",
+			KDESession:            boolPtr(false),
+			PlasmoidInstalled:     boolPtr(false),
+			InitialExternalActive: true,
 		})
 		defer ctrl.Close()
 
@@ -854,12 +852,13 @@ func TestControllerMiniBarAsyncRunOnMainConvergence(t *testing.T) {
 		ctrl.AttachMiniBar(miniWin)
 		miniWin.drainMain()
 		if miniWin.shownInactive != 0 {
-			t.Fatalf("expected hidden initially in tray-only")
+			t.Fatalf("expected hidden initially while external client active")
 		}
 
 		// hidden -> show(B1) immediately followed by show(B2) before main thread runs.
-		ctrl.SetBarPrefs("standalone", intPtr(400), intPtr(900))
-		ctrl.SetBarPrefs("standalone", intPtr(1200), intPtr(1036))
+		ctrl.SetExternalBarActive(false)
+		ctrl.SetBarPosition(intPtr(400), intPtr(900))
+		ctrl.SetBarPosition(intPtr(1200), intPtr(1036))
 
 		miniWin.drainMain()
 		wantB2 := Rect{X: 1200, Y: 1036, Width: MiniBarWidth, Height: MiniBarHeight}
@@ -877,13 +876,12 @@ func TestControllerMiniBarAsyncRunOnMainConvergence(t *testing.T) {
 			PlatformOS:        "windows",
 			KDESession:        boolPtr(false),
 			PlasmoidInstalled: boolPtr(false),
-			InitialBarMode:    "auto",
 		})
 		defer ctrl.Close()
 
 		miniWin := &deferredWindow{}
 		ctrl.AttachMiniBar(miniWin)
-		ctrl.SetBarPrefs("tray-only", nil, nil)
+		ctrl.SetExternalBarActive(true)
 		miniWin.drainMain()
 		if miniWin.shownInactive != 0 || miniWin.hidden != 0 {
 			t.Fatalf("canceled show flashed window: shownInactive=%d hidden=%d", miniWin.shownInactive, miniWin.hidden)
@@ -931,7 +929,6 @@ func TestControllerPreAttachDoesNotQueryScreen(t *testing.T) {
 			PlatformOS:        "windows",
 			KDESession:        boolPtr(false),
 			PlasmoidInstalled: boolPtr(false),
-			InitialBarMode:    "auto",
 		})
 		defer ctrl.Close()
 
@@ -941,9 +938,9 @@ func TestControllerPreAttachDoesNotQueryScreen(t *testing.T) {
 			t.Fatalf("after pre-attach SetExternalBarActive(true): vis=%v bounds=%+v, want false/zero", vis, bounds)
 		}
 
-		ctrl.SetBarPrefs("standalone", intPtr(1200), intPtr(1036))
-		if vis, bounds := ctrl.MiniBarState(); !vis || bounds != (Rect{}) {
-			t.Fatalf("after pre-attach SetBarPrefs(standalone): vis=%v bounds=%+v, want true/zero", vis, bounds)
+		ctrl.SetBarPosition(intPtr(1200), intPtr(1036))
+		if vis, bounds := ctrl.MiniBarState(); vis || bounds != (Rect{}) {
+			t.Fatalf("after pre-attach SetBarPosition with extActive=true: vis=%v bounds=%+v, want false/zero", vis, bounds)
 		}
 
 		ctrl.SetTheme("graphite")
@@ -952,14 +949,10 @@ func TestControllerPreAttachDoesNotQueryScreen(t *testing.T) {
 		ctrl.Resize(Geometry{Width: PanelWidth, Height: PanelHeight, Expanded: false})
 		ctrl.Toggle(boolPtr(false))
 
-		// Switch back to auto + no external client before attach; custom coords stay pending.
-		ctrl.SetBarPrefs("auto", intPtr(1200), intPtr(1036))
-		if vis, _ := ctrl.MiniBarState(); vis {
-			t.Fatalf("expected auto + externalBarActive=true to compute miniVisible=false")
-		}
+		// Clear external client before attach; custom coords stay pending.
 		ctrl.SetExternalBarActive(false)
 		if vis, _ := ctrl.MiniBarState(); !vis {
-			t.Fatalf("expected auto + externalBarActive=false to compute miniVisible=true")
+			t.Fatalf("expected externalBarActive=false to compute miniVisible=true")
 		}
 
 		// Once App.WhenReady attaches the windows, Screen queries are allowed and applied.
@@ -988,7 +981,8 @@ func TestControllerPreAttachDoesNotQueryScreen(t *testing.T) {
 		if vis, _ := ctrl.MiniBarState(); vis {
 			t.Fatalf("expected destroyed miniWin sync to update miniVisible=false")
 		}
-		ctrl.SetBarPrefs("standalone", nil, nil)
+		ctrl.SetExternalBarActive(false)
+		ctrl.SetBarPosition(nil, nil)
 		if vis, _ := ctrl.MiniBarState(); !vis {
 			t.Fatalf("expected destroyed miniWin sync to update miniVisible=true")
 		}
@@ -1006,7 +1000,6 @@ func TestControllerPreAttachDoesNotQueryScreen(t *testing.T) {
 			PlatformOS:        "windows",
 			KDESession:        boolPtr(false),
 			PlasmoidInstalled: boolPtr(false),
-			InitialBarMode:    "auto",
 		})
 		defer ctrl.Close()
 
@@ -1069,7 +1062,7 @@ func TestMyGoScreenSafeBeforeAppRun(t *testing.T) {
 		t.Fatalf("InitialMiniBarRect before App.Run = %+v, want %dx%d", r, MiniBarWidth, MiniBarHeight)
 	}
 	ctrl.SetExternalBarActive(true)
-	ctrl.SetBarPrefs("standalone", intPtr(400), intPtr(800))
+	ctrl.SetBarPosition(intPtr(400), intPtr(800))
 	ctrl.SetTheme("graphite")
 	ctrl.Resize(Geometry{Width: PanelWidth, Height: PanelHeight, Expanded: false})
 	ctrl.Toggle(boolPtr(true))

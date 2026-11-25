@@ -267,7 +267,7 @@ func TestGetBarSnapshotSchemaAndTodayTally(t *testing.T) {
 	if !bytes.Contains(raw, []byte(`"remindAt":null`)) {
 		t.Fatalf("expected explicit remindAt:null in JSON, got %s", string(raw))
 	}
-	if snap.Theme != "stone" || snap.Pinned || snap.PanelOpen {
+	if snap.Theme != "stone" || snap.Language != "zh" || snap.Pinned || snap.PanelOpen {
 		t.Fatalf("unexpected header fields: %+v", snap)
 	}
 	if snap.TodayDone != 1 || snap.TodayTotal != 4 {
@@ -434,16 +434,17 @@ func TestLongPollWakeupOnDomainSettingsAndPanelChanges(t *testing.T) {
 		t.Fatalf("expected slot ready after reminder, got %s", snap2.Slots[0].State)
 	}
 
-	// 3. Settings change wakes long-poll.
-	snap3 := assertWakes("settings theme", snap2.Rev, func() {
+	// 3. Settings change (theme, pinned, language) wakes long-poll.
+	snap3 := assertWakes("settings theme+language", snap2.Rev, func() {
 		theme := settings.ThemeGraphite
+		lang := settings.LangEN
 		pinned := true
-		if _, err := application.Settings.Update(settings.Patch{Theme: &theme, Pinned: &pinned}); err != nil {
+		if _, err := application.Settings.Update(settings.Patch{Theme: &theme, Language: &lang, Pinned: &pinned}); err != nil {
 			t.Errorf("settings update: %v", err)
 		}
 	})
-	if snap3.Theme != "graphite" || !snap3.Pinned {
-		t.Fatalf("expected graphite+pinned, got %+v", snap3)
+	if snap3.Theme != "graphite" || snap3.Language != "en" || !snap3.Pinned {
+		t.Fatalf("expected graphite+en+pinned, got %+v", snap3)
 	}
 
 	// 4. Panel open via Dock.Toggle wakes long-poll.

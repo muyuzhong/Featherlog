@@ -280,8 +280,10 @@ func parseKWinScriptID(output string) (int, bool) {
 }
 
 // KWinScriptSource generates the KWin 6 JavaScript that adopts windows whose
-// caption matches caption, keeps them floating and untiled, and places them
-// horizontally centered bottomOffset pixels above KWin.PlacementArea's bottom edge.
+// caption matches caption (default "featherlog-panel") or "featherlog-bar":
+// both windows are kept floating, untiled, and hidden from taskbar/pager/switcher,
+// while the panel window is also placed horizontally centered bottomOffset pixels
+// above KWin.PlacementArea's bottom edge.
 func KWinScriptSource(caption string, bottomOffset int) string {
 	if strings.TrimSpace(caption) == "" {
 		caption = PanelWindowTitle
@@ -290,12 +292,18 @@ func KWinScriptSource(caption string, bottomOffset int) string {
 		bottomOffset = PanelBottomInset
 	}
 	quotedCaption, _ := json.Marshal(caption)
+	quotedBarCaption, _ := json.Marshal(MiniBarWindowTitle)
 	return fmt.Sprintf(`// Featherlog v2 KDE Wayland panel positioning script (auto-generated).
 (function () {
   var TARGET_CAPTION = %s;
+  var BAR_CAPTION = %s;
   var BOTTOM_GAP = %d;
   var watched = Object.create(null);
   var adopted = Object.create(null);
+
+  function isTargetCaption(c) {
+    return c === TARGET_CAPTION || c === BAR_CAPTION;
+  }
 
   function windowKey(w) {
     if (w && w.internalId !== undefined && w.internalId !== null) {
@@ -344,11 +352,14 @@ func KWinScriptSource(caption string, bottomOffset int) string {
   }
 
   function adopt(w) {
-    if (!w || w.deleted || w.caption !== TARGET_CAPTION) return;
+    if (!w || w.deleted || !isTargetCaption(w.caption)) return;
+    var shouldPlace = (w.caption === TARGET_CAPTION);
     var key = windowKey(w);
     if (key && adopted[key]) {
       enforceFlags(w);
-      place(w, adopted[key]);
+      if (shouldPlace) {
+        place(w, adopted[key]);
+      }
       return;
     }
     var state = { placing: false };
@@ -356,32 +367,40 @@ func KWinScriptSource(caption string, bottomOffset int) string {
       adopted[key] = state;
     }
     enforceFlags(w);
-    place(w, state);
+    if (shouldPlace) {
+      place(w, state);
+    }
 
     if (w.tileChanged) {
       w.tileChanged.connect(function () {
-        if (w.deleted || w.caption !== TARGET_CAPTION) return;
+        if (w.deleted || !isTargetCaption(w.caption)) return;
         if (w.tile) {
           w.tile = null;
-          place(w, state);
+          if (w.caption === TARGET_CAPTION) {
+            place(w, state);
+          }
         }
       });
     }
     if (w.minimizedChanged) {
       w.minimizedChanged.connect(function () {
-        if (w.deleted || w.caption !== TARGET_CAPTION) return;
+        if (w.deleted || !isTargetCaption(w.caption)) return;
         if (!w.minimized) {
           enforceFlags(w);
-          place(w, state);
+          if (w.caption === TARGET_CAPTION) {
+            place(w, state);
+          }
         }
       });
     }
     if (w.activeChanged) {
       w.activeChanged.connect(function () {
-        if (w.deleted || w.caption !== TARGET_CAPTION) return;
+        if (w.deleted || !isTargetCaption(w.caption)) return;
         if (w.active) {
           enforceFlags(w);
-          place(w, state);
+          if (w.caption === TARGET_CAPTION) {
+            place(w, state);
+          }
         }
       });
     }
@@ -411,7 +430,7 @@ func KWinScriptSource(caption string, bottomOffset int) string {
 
   function watchWindow(w) {
     if (!w || w.deleted) return;
-    if (w.caption === TARGET_CAPTION) {
+    if (isTargetCaption(w.caption)) {
       adopt(w);
       return;
     }
@@ -420,7 +439,7 @@ func KWinScriptSource(caption string, bottomOffset int) string {
     if (key) watched[key] = true;
     if (w.captionChanged) {
       w.captionChanged.connect(function () {
-        if (!w.deleted && w.caption === TARGET_CAPTION) {
+        if (!w.deleted && isTargetCaption(w.caption)) {
           adopt(w);
         }
       });
@@ -438,7 +457,7 @@ func KWinScriptSource(caption string, bottomOffset int) string {
   }
   workspace.windowAdded.connect(watchWindow);
 })();
-`, string(quotedCaption), bottomOffset)
+`, string(quotedCaption), string(quotedBarCaption), bottomOffset)
 }
 
 func writeFileAtomic(path string, data []byte, dirPerm, filePerm os.FileMode) error {

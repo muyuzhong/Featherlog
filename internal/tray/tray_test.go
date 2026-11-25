@@ -146,22 +146,24 @@ func TestTemplateIconPNGMonochromeAndTransparent(t *testing.T) {
 	}
 }
 
-func TestFormatTitleAndToolTip(t *testing.T) {
+func TestFormatStatusTitleAndToolTipLocalized(t *testing.T) {
 	longTitle := "这是一个非常非常长的并发工作槽标题测试"
 	focusedSlots := []workbench.WorkSlot{
 		{ID: "s1", Title: longTitle, Breadcrumb: "check tray menu", State: workbench.StateFocus},
 		{ID: "s2", Title: "CI build", State: workbench.StateReady},
 	}
 
-	// Non-darwin title is always empty.
+	// Non-darwin title is always empty in both languages.
 	for _, goos := range []string{"windows", "linux"} {
-		if got := FormatTitle(goos, focusedSlots); got != "" {
-			t.Fatalf("FormatTitle(%q) = %q, want empty", goos, got)
+		for _, lang := range []settings.LanguageMode{settings.LangZH, settings.LangEN} {
+			if got := FormatTitle(goos, focusedSlots, lang); got != "" {
+				t.Fatalf("FormatTitle(%q, %q) = %q, want empty", goos, lang, got)
+			}
 		}
 	}
 
 	// Darwin focused title: "┃ " + up to 14 runes.
-	darwinFocus := FormatTitle("darwin", focusedSlots)
+	darwinFocus := FormatTitle("darwin", focusedSlots, settings.LangZH)
 	if !strings.HasPrefix(darwinFocus, "┃ ") {
 		t.Fatalf("darwin focus title = %q, want '┃ ' prefix", darwinFocus)
 	}
@@ -170,36 +172,59 @@ func TestFormatTitleAndToolTip(t *testing.T) {
 		t.Fatalf("darwin focus short title length = %d runes (%q), want <= %d", n, trimmed, maxDarwinTitleRunes)
 	}
 
-	// Darwin with no focus and ready slots -> "待看 N".
-	readySlots := []workbench.WorkSlot{
+	// Darwin with no focus and ready slots -> "待看 N" (zh) / "Ready N" (en).
+	readyAndRunning := []workbench.WorkSlot{
 		{ID: "s1", Title: "PR 1", State: workbench.StateReady},
 		{ID: "s2", Title: "PR 2", State: workbench.StateReady},
 		{ID: "s3", Title: "BG", State: workbench.StateRunning},
 	}
-	if got := FormatTitle("darwin", readySlots); got != "待看 2" {
-		t.Fatalf("darwin ready title = %q, want '待看 2'", got)
+	if got := FormatTitle("darwin", readyAndRunning, settings.LangZH); got != "待看 2" {
+		t.Fatalf("darwin ready title (zh) = %q, want '待看 2'", got)
+	}
+	if got := FormatTitle("darwin", readyAndRunning, settings.LangEN); got != "Ready 2" {
+		t.Fatalf("darwin ready title (en) = %q, want 'Ready 2'", got)
 	}
 
 	// Darwin idle or running-only -> "".
-	if got := FormatTitle("darwin", nil); got != "" {
-		t.Fatalf("darwin idle title = %q, want empty", got)
-	}
-	if got := FormatTitle("darwin", []workbench.WorkSlot{{ID: "s1", Title: "BG", State: workbench.StateRunning}}); got != "" {
-		t.Fatalf("darwin running-only title = %q, want empty", got)
+	for _, lang := range []settings.LanguageMode{settings.LangZH, settings.LangEN} {
+		if got := FormatTitle("darwin", nil, lang); got != "" {
+			t.Fatalf("darwin idle title (%q) = %q, want empty", lang, got)
+		}
+		if got := FormatTitle("darwin", []workbench.WorkSlot{{ID: "s1", Title: "BG", State: workbench.StateRunning}}, lang); got != "" {
+			t.Fatalf("darwin running-only title (%q) = %q, want empty", lang, got)
+		}
 	}
 
-	// ToolTip formatting includes focus title, breadcrumb, and flat task tally.
-	tip := FormatToolTip(focusedSlots, 2, 5)
-	if !strings.Contains(tip, "check tray menu") || !strings.Contains(tip, "待办 2/5") {
-		t.Fatalf("unexpected focus tooltip: %q", tip)
+	// ToolTip zh formatting.
+	_, tipZH := FormatStatus("linux", focusedSlots, 2, 5, settings.LangZH)
+	if !strings.HasPrefix(tipZH, "羽记 · 专注中：") || !strings.Contains(tipZH, "check tray menu") || !strings.HasSuffix(tipZH, "（待办 2/5）") {
+		t.Fatalf("unexpected focus tooltip (zh): %q", tipZH)
 	}
-	idleTip := FormatToolTip(nil, 0, 3)
-	if !strings.Contains(idleTip, "待办 0/3") {
-		t.Fatalf("unexpected idle tooltip: %q", idleTip)
+	readyRunTipZH := FormatToolTip(readyAndRunning, 1, 4, settings.LangZH)
+	if readyRunTipZH != "羽记 · 待看 2 · 后台 1（待办 1/4）" {
+		t.Fatalf("unexpected ready+running tooltip (zh): %q", readyRunTipZH)
+	}
+	idleTipZH := FormatToolTip(nil, 0, 3, settings.LangZH)
+	if idleTipZH != "羽记 · 空闲（待办 0/3）" {
+		t.Fatalf("unexpected idle tooltip (zh): %q", idleTipZH)
+	}
+
+	// ToolTip en formatting.
+	_, tipEN := FormatStatus("linux", focusedSlots, 2, 5, settings.LangEN)
+	if !strings.HasPrefix(tipEN, "Featherlog · Focusing: ") || !strings.Contains(tipEN, "check tray menu") || !strings.HasSuffix(tipEN, " (Tasks 2/5)") {
+		t.Fatalf("unexpected focus tooltip (en): %q", tipEN)
+	}
+	readyRunTipEN := FormatToolTip(readyAndRunning, 1, 4, settings.LangEN)
+	if readyRunTipEN != "Featherlog · Ready 2 · Running 1 (Tasks 1/4)" {
+		t.Fatalf("unexpected ready+running tooltip (en): %q", readyRunTipEN)
+	}
+	idleTipEN := FormatToolTip(nil, 0, 3, settings.LangEN)
+	if idleTipEN != "Featherlog · Idle (Tasks 0/3)" {
+		t.Fatalf("unexpected idle tooltip (en): %q", idleTipEN)
 	}
 }
 
-func TestTrayControllerMenuActionsAndLiveSync(t *testing.T) {
+func TestTrayControllerMenuActionsI18nAndLiveSync(t *testing.T) {
 	clk := clock.NewFake(time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC))
 	quitCalls := 0
 
@@ -219,7 +244,7 @@ func TestTrayControllerMenuActionsAndLiveSync(t *testing.T) {
 	}
 	defer application.Close()
 
-	// Seed 1 completed task + 1 active task -> 待办 1/2.
+	// Seed 1 completed task + 1 active task -> 待办 1/2 / Tasks 1/2.
 	t1, err := application.Tasks.Create(tasks.CreateInput{Title: "Ship tray"})
 	if err != nil {
 		t.Fatalf("create task 1: %v", err)
@@ -256,12 +281,6 @@ func TestTrayControllerMenuActionsAndLiveSync(t *testing.T) {
 		}
 	}
 
-	// Set custom bar position so we can test "重置滚筒条位置".
-	x, y := 1200, 1036
-	if _, err := application.Settings.Update(settings.Patch{BarX: &x, BarY: &y}); err != nil {
-		t.Fatalf("set bar coords: %v", err)
-	}
-
 	backend := &fakeTrayBackend{}
 	ctrl, err := Start(Config{
 		App:        application,
@@ -277,8 +296,17 @@ func TestTrayControllerMenuActionsAndLiveSync(t *testing.T) {
 	if title != "┃ Main Slot" {
 		t.Fatalf("initial darwin title = %q, want '┃ Main Slot'", title)
 	}
-	if !strings.Contains(tooltip, "Main Slot") || !strings.Contains(tooltip, "editing tray") || !strings.Contains(tooltip, "待办 1/2") {
+	if tooltip != "羽记 · 专注中：Main Slot — editing tray（待办 1/2）" {
 		t.Fatalf("initial tooltip = %q", tooltip)
+	}
+
+	// BarMode submenu must be completely removed.
+	if it := findMenuItem(menu, "bar-mode"); it != nil {
+		t.Fatalf("bar-mode submenu must not exist, got %+v", it)
+	}
+	// Reset Bar Position must be hidden when BarX/BarY are nil.
+	if it := findMenuItem(menu, "reset-bar-position"); it != nil {
+		t.Fatalf("reset-bar-position should be hidden when BarX/BarY are nil, got %+v", it)
 	}
 
 	// Verify slot cap (max 6) and [专注] / [待看] labels.
@@ -298,6 +326,20 @@ func TestTrayControllerMenuActionsAndLiveSync(t *testing.T) {
 		t.Fatalf("ready menu item = %+v", it)
 	}
 
+	// Verify Language submenu defaults to zh checked.
+	langMenu := findMenuItem(menu, "language")
+	if langMenu == nil || langMenu.Kind != MenuSubmenu || langMenu.Label != "语言" {
+		t.Fatalf("language submenu = %+v, want label '语言'", langMenu)
+	}
+	zhRadio := findMenuItem(menu, "language:zh")
+	enRadio := findMenuItem(menu, "language:en")
+	if zhRadio == nil || zhRadio.Kind != MenuRadio || !zhRadio.Checked || zhRadio.Label != "简体中文" {
+		t.Fatalf("zh radio = %+v", zhRadio)
+	}
+	if enRadio == nil || enRadio.Kind != MenuRadio || enRadio.Checked || enRadio.Label != "English" {
+		t.Fatalf("en radio = %+v", enRadio)
+	}
+
 	// 1. Toggle panel menu item opens panel and flips label to "收起工作台".
 	toggleItem := findMenuItem(menu, "toggle-panel")
 	if toggleItem == nil || toggleItem.Label != "打开工作台" {
@@ -309,53 +351,93 @@ func TestTrayControllerMenuActionsAndLiveSync(t *testing.T) {
 		t.Fatalf("toggled item = %+v, want 收起工作台", toggleItem)
 	}
 
-	// 2. Clicking a ready slot focuses it and updates darwin title & menu labels.
-	readyItem := findMenuItem(menu, "slot:"+sReady.ID)
-	readyItem.OnClick()
+	// 2. Setting custom bar coords reveals "重置滚筒位置".
+	x, y := 1200, 1036
+	if _, err := application.Settings.Update(settings.Patch{BarX: &x, BarY: &y}); err != nil {
+		t.Fatalf("set bar coords: %v", err)
+	}
+	_, _, menu, _ = backend.snapshot()
+	if it := findMenuItem(menu, "reset-bar-position"); it == nil || it.Label != "重置滚筒位置" {
+		t.Fatalf("zh reset item = %+v, want 重置滚筒位置", it)
+	}
+
+	// 3. Clicking "English" radio switches settings, tooltip, and all menu labels to English.
+	findMenuItem(menu, "language:en").OnClick()
+	if got := application.Settings.Get().Language; got != settings.LangEN {
+		t.Fatalf("Language = %q, want en", got)
+	}
+	title, tooltip, menu, _ = backend.snapshot()
+	if title != "┃ Main Slot" {
+		t.Fatalf("en darwin title = %q, want '┃ Main Slot'", title)
+	}
+	if tooltip != "Featherlog · Focusing: Main Slot — editing tray (Tasks 1/2)" {
+		t.Fatalf("en tooltip = %q", tooltip)
+	}
+	if it := findMenuItem(menu, "toggle-panel"); it == nil || it.Label != "Hide Workbench" {
+		t.Fatalf("en toggle item = %+v, want Hide Workbench", it)
+	}
+	if it := findMenuItem(menu, "slot:"+sFocus.ID); it == nil || it.Label != "[Focus] Main Slot" {
+		t.Fatalf("en focus item = %+v", it)
+	}
+	if it := findMenuItem(menu, "slot:"+sReady.ID); it == nil || it.Label != "[Ready] Review PR" {
+		t.Fatalf("en ready item = %+v", it)
+	}
+	if it := findMenuItem(menu, "language"); it == nil || it.Label != "Language" {
+		t.Fatalf("en language submenu = %+v, want Language", it)
+	}
+	if it := findMenuItem(menu, "language:en"); it == nil || !it.Checked {
+		t.Fatalf("expected language:en checked, got %+v", it)
+	}
+	if it := findMenuItem(menu, "language:zh"); it == nil || it.Checked {
+		t.Fatalf("expected language:zh unchecked, got %+v", it)
+	}
+	resetItemEN := findMenuItem(menu, "reset-bar-position")
+	if resetItemEN == nil || resetItemEN.Label != "Reset Bar Position" {
+		t.Fatalf("en reset item = %+v, want Reset Bar Position", resetItemEN)
+	}
+	if it := findMenuItem(menu, "quit"); it == nil || it.Label != "Quit Featherlog" {
+		t.Fatalf("en quit item = %+v, want Quit Featherlog", it)
+	}
+
+	// 4. Clicking a ready slot focuses it and updates darwin title & English labels.
+	findMenuItem(menu, "slot:"+sReady.ID).OnClick()
 	title, _, menu, _ = backend.snapshot()
 	if title != "┃ Review PR" {
 		t.Fatalf("after focus click darwin title = %q, want '┃ Review PR'", title)
 	}
-	if it := findMenuItem(menu, "slot:"+sReady.ID); it == nil || it.Label != "[专注] Review PR" {
+	if it := findMenuItem(menu, "slot:"+sReady.ID); it == nil || it.Label != "[Focus] Review PR" {
 		t.Fatalf("after focus click item = %+v", it)
 	}
 
-	// 3. BarMode submenu radio buttons update settings and checked state.
-	standaloneItem := findMenuItem(menu, "bar-mode:standalone")
-	if standaloneItem == nil || standaloneItem.Kind != MenuRadio || standaloneItem.Checked {
-		t.Fatalf("initial standalone item = %+v", standaloneItem)
-	}
-	standaloneItem.OnClick()
-	if got := application.Settings.Get().BarMode; got != settings.BarModeStandalone {
-		t.Fatalf("BarMode = %q, want standalone", got)
-	}
-	_, _, menu, _ = backend.snapshot()
-	if it := findMenuItem(menu, "bar-mode:standalone"); it == nil || !it.Checked {
-		t.Fatalf("expected bar-mode:standalone checked after click, got %+v", it)
-	}
-
-	// 4. "重置滚筒条位置" clears BarX and BarY to nil.
-	resetItem := findMenuItem(menu, "reset-bar-position")
-	if resetItem == nil || resetItem.Label != "重置滚筒条位置" {
-		t.Fatalf("reset item = %+v", resetItem)
-	}
-	resetItem.OnClick()
+	// 5. Clicking "Reset Bar Position" clears BarX/BarY and hides the menu item again.
+	findMenuItem(menu, "reset-bar-position").OnClick()
 	st := application.Settings.Get()
 	if st.BarX != nil || st.BarY != nil {
 		t.Fatalf("expected BarX/BarY cleared to nil, got %+v", st)
 	}
+	_, _, menu, _ = backend.snapshot()
+	if it := findMenuItem(menu, "reset-bar-position"); it != nil {
+		t.Fatalf("expected reset-bar-position hidden after reset, got %+v", it)
+	}
 
-	// 5. "退出羽记" invokes QuitFunc.
+	// 6. Toggle panel closed -> English label flips to "Open Workbench"; switch back to zh -> "退出羽记".
+	findMenuItem(menu, "toggle-panel").OnClick()
+	_, _, menu, _ = backend.snapshot()
+	if it := findMenuItem(menu, "toggle-panel"); it == nil || it.Label != "Open Workbench" {
+		t.Fatalf("closed en toggle item = %+v, want Open Workbench", it)
+	}
+	findMenuItem(menu, "language:zh").OnClick()
+	_, _, menu, _ = backend.snapshot()
 	quitItem := findMenuItem(menu, "quit")
 	if quitItem == nil || quitItem.Label != "退出羽记" {
-		t.Fatalf("quit item = %+v", quitItem)
+		t.Fatalf("zh quit item = %+v, want 退出羽记", quitItem)
 	}
 	quitItem.OnClick()
 	if quitCalls != 1 {
 		t.Fatalf("quitCalls = %d, want 1", quitCalls)
 	}
 
-	// 6. Close unsubscribes and destroys backend.
+	// 7. Close unsubscribes and destroys backend.
 	ctrl.Close()
 	_, _, _, destroyed := backend.snapshot()
 	if !destroyed {
