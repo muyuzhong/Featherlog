@@ -78,7 +78,7 @@ featherlog note "KDE Wayland 下通过 KWin Script 精准锚定在底部 Dock �
 cd frontend && pnpm install && pnpm build && cd ..
 
 # 2. 编译单文件二进制（零 CGO，自动 embed frontend/dist）
-CGO_ENABLED=0 go build -o featherlog .
+CGO_ENABLED=0 go build -o featherlog ./cmd/featherlog
 
 # 3. （KDE Plasma 6）安装/升级底部 Dock 小组件
 ./scripts/install-plasmoid.sh
@@ -91,7 +91,7 @@ CGO_ENABLED=0 go build -o featherlog .
 cd frontend && pnpm dev
 
 # 终端 2：启动 MyGo 桌面宿主连接 dev server（数据隔离在 Featherlog-dev，环回 API 默认 127.0.0.1:39174）
-go run -tags noembed . --dev --show
+go run -tags noembed ./cmd/featherlog --dev --show
 ```
 
 ### 运行测试
@@ -100,7 +100,7 @@ go run -tags noembed . --dev --show
 # Go 领域层 + 宿主层单元测试（含竞态检测）
 go test -race ./internal/...
 
-# 含 main 包 CLI 测试（已构建 frontend/dist 时无需 -tags noembed）
+# 含 cmd/featherlog CLI 测试（已构建 frontend/dist 时无需 -tags noembed）
 go test -race -tags noembed ./...
 
 # 前端类型检查与单测

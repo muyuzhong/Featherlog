@@ -8,7 +8,7 @@
 
 | 路径 | 职责 |
 |---|---|
-| `main.go`、`console_windows.go`、`console_other.go`、`frontend_embed.go`、`frontend_noembed.go` | Go 应用入口（含 `--show`、`--http-port`）、macOS `ActivationPolicyAccessory`、Windows 控制台回退、CLI 子命令分发、前端资源嵌入 |
+| `cmd/featherlog/` | Go 应用入口（`main.go`、`frontend.go`、`console_windows.go`、`console_other.go`）：含 `--show`、`--http-port`、macOS `ActivationPolicyAccessory`、Windows 控制台回退、CLI 子命令分发、前端资源装载 |
 | `internal/clock/`、`internal/store/` | 可注入时钟、原子 JSON 存储与损坏保护 |
 | `internal/workbench/`、`internal/tasks/`、`internal/notes/`、`internal/settings/` | 领域模型、业务规则与单元测试（含 `barMode`、`barX`/`barY` 自定义坐标与 `null` 重置） |
 | `internal/app/` | `mygo.Bind` 的 5 个服务（含 `DockService.Toggle`）、跨领域协调、事件推送与 IPC 命令路由 |
@@ -17,7 +17,7 @@
 | `internal/barhttp/` | 仅绑定 `127.0.0.1` 的本机环回 HTTP 长轮询、控制 API 与外部客户端活跃探测（`HasActiveClient` / `OnClientActivity`） |
 | `internal/ipcsock/` | 单实例 Unix Domain Socket（`<userData>/featherlog.sock`）协议与客户端/服务端（含 Windows `AF_UNIX` 错码与僵尸重解析点清理） |
 | `plasmoid/io.github.muyuzhong.featherlog/`、`scripts/install-plasmoid.sh` | KDE Plasma 6 原生底部 Dock 状态条插件与安装脚本 |
-| `frontend/` | 独立 React + TypeScript + Vite 前端（支持 `/?mode=panel` 工作台抽屉与 `/?mode=bar` 独立 3D 滚筒条，构建产物 `frontend/dist`） |
+| `frontend/` | 独立 React + TypeScript + Vite 前端（支持 `/?mode=panel` 工作台抽屉与 `/?mode=bar` 独立 3D 滚筒条，构建产物 `frontend/dist`）及 `embed.go`/`noembed.go`（`package frontend` 仅用 stdlib 暴露 `DistFS()`） |
 | `docs/design.md` | 架构与契约单一事实来源 |
 
 ## 硬性规则

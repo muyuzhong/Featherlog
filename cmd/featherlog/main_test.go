@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/muyuzhong/featherlog/frontend"
 	"github.com/muyuzhong/featherlog/internal/app"
 	"github.com/muyuzhong/featherlog/internal/barhttp"
 	"github.com/muyuzhong/featherlog/internal/clock"
@@ -268,5 +270,18 @@ func TestVersionFlagAndSubcommand(t *testing.T) {
 	}
 	if out.String() != "featherlog 2.1.0-rc.1\n" {
 		t.Fatalf("--version stdout = %q, want %q", out.String(), "featherlog 2.1.0-rc.1\n")
+	}
+}
+
+func TestFrontendDistFS(t *testing.T) {
+	distFS, ok := frontend.DistFS()
+	if !ok {
+		if distFS != nil {
+			t.Fatalf("expected nil fs when frontend assets are not embedded")
+		}
+		return
+	}
+	if _, err := fs.Stat(distFS, "index.html"); err != nil {
+		t.Fatalf("embedded frontend missing index.html: %v", err)
 	}
 }
