@@ -8,6 +8,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/muyuzhong/featherlog/internal/clock"
 	"github.com/muyuzhong/featherlog/internal/dock"
+	"github.com/muyuzhong/featherlog/internal/migrate"
 	"github.com/muyuzhong/featherlog/internal/notes"
 	"github.com/muyuzhong/featherlog/internal/settings"
 	"github.com/muyuzhong/featherlog/internal/store"
@@ -72,6 +73,13 @@ func Open(cfg Config) (*App, error) {
 	}
 
 	st := store.New(cfg.DataDir)
+
+	if report, err := migrate.Run(st, clk); err != nil {
+		return nil, fmt.Errorf("migrate v1 data: %w", err)
+	} else if report.Migrated() {
+		log.Printf("featherlog: migrated v1 data (settings=%t tasks=%d notes=%d)",
+			report.SettingsMigrated, report.TasksMigrated, report.NotesMigrated)
+	}
 
 	var settingsOpts []settings.Option
 	if cfg.IDGen != nil {

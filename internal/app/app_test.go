@@ -1,8 +1,10 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json/v2"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"github.com/muyuzhong/featherlog/internal/clock"
 	"github.com/muyuzhong/featherlog/internal/dock"
 	"github.com/muyuzhong/featherlog/internal/ipcsock"
+	"github.com/muyuzhong/featherlog/internal/migrate"
 	"github.com/muyuzhong/featherlog/internal/notes"
 	"github.com/muyuzhong/featherlog/internal/settings"
 	"github.com/muyuzhong/featherlog/internal/tasks"
@@ -506,5 +509,331 @@ func TestSettingsThemeSyncAndDockHideOnCollapse(t *testing.T) {
 	}
 	if win.hidden != 1 {
 		t.Fatalf("expected window hidden on Resize(expanded=false), got %d", win.hidden)
+	}
+}
+
+func TestOpenMigratesV1ElectronDataDirEndToEnd(t *testing.T) {
+	dir := t.TempDir()
+	writeFile := func(rel, content string) {
+		t.Helper()
+		full := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
+			t.Fatalf("mkdir %s: %v", filepath.Dir(full), err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o600); err != nil {
+			t.Fatalf("write %s: %v", full, err)
+		}
+	}
+
+	v1SettingsRaw := `{
+  "shell": {
+    "paper": "aged",
+    "sound": false,
+    "volume": 7
+  },
+  "plugins": {
+    "quest": {
+      "dayStartHour": 5
+    }
+  }
+}`
+	writeFile("settings.json", v1SettingsRaw)
+
+	writeFile(filepath.Join("plugins", "quest", "state.json"), `{
+  "schemaVersion": 2,
+  "quests": [
+    {"id": "quest-career", "key": "record:fb13abae-1111-2222-3333-444444444444"},
+    {"id": "quest-daily", "key": "record:fb13abae-5555-6666-7777-888888888888"},
+    {"id": "quest-done", "key": "record:fb13abae-9999-aaaa-bbbb-cccccccccccc"},
+    {"id": "quest-archived", "key": "record:fb13abae-dddd-eeee-ffff-000000000000"}
+  ],
+  "meta": {"lastPeriodKey": "2026-11-25"}
+}`)
+
+	// Active main quest with dummy "1" chapter ("简历") and counted objective ("人月神话" 4/19).
+	writeFile(filepath.Join("plugins", "quest", "record%3Afb13abae-1111-2222-3333-444444444444.json"), `{
+  "quest": {
+    "id": "quest-career",
+    "kind": "main",
+    "title": "秋招冲刺",
+    "status": "active",
+    "chapters": [
+      {
+        "id": "ch-resume",
+        "title": "简历",
+        "objectives": [
+          {"id": "obj-resume", "text": "1"}
+        ]
+      },
+      {
+        "id": "ch-book",
+        "title": "经典阅读",
+        "objectives": [
+          {
+            "id": "obj-mmm",
+            "text": "读完人月神话",
+            "count": {"target": 19, "current": 4, "unit": "章"}
+          }
+        ]
+      }
+    ],
+    "deadline": "2026-12-01",
+    "order": 0,
+    "createdAt": "2026-10-29T16:24:45.897Z",
+    "updatedAt": "2026-11-24T12:00:00.000Z"
+  },
+  "history": []
+}`)
+
+	// Daily quest with quota progress and history.
+	writeFile(filepath.Join("plugins", "quest", "record%3Afb13abae-5555-6666-7777-888888888888.json"), `{
+  "quest": {
+    "id": "quest-daily",
+    "kind": "daily",
+    "title": "每日刷题",
+    "status": "active",
+    "chapters": [],
+    "recurrence": {"freq": "daily"},
+    "quota": {"target": 5},
+    "cycle": {"periodKey": "2026-11-25", "current": 2, "done": false},
+    "order": 0,
+    "createdAt": "2026-11-01T08:00:00.000Z",
+    "updatedAt": "2026-11-25T07:00:00.000Z"
+  },
+  "history": ["2026-11-23", "2026-11-24"]
+}`)
+
+	// Completed quest.
+	writeFile(filepath.Join("plugins", "quest", "record%3Afb13abae-9999-aaaa-bbbb-cccccccccccc.json"), `{
+  "quest": {
+    "id": "quest-done",
+    "kind": "side",
+    "title": "完成实习项目包装",
+    "status": "completed",
+    "chapters": [
+      {
+        "id": "ch-done",
+        "title": "",
+        "doneAt": "2026-11-13T12:25:09.189Z",
+        "objectives": [
+          {"id": "obj-done", "text": "输出 STAR 复盘", "doneAt": "2026-11-13T12:25:09.189Z"}
+        ]
+      }
+    ],
+    "order": 1,
+    "createdAt": "2026-10-15T10:00:00.000Z",
+    "updatedAt": "2026-11-13T12:25:09.189Z",
+    "completedAt": "2026-11-13T12:25:09.189Z"
+  },
+  "history": []
+}`)
+
+	// Archived quest.
+	writeFile(filepath.Join("plugins", "quest", "record%3Afb13abae-dddd-eeee-ffff-000000000000.json"), `{
+  "quest": {
+    "id": "quest-archived",
+    "kind": "side",
+    "title": "旧版草稿",
+    "status": "archived",
+    "chapters": [],
+    "order": 2,
+    "createdAt": "2026-09-01T10:00:00.000Z",
+    "updatedAt": "2026-09-05T10:00:00.000Z"
+  },
+  "history": []
+}`)
+
+	// Notes: one linked to quest-career, one standalone, one linked to a missing quest.
+	writeFile(filepath.Join("plugins", "notes", "note%3A11111111-aaaa-bbbb-cccc-000000000001.json"), `{
+  "schemaVersion": 1,
+  "note": {
+    "id": "note-linked",
+    "text": "简历项目指标需量化到毫秒级",
+    "questId": "quest-career",
+    "createdAt": "2026-11-24T08:45:07.118Z",
+    "updatedAt": "2026-11-24T08:45:07.118Z"
+  }
+}`)
+	writeFile(filepath.Join("plugins", "notes", "note%3A22222222-aaaa-bbbb-cccc-000000000002.json"), `{
+  "schemaVersion": 1,
+  "note": {
+    "id": "note-free",
+    "text": "独立随笔内容",
+    "questId": null,
+    "createdAt": "2026-11-25T06:00:00.000Z",
+    "updatedAt": "2026-11-25T06:00:00.000Z"
+  }
+}`)
+	writeFile(filepath.Join("plugins", "notes", "note%3A33333333-aaaa-bbbb-cccc-000000000003.json"), `{
+  "schemaVersion": 1,
+  "note": {
+    "id": "note-orphan",
+    "text": "已删任务的遗留手记",
+    "questId": "quest-nonexistent",
+    "createdAt": "2026-11-22T06:00:00.000Z",
+    "updatedAt": "2026-11-22T06:00:00.000Z"
+  }
+}`)
+
+	snapshotPlugins := func() map[string][]byte {
+		t.Helper()
+		snap := make(map[string][]byte)
+		root := filepath.Join(dir, "plugins")
+		if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			snap[rel] = raw
+			return nil
+		}); err != nil {
+			t.Fatalf("snapshot plugins: %v", err)
+		}
+		return snap
+	}
+	pluginsBefore := snapshotPlugins()
+
+	clk := clock.NewFake(time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC))
+	corruptCalled := false
+	a, err := Open(Config{
+		DataDir: dir,
+		Clock:   clk,
+		Events:  &recordingSink{},
+		DockCfg: dock.Config{
+			Screen: noopScreen{},
+			Layer:  noopLayer{},
+		},
+		OnCorrupt: func(backupPath string, cause error) {
+			corruptCalled = true
+		},
+	})
+	if err != nil {
+		t.Fatalf("app.Open on v1 dataDir failed: %v", err)
+	}
+
+	if corruptCalled {
+		t.Fatalf("app.Open unexpectedly triggered OnCorrupt on v1 settings.json")
+	}
+
+	// Verify migrated settings & atomic v1 backup.
+	gotSettings := a.SettingsSvc.Get()
+	wantSettings := settings.Settings{
+		Theme:        settings.ThemeStone,
+		DayStartHour: 5,
+		Sound:        false,
+		Volume:       7,
+		Pinned:       false,
+	}
+	if gotSettings != wantSettings {
+		t.Fatalf("Settings = %+v, want %+v", gotSettings, wantSettings)
+	}
+	bakRaw, err := os.ReadFile(filepath.Join(dir, migrate.SettingsBackupFileName))
+	if err != nil || string(bakRaw) != v1SettingsRaw {
+		t.Fatalf("settings.v1.json.bak mismatch: err=%v raw=%q", err, string(bakRaw))
+	}
+
+	// Verify migrated tasks.
+	taskList, err := a.TaskSvc.List()
+	if err != nil {
+		t.Fatalf("TaskSvc.List: %v", err)
+	}
+	if len(taskList.Tasks) != 4 {
+		t.Fatalf("len(tasks) = %d, want 4", len(taskList.Tasks))
+	}
+	taskMap := make(map[string]tasks.Task, len(taskList.Tasks))
+	for _, tk := range taskList.Tasks {
+		taskMap[tk.ID] = tk
+	}
+
+	career := taskMap["quest-career"]
+	if len(career.Items) != 2 {
+		t.Fatalf("career items = %+v, want 2 items", career.Items)
+	}
+	if career.Items[0].Text != "简历" || career.Items[0].Done {
+		t.Fatalf("career item[0] = %+v, want 简历 done=false", career.Items[0])
+	}
+	if career.Items[1].Text != "经典阅读 · 读完人月神话" || *career.Items[1].Current != 4 || *career.Items[1].Target != 19 {
+		t.Fatalf("career item[1] = %+v, want 经典阅读 · 读完人月神话 4/19", career.Items[1])
+	}
+
+	daily := taskMap["quest-daily"]
+	if daily.Kind != tasks.KindDaily || daily.Status != tasks.StatusActive ||
+		daily.Quota == nil || daily.Quota.Current != 2 || daily.Quota.Target != 5 ||
+		daily.Streak == nil || *daily.Streak != 2 {
+		t.Fatalf("unexpected migrated daily task: %+v", daily)
+	}
+	if taskMap["quest-done"].Status != tasks.StatusCompleted {
+		t.Fatalf("quest-done status = %s, want completed", taskMap["quest-done"].Status)
+	}
+	if taskMap["quest-archived"].Status != tasks.StatusArchived {
+		t.Fatalf("quest-archived status = %s, want archived", taskMap["quest-archived"].Status)
+	}
+
+	// Verify migrated notes (newest first, linked vs standalone vs detached).
+	allNotes, err := a.NoteSvc.List(nil)
+	if err != nil {
+		t.Fatalf("NoteSvc.List: %v", err)
+	}
+	if len(allNotes) != 3 {
+		t.Fatalf("len(notes) = %d, want 3", len(allNotes))
+	}
+	if allNotes[0].ID != "note-free" || allNotes[0].TaskID != nil {
+		t.Fatalf("allNotes[0] = %+v, want note-free standalone", allNotes[0])
+	}
+	if allNotes[1].ID != "note-linked" || allNotes[1].TaskID == nil || *allNotes[1].TaskID != "quest-career" {
+		t.Fatalf("allNotes[1] = %+v, want note-linked attached to quest-career", allNotes[1])
+	}
+	if allNotes[2].ID != "note-orphan" || allNotes[2].TaskID != nil {
+		t.Fatalf("allNotes[2] = %+v, want note-orphan detached to nil", allNotes[2])
+	}
+
+	// Mutate a migrated task via v2 service and re-open to verify migration is idempotent.
+	if _, err := a.TaskSvc.StepQuota(tasks.StepQuotaInput{
+		ID:     "quest-career",
+		ItemID: "obj-mmm",
+		Delta:  1,
+	}); err != nil {
+		t.Fatalf("StepQuota on migrated item: %v", err)
+	}
+	a.Close()
+
+	a2, err := Open(Config{
+		DataDir: dir,
+		Clock:   clk,
+		Events:  &recordingSink{},
+		DockCfg: dock.Config{
+			Screen: noopScreen{},
+			Layer:  noopLayer{},
+		},
+	})
+	if err != nil {
+		t.Fatalf("second app.Open failed: %v", err)
+	}
+	defer a2.Close()
+
+	reloadedCareer, err := a2.Tasks.Get("quest-career")
+	if err != nil {
+		t.Fatalf("reloaded Get quest-career: %v", err)
+	}
+	if *reloadedCareer.Items[1].Current != 5 {
+		t.Fatalf("expected persisted v2 mutation current=5 after reopen, got %d", *reloadedCareer.Items[1].Current)
+	}
+
+	// Non-destructive guarantee: plugins/ directory must remain byte-for-byte untouched.
+	pluginsAfter := snapshotPlugins()
+	if len(pluginsBefore) != len(pluginsAfter) {
+		t.Fatalf("plugins/ file count changed: before=%d after=%d", len(pluginsBefore), len(pluginsAfter))
+	}
+	for k, want := range pluginsBefore {
+		if !bytes.Equal(want, pluginsAfter[k]) {
+			t.Fatalf("plugins/%s was modified during app.Open migration", k)
+		}
 	}
 }
