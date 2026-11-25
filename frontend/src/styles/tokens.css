@@ -1,0 +1,88 @@
+/* Two neutral themes, one set of roles. Components read roles, never a hex.
+   Colour has no job here but light and dark: state is told by surface
+   height, ink weight and the one inverted label, never by a coloured light. */
+
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC",
+    "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", "Noto Sans Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  /* Concentric corners: an inner radius is the outer one less the padding between them. */
+  --r-shell: 22px;
+  --pad-shell: 8px;
+  --r-section: calc(var(--r-shell) - var(--pad-shell));
+  --pad-section: 6px;
+  --r-card: calc(var(--r-section) - var(--pad-section));
+  --r-bar: 14px;
+  --pad-bar: 4px;
+  --r-chip: calc(var(--r-bar) - var(--pad-bar));
+  --r-control: 6px;
+  --r-label: 2px;
+
+  /* How far the focus card stands out of the tray. */
+  --lift-y: -3px;
+}
+
+:root,
+[data-theme="stone"] {
+  color-scheme: light;
+  --desk: #DEDCD6;
+  /* The solid page under everything: the panel window paints it edge to edge. */
+  --bg-canvas: #F6F5F2;
+  --ground: var(--bg-canvas);
+  --well: #EEECE7;
+  --panel: #FBFAF8;
+  --card-focus: #FFFFFF;
+  --card-run: #ECEAE4;
+  --card-ready: #F4F3EF;
+  --field: #FFFFFF;
+  --ink: #191918;
+  --ink-2: #6E6D68;
+  --ink-3: #8E8C85;
+  --hair: #E3E0D9;
+  --hair-strong: #CDC9C0;
+  --hover: rgb(25 25 24 / 0.05);
+  --press: rgb(25 25 24 / 0.09);
+  --label-bg: #18181B;
+  --label-fg: #FAFAF9;
+  --ring: #191918;
+  --selection: rgb(25 25 24 / 0.14);
+  --shade: 40 36 30;
+  --edge-light: inset 0 1px 0 rgb(255 255 255 / 0.95);
+  --lift: 0 1px 1px rgb(var(--shade) / 0.06), 0 7px 16px -6px rgb(var(--shade) / 0.24);
+  --rest: 0 1px 1px rgb(var(--shade) / 0.05);
+  --sunk: inset 0 1px 2px rgb(var(--shade) / 0.07);
+  --float: 0 12px 30px -8px rgb(var(--shade) / 0.24), 0 2px 6px rgb(var(--shade) / 0.06);
+  --shell-shadow: 0 1px 2px rgb(var(--shade) / 0.12);
+}
+
+[data-theme="graphite"] {
+  color-scheme: dark;
+  --desk: #08090A;
+  --bg-canvas: #121315;
+  --ground: var(--bg-canvas);
+  --well: #0D0E10;
+  --panel: #16171A;
+  --card-focus: #1C1E22;
+  --card-run: #151619;
+  --card-ready: #18191D;
+  --field: #1A1C20;
+  --ink: #F2F2F0;
+  --ink-2: #858890;
+  --ink-3: #62656D;
+  --hair: #24262B;
+  --hair-strong: #34373D;
+  --hover: rgb(242 242 240 / 0.05);
+  --press: rgb(242 242 240 / 0.09);
+  --label-bg: #FAFAF9;
+  --label-fg: #18181B;
+  --ring: #F2F2F0;
+  --selection: rgb(242 242 240 / 0.16);
+  --shade: 0 0 0;
+  --edge-light: inset 0 1px 0 rgb(255 255 255 / 0.07);
+  --lift: 0 1px 1px rgb(0 0 0 / 0.5), 0 8px 18px -6px rgb(0 0 0 / 0.6);
+  --rest: 0 1px 1px rgb(0 0 0 / 0.35);
+  --sunk: inset 0 1px 2px rgb(0 0 0 / 0.35);
+  --float: 0 12px 32px -8px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.05);
+  --shell-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
+}
