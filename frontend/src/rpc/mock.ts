@@ -5,6 +5,7 @@ import { rollDaily, setCompleted, stepQuota, toggleItem, withDue } from '../lib/
 import { addDays, periodKeyOf } from '../lib/time';
 import type { Bridge } from './bridge';
 import {
+  BAR_MODES,
   type BridgeEventName,
   type BridgeEvents,
   DEFAULT_SETTINGS,
@@ -200,6 +201,8 @@ export class LocalMockBridge implements Bridge {
   /** The last geometry the page asked the dock for. */
   lastGeometry: DockGeometry | null = null;
   quitRequested = false;
+  /** Whether the host's workbench window would be showing now. */
+  panelOpen = false;
 
   readonly #clock: Clock;
   readonly #storage: KeyValueStorage | null;
@@ -496,6 +499,13 @@ export class LocalMockBridge implements Bridge {
           if (typeof patch.volume === 'number') next.volume = clampInt(patch.volume, 0, 10);
           if (typeof patch.sound === 'boolean') next.sound = patch.sound;
           if (typeof patch.pinned === 'boolean') next.pinned = patch.pinned;
+          if (patch.barMode !== undefined && BAR_MODES.includes(patch.barMode)) next.barMode = patch.barMode;
+          // null forgets where the bar was dragged; the host puts it back in its default place.
+          for (const key of ['barX', 'barY'] as const) {
+            const v = patch[key];
+            if (v === null) delete next[key];
+            else if (typeof v === 'number' && Number.isFinite(v)) next[key] = Math.round(v);
+          }
           this.#data.settings = next;
           this.#emit('settings:changed', next);
           if (next.dayStartHour !== prev.dayStartHour) {
@@ -511,7 +521,16 @@ export class LocalMockBridge implements Bridge {
       resize: (geom) =>
         this.#reply(() => {
           this.lastGeometry = geom;
+          this.panelOpen = geom.expanded;
           return null;
+        }),
+      toggle: (input) =>
+        this.#reply(() => {
+          const expanded = input?.expanded ?? !this.panelOpen;
+          this.panelOpen = expanded;
+          // The host tells every window, the bar included, as its global shortcut does.
+          this.#emit('dock:toggle', { expanded });
+          return { expanded };
         }),
       quit: () =>
         this.#reply(() => {
@@ -661,13 +680,16 @@ export class LocalMockBridge implements Bridge {
       if (!raw) return null;
       const data = JSON.parse(raw) as Partial<MockData>;
       if (data.version !== 2 || !Array.isArray(data.slots) || !Array.isArray(data.tasks) || !Array.isArray(data.notes)) return null;
+      // Data saved before barMode existed reads as "auto".
+      const settings: Settings = { ...DEFAULT_SETTINGS, ...data.settings };
+      if (!BAR_MODES.includes(settings.barMode)) settings.barMode = DEFAULT_SETTINGS.barMode;
       return {
         version: 2,
         seq: typeof data.seq === 'number' ? data.seq : 1000,
         slots: data.slots,
         tasks: data.tasks,
         notes: data.notes,
-        settings: { ...DEFAULT_SETTINGS, ...data.settings },
+        settings,
       };
     } catch {
       return null;

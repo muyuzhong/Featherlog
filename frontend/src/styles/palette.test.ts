@@ -48,3 +48,24 @@ describe('no coloured status lights', () => {
     expect(tokens).toContain('inset 0 1px 0 rgb(255 255 255 / 0.07)');
   });
 });
+
+describe('the drum bar', () => {
+  it('turns in true 3D perspective, with the bar window on its own solid ground in both themes', () => {
+    expect(app).toMatch(/\.drum \{[^}]*perspective: 520px;/);
+    expect(app).toMatch(/\.drum-cards \{[^}]*transform-style: preserve-3d;/);
+    expect(tokens).toMatch(/\[data-theme="stone"\][\s\S]*--bg-tray: #[0-9A-F]{6};/);
+    expect(tokens).toMatch(/\[data-theme="graphite"\][\s\S]*--bg-tray: #[0-9A-F]{6};/);
+    expect(app).toMatch(/\.stage\[data-mode="bar"\] \.shell \{[^}]*background: var\(--bg-tray\);/);
+  });
+
+  it('drags by its grip only: every button and the drum stay clickable', () => {
+    expect(app).toMatch(/\.tray-handle \{[^}]*--app-region: drag;[^}]*-webkit-app-region: drag;/);
+    expect(app).toMatch(/\.tray button,\s*\.tray \.drum \{[^}]*--app-region: no-drag;[^}]*-webkit-app-region: no-drag;/);
+  });
+
+  it('shades the curling sides in neutral grey only', () => {
+    expect(app).toMatch(/\.drum-shade-left \{[^}]*rgb\(var\(--shade\) \/ var\(--drum-shade\)\)/);
+    expect(tokens).toMatch(/--shade: 40 36 30;/);
+    expect(tokens).toMatch(/--shade: 0 0 0;/);
+  });
+});

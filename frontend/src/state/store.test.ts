@@ -243,6 +243,86 @@ describe('AppStore', () => {
     });
   });
 
+  describe('bar mode (the standalone 312×40 drum bar window)', () => {
+    it('never collapses on blur and never resizes its window, whatever it is asked', async () => {
+      const { store, bridge } = setup({ mode: 'bar', collapseOnBlur: true });
+      expect(store.collapseOnBlur).toBe(false);
+      expect(store.getState().ui).toMatchObject({ expanded: false, panelOpen: false });
+      await store.init();
+      const resize = vi.spyOn(bridge.dock, 'resize');
+      store.setExpanded(true);
+      store.requestNewSlot();
+      store.openTasks();
+      await store.createSlot({ title: '第四张' });
+      await flush();
+      expect(resize).not.toHaveBeenCalled();
+      expect(bridge.lastGeometry).toBeNull();
+      expect(store.getState().ui.expanded).toBe(false);
+      expect(store.collapseIfUnpinned()).toBe(false);
+    });
+
+    it('opens and closes the host\'s workbench window through DockService.Toggle', async () => {
+      const { store, bridge, cues } = setup({ mode: 'bar' });
+      await store.init();
+      const toggle = vi.spyOn(bridge.dock, 'toggle');
+      await store.togglePanel();
+      expect(toggle).toHaveBeenLastCalledWith(undefined);
+      expect(store.getState().ui.panelOpen).toBe(true);
+      expect(cues.at(-1)).toBe('lift');
+      await store.togglePanel();
+      expect(store.getState().ui.panelOpen).toBe(false);
+      expect(cues.at(-1)).toBe('settle');
+    });
+
+    it('opens (never flips) the workbench for a new slot or the todo count', async () => {
+      const { store, bridge } = setup({ mode: 'bar' });
+      await store.init();
+      const toggle = vi.spyOn(bridge.dock, 'toggle');
+      store.requestNewSlot();
+      await flush();
+      store.openTasks();
+      await flush();
+      expect(toggle.mock.calls).toEqual([[{ expanded: true }], [{ expanded: true }]]);
+      expect(store.getState().ui.panelOpen).toBe(true);
+    });
+
+    it('mirrors dock:toggle from the host (global shortcut, the panel hiding itself)', async () => {
+      const { store, bridge } = setup({ mode: 'bar' });
+      await store.init();
+      bridge.toggleDock(true);
+      await flush();
+      expect(store.getState().ui.panelOpen).toBe(true);
+      bridge.toggleDock();
+      await flush();
+      expect(store.getState().ui.panelOpen).toBe(false);
+      expect(store.getState().ui.expanded).toBe(false);
+    });
+
+    it('reports a failed toggle and keeps what it knew', async () => {
+      const { store, bridge } = setup({ mode: 'bar' });
+      await store.init();
+      vi.spyOn(bridge.dock, 'toggle').mockRejectedValueOnce(new Error('dock/unavailable'));
+      await store.togglePanel();
+      expect(store.getState().ui).toMatchObject({ panelOpen: false, notice: '切换工作台失败：dock/unavailable' });
+    });
+  });
+
+  describe('bar settings', () => {
+    it('switches the bar mode and resets the dragged position', async () => {
+      const { store, bridge } = setup();
+      await store.init();
+      const update = vi.spyOn(bridge.settings, 'update');
+      await store.setBarMode('standalone');
+      await store.setBarMode('standalone');
+      expect(store.getState().settings.barMode).toBe('standalone');
+      await bridge.settings.update({ barX: 40, barY: 900 });
+      await store.resetBarPosition();
+      expect(update).toHaveBeenLastCalledWith({ barX: null, barY: null });
+      expect(update.mock.calls.filter(([p]) => 'barMode' in p)).toHaveLength(1);
+      expect(store.getState().settings).not.toHaveProperty('barX');
+    });
+  });
+
   describe('panel mode (the MyGo popup window)', () => {
     const hidden = { width: 880, height: 520, expanded: false, pinned: false };
 

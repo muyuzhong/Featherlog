@@ -80,6 +80,16 @@ export interface Note {
 
 export type ThemeMode = 'stone' | 'graphite';
 
+/**
+ * Which always-on bar the user gets:
+ * - auto: the host decides (the KDE Plasma applet where there is one, the standalone drum bar elsewhere);
+ * - standalone: always the standalone 3D drum bar window (?mode=bar);
+ * - tray-only: no standalone bar, only the system tray / KDE applet.
+ */
+export type BarMode = 'auto' | 'standalone' | 'tray-only';
+
+export const BAR_MODES: readonly BarMode[] = ['auto', 'standalone', 'tray-only'];
+
 export interface Settings {
   theme: ThemeMode;
   /** 0-23, default 4 */
@@ -90,6 +100,11 @@ export interface Settings {
   volume: number;
   /** default false */
   pinned: boolean;
+  /** default "auto" */
+  barMode: BarMode;
+  /** Where the user dragged the standalone bar (screen px); null or absent: the host's default place. */
+  barX?: number | null;
+  barY?: number | null;
 }
 
 export interface DockGeometry {
@@ -105,6 +120,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sound: true,
   volume: 5,
   pinned: false,
+  barMode: 'auto',
 };
 
 // ---- Service inputs (one JSON object per call) ----
@@ -270,9 +286,20 @@ export interface SettingsService {
   update(patch: Partial<Settings>): Promise<Settings>;
 }
 
+export interface DockToggleInput {
+  /** true opens, false hides; absent flips */
+  expanded?: boolean;
+}
+
+export interface DockToggleResult {
+  expanded: boolean;
+}
+
 export interface DockService {
   resize(geom: DockGeometry): Promise<null>;
   quit(): Promise<null>;
+  /** Shows or hides the host's 880×520 workbench window (the standalone bar lives in its own window). */
+  toggle(input?: DockToggleInput): Promise<DockToggleResult>;
 }
 
 // ---- Events the backend pushes ----

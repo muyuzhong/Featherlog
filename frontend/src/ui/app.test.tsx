@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { flush, MIN, renderApp } from '../test/fixtures';
 
 const trayChips = () => within(screen.getByRole('list', { name: '并发工作槽' })).getAllByRole('listitem');
@@ -13,48 +13,222 @@ const rowOf = (title: string) => {
 };
 const values = (els: HTMLElement[]) => els.map((el) => (el as HTMLTextAreaElement).value);
 
-describe('collapsed tray', () => {
-  it('tells the three states apart by surface and type, with an inverted 待看 label', async () => {
+describe('drum bar (browser preview, collapsed)', () => {
+  const drum = () => document.querySelector('.drum') as HTMLElement;
+  const places = () => trayChips().map((c) => c.dataset.place);
+  const auxClick = (el: Element) => fireEvent(el, new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }));
+
+  it('stands the focus in front, flanked by neighbours curling back; states by surface and type', async () => {
     await renderApp();
     const chips = trayChips();
     expect(chips.map((c) => c.dataset.state)).toEqual(['focus', 'running', 'ready']);
+    expect(places()).toEqual(['front', 'right', 'left']);
     expect(within(chips[0]!).getByRole('button', { pressed: true }).getAttribute('aria-label')).toBe('1. 底部卡槽的展开动画，专注中');
-    expect(chips[0]!.querySelector('.tray-plate')).not.toBeNull();
+    expect(chips[0]!.querySelector('.focus-bar')).not.toBeNull();
+    expect(chips[0]!.style.transform).toContain('rotateY(0deg)');
+    expect(chips[1]!.style.transform).toBe('translateX(78.801px) translateZ(-26px) rotateY(52deg) scale(0.84)');
+    expect(chips[2]!.style.transform).toContain('rotateY(-52deg)');
     expect(within(chips[1]!).getByText('14m').className).toContain('tnum');
     expect(within(chips[2]!).getByText('待看').className).toBe('ready-tag');
     expect(screen.getByRole('button', { name: '待办：完成 1，共 8' }).textContent).toBe('1/8');
+    expect(document.querySelector('.drum-hidden-ready')).toBeNull();
   });
 
-  it('a click focuses a slot, and the old focus goes back to running', async () => {
+  it('turns with the wheel, focusing what comes to the front, and wraps N-1 → 0 without rewinding', async () => {
+    const { store, clock } = await renderApp();
+    const wheel = (deltaY: number) => {
+      fireEvent.wheel(drum(), { deltaY });
+      act(() => clock.advance(100));
+    };
+    wheel(120);
+    await flush();
+    expect(store.getState().slots[1]?.state).toBe('focus');
+    expect(places()).toEqual(['left', 'front', 'right']);
+    wheel(120);
+    await flush();
+    expect(drum().dataset.target).toBe('2');
+    wheel(120);
+    await flush();
+    // Slot 0 again, one step further on: target 3, not a rewind to 0.
+    expect(drum().dataset.target).toBe('3');
+    expect(store.getState().slots[0]?.state).toBe('focus');
+    expect(places()).toEqual(['front', 'right', 'left']);
+    wheel(-120);
+    await flush();
+    expect(drum().dataset.target).toBe('2');
+    expect(store.getState().slots[2]?.state).toBe('focus');
+  });
+
+  it('takes one notch per 75ms, however fast the wheel spins', async () => {
+    const { store } = await renderApp();
+    fireEvent.wheel(drum(), { deltaY: 120 });
+    fireEvent.wheel(drum(), { deltaY: 120 });
+    fireEvent.wheel(drum(), { deltaY: 120 });
+    await flush();
+    expect(drum().dataset.target).toBe('1');
+    expect(store.getState().slots.map((s) => s.state)).toEqual(['running', 'focus', 'ready']);
+  });
+
+  it('a click on a curled neighbour turns it to the front and focuses it', async () => {
     const { store } = await renderApp();
     const user = userEvent.setup();
-    await user.click(within(trayChips()[2]!).getByRole('button', { name: /^3\. / }));
+    await user.click(within(trayChips()[2]!).getByRole('button'));
     await flush();
+    expect(drum().dataset.target).toBe('-1');
+    expect(trayChips()[2]!.dataset.place).toBe('front');
     expect(store.getState().slots.map((s) => s.state)).toEqual(['running', 'running', 'focus']);
-    expect(trayChips()[2]!.dataset.state).toBe('focus');
   });
 
-  it('a double-click opens the drawer at that slot', async () => {
+  it('a click on the focused front card opens the workbench', async () => {
     const { store } = await renderApp();
     const user = userEvent.setup();
-    await user.dblClick(within(trayChips()[1]!).getByRole('button', { name: /^2\. / }));
-    await flush();
+    await user.click(within(trayChips()[0]!).getByRole('button'));
     expect(store.getState().ui.expanded).toBe(true);
-    expect(card(2).dataset.highlight).toBe('true');
   });
 
-  it('a right-click offers 挂起 / 待看 / 完成 in place', async () => {
+  it('a middle-click flips ready and running, and the drum stays put', async () => {
     const { store } = await renderApp();
+    auxClick(within(trayChips()[2]!).getByRole('button'));
+    await flush();
+    expect(store.getState().slots[2]?.state).toBe('running');
+    auxClick(within(trayChips()[0]!).getByRole('button'));
+    await flush();
+    expect(store.getState().slots[0]?.state).toBe('ready');
+    expect(drum().dataset.target).toBe('0');
+    expect(trayChips()[0]!.dataset.place).toBe('front');
+  });
+
+  it('with two slots, shows the one neighbour on the right', async () => {
+    const { store } = await renderApp();
+    await act(() => store.completeSlot('s-3'));
+    await flush();
+    expect(places()).toEqual(['front', 'right']);
+  });
+
+  it('with four or more, says how many ready cards wait behind, and turns to the first', async () => {
+    const { store } = await renderApp();
+    await act(async () => {
+      await store.createSlot({ title: '第四张', state: 'running' });
+      await store.createSlot({ title: '第五张', state: 'running' });
+    });
+    await flush();
+    expect(trayChips().map((c) => c.dataset.place)).toEqual(['front', 'right', 'back', 'back', 'left']);
+    const hint = screen.getByRole('button', { name: '背面还有 1 张待看' });
+    expect(hint.textContent).toBe('待看 1');
     const user = userEvent.setup();
-    fireEvent.contextMenu(trayChips()[0]!);
-    await user.click(within(trayChips()[0]!).getByRole('button', { name: '挂起' }));
+    await user.click(hint);
     await flush();
-    expect(store.getState().slots[0]?.state).toBe('running');
-    fireEvent.contextMenu(trayChips()[2]!);
-    await user.click(within(trayChips()[2]!).getByRole('button', { name: '完成' }));
+    expect(store.getState().slots.find((s) => s.id === 's-3')?.state).toBe('focus');
+    expect(trayChips()[2]!.dataset.place).toBe('front');
+    expect(screen.queryByRole('button', { name: /背面还有/ })).toBeNull();
+  });
+
+  it('an empty drum offers a new slot', async () => {
+    const { store } = await renderApp({ seed: false });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '手上没有并发 · Alt+N 开一张' }));
+    expect(store.getState().ui).toMatchObject({ expanded: true, newSlotSignal: 1 });
+  });
+});
+
+describe('standalone bar window (?mode=bar)', () => {
+  it('is only the drum bar, edge to edge on its own ground, with a drag grip', async () => {
+    const { container } = await renderApp({ mode: 'bar' });
+    expect(document.documentElement.dataset.mode).toBe('bar');
+    const stage = container.querySelector('.stage') as HTMLElement;
+    expect(stage.dataset.mode).toBe('bar');
+    expect(container.querySelector('.tray')?.getAttribute('data-variant')).toBe('bar');
+    expect(container.querySelector('.tray-handle')).not.toBeNull();
+    expect(trayChips()).toHaveLength(3);
+    expect(screen.queryByRole('combobox', { name: '搜索槽位、任务或命令' })).toBeNull();
+    expect(container.querySelector('.preview-bar')).toBeNull();
+  });
+
+  it('opens and closes the host\'s workbench with DockService.Toggle, never by resizing itself', async () => {
+    const { bridge, store } = await renderApp({ mode: 'bar' });
+    const user = userEvent.setup();
+    const toggle = vi.spyOn(bridge.dock, 'toggle');
+    await user.click(within(trayChips()[0]!).getByRole('button'));
     await flush();
-    expect(store.getState().slots.map((s) => s.id)).toEqual(['s-1', 's-2']);
-    await waitFor(() => expect(trayChips()).toHaveLength(2));
+    expect(toggle).toHaveBeenLastCalledWith(undefined);
+    const arrow = screen.getByRole('button', { name: '收起工作台' });
+    expect(arrow.getAttribute('aria-expanded')).toBe('true');
+    await user.click(arrow);
+    await flush();
+    expect(screen.getByRole('button', { name: '展开工作台' }).getAttribute('aria-expanded')).toBe('false');
+    await user.click(screen.getByRole('button', { name: /^待办：/ }));
+    await user.click(screen.getByRole('button', { name: '新并发槽' }));
+    await flush();
+    expect(toggle.mock.calls.slice(2)).toEqual([[{ expanded: true }], [{ expanded: true }]]);
+    expect(bridge.lastGeometry).toBeNull();
+    expect(store.getState().ui.expanded).toBe(false);
+    expect(screen.queryByRole('combobox', { name: '搜索槽位、任务或命令' })).toBeNull();
+  });
+
+  it('follows the host when the workbench opens or hides elsewhere', async () => {
+    const { bridge } = await renderApp({ mode: 'bar' });
+    bridge.toggleDock(true);
+    await flush();
+    expect(screen.getByRole('button', { name: '收起工作台' })).toBeTruthy();
+    bridge.toggleDock(false);
+    await flush();
+    expect(screen.getByRole('button', { name: '展开工作台' })).toBeTruthy();
+  });
+
+  it('stays as it is on blur and on Escape', async () => {
+    const { bridge, store } = await renderApp({ mode: 'bar', collapseOnBlur: true });
+    const toggle = vi.spyOn(bridge.dock, 'toggle');
+    const resize = vi.spyOn(bridge.dock, 'resize');
+    fireEvent.blur(window);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await flush();
+    expect(toggle).not.toHaveBeenCalled();
+    expect(resize).not.toHaveBeenCalled();
+    expect(trayChips()).toHaveLength(3);
+    expect(store.getState().ui.panelOpen).toBe(false);
+  });
+
+  it('still turns with the wheel and focuses', async () => {
+    const { store } = await renderApp({ mode: 'bar' });
+    fireEvent.wheel(document.querySelector('.drum')!, { deltaY: -120 });
+    await flush();
+    expect(store.getState().slots[2]?.state).toBe('focus');
+  });
+});
+
+describe('bar settings in the workbench', () => {
+  it('the header switches the bar between 自动, 滚筒 and 托盘', async () => {
+    const { bridge } = await renderApp({ expanded: true });
+    const user = userEvent.setup();
+    const group = screen.getByRole('radiogroup', { name: '常驻条' });
+    expect(within(group).getByRole('radio', { name: '常驻条：自动' }).getAttribute('aria-checked')).toBe('true');
+    await user.click(within(group).getByRole('radio', { name: '常驻条：滚筒' }));
+    await flush();
+    expect((await bridge.settings.get()).barMode).toBe('standalone');
+    expect(within(group).getByRole('radio', { name: '常驻条：滚筒' }).getAttribute('aria-checked')).toBe('true');
+    await user.click(within(group).getByRole('radio', { name: '常驻条：托盘' }));
+    await flush();
+    expect((await bridge.settings.get()).barMode).toBe('tray-only');
+  });
+
+  it('Ctrl+K switches the bar mode and puts the bar back in its default place', async () => {
+    const { bridge } = await renderApp({ expanded: true });
+    const user = userEvent.setup();
+    const update = vi.spyOn(bridge.settings, 'update');
+    const box = screen.getByRole('combobox', { name: '搜索槽位、任务或命令' });
+    await user.click(box);
+    await user.type(box, '常驻条');
+    const labels = screen.getAllByRole('option').map((o) => o.textContent);
+    expect(labels).toEqual(['命令在随笔里搜「常驻条」', '命令常驻条改为「滚筒」', '命令常驻条改为「托盘」']);
+    await user.keyboard('{ArrowDown}{Enter}');
+    await flush();
+    expect((await bridge.settings.get()).barMode).toBe('standalone');
+    await user.click(box);
+    await user.type(box, '重置滚筒');
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['命令在随笔里搜「重置滚筒」', '命令重置滚筒条位置']);
+    await user.keyboard('{ArrowDown}{Enter}');
+    await flush();
+    expect(update).toHaveBeenLastCalledWith({ barX: null, barY: null });
   });
 });
 

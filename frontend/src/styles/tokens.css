@@ -29,6 +29,8 @@
   --desk: #DEDCD6;
   /* The solid page under everything: the panel window paints it edge to edge. */
   --bg-canvas: #F6F5F2;
+  /* The standalone bar window's ground, a step under the canvas like a tray. */
+  --bg-tray: #EFEDE8;
   --ground: var(--bg-canvas);
   --well: #EEECE7;
   --panel: #FBFAF8;
@@ -54,12 +56,15 @@
   --sunk: inset 0 1px 2px rgb(var(--shade) / 0.07);
   --float: 0 12px 30px -8px rgb(var(--shade) / 0.24), 0 2px 6px rgb(var(--shade) / 0.06);
   --shell-shadow: 0 1px 2px rgb(var(--shade) / 0.12);
+  /* How dark a drum card gets at the side curling away from the front. */
+  --drum-shade: 0.16;
 }
 
 [data-theme="graphite"] {
   color-scheme: dark;
   --desk: #08090A;
   --bg-canvas: #121315;
+  --bg-tray: #0F1012;
   --ground: var(--bg-canvas);
   --well: #0D0E10;
   --panel: #16171A;
@@ -85,4 +90,5 @@
   --sunk: inset 0 1px 2px rgb(0 0 0 / 0.35);
   --float: 0 12px 32px -8px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.05);
   --shell-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
+  --drum-shade: 0.52;
 }

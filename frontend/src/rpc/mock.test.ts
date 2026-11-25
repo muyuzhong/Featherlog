@@ -250,9 +250,34 @@ describe('settings, dock and storage', () => {
     const { bridge } = make();
     const seen = listen(bridge, 'settings:changed');
     const s = await bridge.settings.update({ volume: 42, dayStartHour: -3, theme: 'graphite', pinned: true });
-    expect(s).toEqual({ theme: 'graphite', volume: 10, dayStartHour: 0, sound: true, pinned: true });
+    expect(s).toEqual({ theme: 'graphite', volume: 10, dayStartHour: 0, sound: true, pinned: true, barMode: 'auto' });
     await flush();
     expect(seen).toHaveLength(1);
+  });
+
+  it('keeps the bar mode and where the bar was dragged, and forgets the place on null', async () => {
+    const { bridge } = make();
+    expect((await bridge.settings.get()).barMode).toBe('auto');
+    let s = await bridge.settings.update({ barMode: 'standalone', barX: 120.6, barY: 1040 });
+    expect(s).toMatchObject({ barMode: 'standalone', barX: 121, barY: 1040 });
+    s = await bridge.settings.update({ barMode: 'nonsense' as never });
+    expect(s.barMode).toBe('standalone');
+    s = await bridge.settings.update({ barX: null, barY: null });
+    expect(s).not.toHaveProperty('barX');
+    expect(s).not.toHaveProperty('barY');
+    expect(s.barMode).toBe('standalone');
+  });
+
+  it('DockService.Toggle flips the workbench window, or sets it, and tells every window', async () => {
+    const { bridge } = make();
+    const seen = listen(bridge, 'dock:toggle');
+    expect(await bridge.dock.toggle()).toEqual({ expanded: true });
+    expect(await bridge.dock.toggle()).toEqual({ expanded: false });
+    expect(await bridge.dock.toggle({ expanded: true })).toEqual({ expanded: true });
+    expect(await bridge.dock.toggle({ expanded: true })).toEqual({ expanded: true });
+    expect(bridge.panelOpen).toBe(true);
+    await flush();
+    expect(seen).toEqual([{ expanded: true }, { expanded: false }, { expanded: true }, { expanded: true }]);
   });
 
   it('records the geometry asked for and a quit', async () => {
@@ -271,6 +296,16 @@ describe('settings, dock and storage', () => {
     const again = make({ storage }).bridge;
     expect((await again.workbench.list())[1]?.breadcrumb).toBe('记住我');
     expect(storage.data.has(MOCK_STORAGE_KEY)).toBe(true);
+  });
+
+  it('reads settings saved before barMode existed as "auto"', async () => {
+    const storage = memoryStorage();
+    const first = make({ storage, seed: false }).bridge;
+    first.dispose();
+    const saved = JSON.parse(storage.data.get(MOCK_STORAGE_KEY)!) as { settings: Record<string, unknown> };
+    delete saved.settings.barMode;
+    storage.setItem(MOCK_STORAGE_KEY, JSON.stringify(saved));
+    expect((await make({ storage }).bridge.settings.get()).barMode).toBe('auto');
   });
 
   it('falls back to the seed when storage holds garbage', async () => {

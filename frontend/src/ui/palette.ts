@@ -1,5 +1,5 @@
 import { todoView } from '../lib/tasks';
-import type { ThemeMode } from '../rpc/types';
+import { BAR_MODES, type BarMode, type ThemeMode } from '../rpc/types';
 import type { AppState, AppStore } from '../state/store';
 
 export type PaletteAction =
@@ -12,6 +12,8 @@ export type PaletteAction =
   | { type: 'pin' }
   | { type: 'sound' }
   | { type: 'collapse' }
+  | { type: 'bar-mode'; mode: BarMode }
+  | { type: 'reset-bar-position' }
   | { type: 'quit' };
 
 export interface PaletteItem {
@@ -22,7 +24,10 @@ export interface PaletteItem {
   action: PaletteAction;
 }
 
-const LIMIT = 9;
+const LIMIT = 10;
+
+/** The always-on bar's three modes, as the header's switch and Ctrl+K name them. */
+export const BAR_MODE_LABEL: Record<BarMode, string> = { auto: '自动', standalone: '滚筒', 'tray-only': '托盘' };
 
 function matches(query: string, ...texts: Array<string | undefined>): boolean {
   if (!query) return true;
@@ -57,7 +62,7 @@ export function paletteItems(state: AppState, raw: string): PaletteItem[] {
       });
     }
   }
-  const { pinned, sound, theme } = state.settings;
+  const { pinned, sound, theme, barMode } = state.settings;
   const commands: PaletteItem[] = [
     { key: 'cmd:new-slot', group: '命令', label: '新建并发槽', hint: 'Alt+N', action: { type: 'new-slot' } },
     { key: 'cmd:compose', group: '命令', label: '随手记一笔', action: { type: 'compose' } },
@@ -70,6 +75,15 @@ export function paletteItems(state: AppState, raw: string): PaletteItem[] {
     { key: 'cmd:pin', group: '命令', label: pinned ? '取消钉住面板' : '钉住面板', hint: 'Ctrl+P', action: { type: 'pin' } },
     { key: 'cmd:sound', group: '命令', label: sound ? '关闭音效' : '打开音效', action: { type: 'sound' } },
     { key: 'cmd:collapse', group: '命令', label: '收起到底部卡槽', hint: 'Esc', action: { type: 'collapse' } },
+    ...BAR_MODES.filter((m) => m !== barMode).map(
+      (mode): PaletteItem => ({
+        key: `cmd:bar-mode:${mode}`,
+        group: '命令',
+        label: `常驻条改为「${BAR_MODE_LABEL[mode]}」`,
+        action: { type: 'bar-mode', mode },
+      }),
+    ),
+    { key: 'cmd:reset-bar', group: '命令', label: '重置滚筒条位置', action: { type: 'reset-bar-position' } },
     { key: 'cmd:quit', group: '命令', label: '退出羽记', action: { type: 'quit' } },
   ];
   const found = commands.filter((c) => matches(query, c.label));
@@ -114,6 +128,12 @@ export function runPaletteAction(store: AppStore, action: PaletteAction): void {
       return;
     case 'collapse':
       store.setExpanded(false);
+      return;
+    case 'bar-mode':
+      void store.setBarMode(action.mode);
+      return;
+    case 'reset-bar-position':
+      void store.resetBarPosition();
       return;
     case 'quit':
       void store.quit();

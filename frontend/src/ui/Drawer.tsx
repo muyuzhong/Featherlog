@@ -4,12 +4,13 @@ import { EXPANDED, SPRING } from '../lib/geometry';
 import { periodLabel } from '../lib/time';
 import { useAppState, useStore } from '../state/react';
 import { themeChoiceOf, type ThemeChoice } from '../state/store';
+import { BAR_MODES, type BarMode } from '../rpc/types';
 import { Kbd, Segmented } from './bits';
 import { ChevronDown, Monitor, Moon, Pin, Search, Sun, Volume, VolumeOff } from './icons';
 import { isImeKey } from './InlineText';
 import { NotesPanel } from './NotesPanel';
 import { NowDeck } from './NowDeck';
-import { paletteItems, runPaletteAction } from './palette';
+import { BAR_MODE_LABEL, paletteItems, runPaletteAction } from './palette';
 import { TaskPanel } from './TaskPanel';
 
 /** The drawer is laid out at its full size and anchored to the bottom, so the growing shell reveals it upward. */
@@ -69,6 +70,14 @@ function HeaderBar() {
       </div>
       <SearchBox />
       <div className="head-right">
+        <Segmented<BarMode>
+          id="bar-mode"
+          label="常驻条"
+          compact
+          value={settings.barMode}
+          onChange={(mode) => void store.setBarMode(mode)}
+          options={BAR_MODES.map((mode) => ({ value: mode, label: BAR_MODE_LABEL[mode], name: `常驻条：${BAR_MODE_LABEL[mode]}` }))}
+        />
         <Segmented<ThemeChoice>
           id="theme"
           label="主题"
