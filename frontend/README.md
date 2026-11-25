@@ -1,6 +1,6 @@
 # 羽记 v2 前端（frontend/）
 
-屏幕底部的并发工作托盘 + 展开工作台（待办 / 随笔）。React 19 + motion + Vite，跑在 MyGo 窗口里，也能脱离后端在浏览器里独立运行。调研结论见 [RESEARCH.md](RESEARCH.md)。
+屏幕底部的并发工作托盘 + 展开工作台（待办 / 随笔）。React 19 + motion + Vite，跑在 MyGo 窗口里，也能脱离后端在浏览器里独立运行。
 
 ## 运行
 
