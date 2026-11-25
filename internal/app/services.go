@@ -129,12 +129,32 @@ func Open(cfg Config) (*App, error) {
 		dockCfg.Clock = clk
 	}
 	dockCfg.InitialPin = initialSettings.Pinned
+	if dockCfg.InitialBarMode == "" {
+		dockCfg.InitialBarMode = string(initialSettings.BarMode)
+	}
+	if dockCfg.InitialBarX == nil && dockCfg.InitialBarY == nil {
+		dockCfg.InitialBarX = initialSettings.BarX
+		dockCfg.InitialBarY = initialSettings.BarY
+	}
 	userOnToggle := dockCfg.OnToggle
 	dockCfg.OnToggle = func(expanded bool) {
 		val := expanded
 		events.DockToggle(DockToggleEvent{Expanded: &val})
 		if userOnToggle != nil {
 			userOnToggle(expanded)
+		}
+	}
+	userOnMiniBarMoved := dockCfg.OnMiniBarMoved
+	dockCfg.OnMiniBarMoved = func(x, y int) {
+		bx, by := x, y
+		if _, err := settingsSvc.Update(settings.Patch{
+			BarX: &bx,
+			BarY: &by,
+		}); err != nil {
+			log.Printf("featherlog: persist mini-bar position (%d,%d): %v", x, y, err)
+		}
+		if userOnMiniBarMoved != nil {
+			userOnMiniBarMoved(x, y)
 		}
 	}
 	dockCtrl := dock.NewController(dockCfg)
@@ -170,6 +190,7 @@ func Open(cfg Config) (*App, error) {
 	offSettings := settingsSvc.OnChange(func(next settings.Settings) {
 		a.Dock.SetPinned(next.Pinned)
 		a.Dock.SetTheme(string(next.Theme))
+		a.Dock.SetBarPrefs(string(next.BarMode), next.BarX, next.BarY)
 		if err := a.Tasks.SetDayStartHour(next.DayStartHour); err != nil {
 			log.Printf("featherlog: apply dayStartHour=%d: %v", next.DayStartHour, err)
 		}
@@ -387,6 +408,16 @@ func (s *SettingsService) Update(patch settings.Patch) (settings.Settings, error
 	return s.app.Settings.Update(patch)
 }
 
+// DockToggleInput toggles or explicitly sets the Workspace Panel visibility.
+type DockToggleInput struct {
+	Expanded *bool `json:"expanded,omitempty"`
+}
+
+// DockToggleResult reports the resulting Workspace Panel visibility.
+type DockToggleResult struct {
+	Expanded bool `json:"expanded"`
+}
+
 // DockService is the MyGo-bound facade for window geometry and lifecycle (§4.2.5).
 type DockService struct {
 	app *App
@@ -396,6 +427,15 @@ type DockService struct {
 func (s *DockService) Resize(geom dock.Geometry) error {
 	s.app.Dock.Resize(geom)
 	return nil
+}
+
+// Toggle toggles (or explicitly sets) the Workspace Panel visibility.
+func (s *DockService) Toggle(input *DockToggleInput) (DockToggleResult, error) {
+	var target *bool
+	if input != nil {
+		target = input.Expanded
+	}
+	return DockToggleResult{Expanded: s.app.Dock.Toggle(target)}, nil
 }
 
 // Quit requests graceful shutdown of the desktop host.

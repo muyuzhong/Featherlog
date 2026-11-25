@@ -130,8 +130,9 @@ func TestMigrateSettingsV1ToV2(t *testing.T) {
 		Sound:        false,
 		Volume:       8,
 		Pinned:       false,
+		BarMode:      settings.BarModeAuto,
 	}
-	if got != want {
+	if !settings.Equal(got, want) {
 		t.Fatalf("migrated settings = %+v, want %+v", got, want)
 	}
 

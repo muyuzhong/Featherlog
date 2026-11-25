@@ -11,6 +11,10 @@ const (
 	PanelWidth              = DefaultExpandedWidth
 	PanelHeight             = DefaultExpandedHeight
 	PanelBottomInset        = 10
+	MiniBarWindowTitle      = "featherlog-bar"
+	MiniBarWidth            = 312
+	MiniBarHeight           = 40
+	MiniBarBottomInset      = 8
 	StoneBackgroundColor    = "#F6F5F2"
 	GraphiteBackgroundColor = "#131416"
 
@@ -112,6 +116,108 @@ func ComputeBounds(display Display, width, height, bottomInset int) Rect {
 		Width:  w,
 		Height: h,
 	}
+}
+
+// ComputeMiniBarBounds computes the 312x40 standalone Mini-Bar rectangle on display.
+//
+// When customX or customY is nil, the Mini-Bar is horizontally centered in the
+// display's usable work area, MiniBarBottomInset (8px) above its bottom edge,
+// keeping the exact 312px width without clamping up to MinWidth.
+//
+// When both customX and customY are non-nil, the saved position is validated
+// against display.Bounds (physical screen bounds rather than WorkArea so
+// Windows 11 users can place the Mini-Bar onto empty taskbar space). If the
+// saved rectangle does not overlap display.Bounds (e.g., an unplugged monitor),
+// it falls back cleanly to default bottom-center.
+func ComputeMiniBarBounds(display Display, customX, customY *int) Rect {
+	if customX == nil || customY == nil {
+		return computeDefaultMiniBarBounds(display)
+	}
+
+	phys := display.Bounds
+	if phys.Width <= 0 || phys.Height <= 0 {
+		phys = usableArea(display)
+	}
+	if phys.Width <= 0 || phys.Height <= 0 {
+		return Rect{X: 0, Y: 0, Width: MiniBarWidth, Height: MiniBarHeight}
+	}
+
+	w := MiniBarWidth
+	if w > phys.Width {
+		w = phys.Width
+	}
+	if w < 1 {
+		w = 1
+	}
+	h := MiniBarHeight
+	if h > phys.Height {
+		h = phys.Height
+	}
+	if h < 1 {
+		h = 1
+	}
+
+	saved := Rect{X: *customX, Y: *customY, Width: w, Height: h}
+	if !rectsOverlap(saved, phys) {
+		return computeDefaultMiniBarBounds(display)
+	}
+
+	x := clampInt(*customX, phys.X, phys.X+phys.Width-w)
+	y := clampInt(*customY, phys.Y, phys.Y+phys.Height-h)
+	return Rect{
+		X:      x,
+		Y:      y,
+		Width:  w,
+		Height: h,
+	}
+}
+
+func computeDefaultMiniBarBounds(display Display) Rect {
+	area := usableArea(display)
+	if area.Width <= 0 || area.Height <= 0 {
+		return Rect{X: 0, Y: 0, Width: MiniBarWidth, Height: MiniBarHeight}
+	}
+
+	w := MiniBarWidth
+	if w > area.Width {
+		w = area.Width
+	}
+	if w < 1 {
+		w = 1
+	}
+	h := MiniBarHeight
+	if h > area.Height {
+		h = area.Height
+	}
+	if h < 1 {
+		h = 1
+	}
+
+	maxInset := area.Height - h
+	if maxInset < 0 {
+		maxInset = 0
+	}
+	effectiveInset := MiniBarBottomInset
+	if effectiveInset > maxInset {
+		effectiveInset = maxInset
+	}
+
+	x := clampInt(area.X+(area.Width-w)/2, area.X, area.X+area.Width-w)
+	y := clampInt(area.Y+area.Height-effectiveInset-h, area.Y, area.Y+area.Height-h)
+	return Rect{
+		X:      x,
+		Y:      y,
+		Width:  w,
+		Height: h,
+	}
+}
+
+func rectsOverlap(a, b Rect) bool {
+	if a.Width <= 0 || a.Height <= 0 || b.Width <= 0 || b.Height <= 0 {
+		return false
+	}
+	return a.X < b.X+b.Width && a.X+a.Width > b.X &&
+		a.Y < b.Y+b.Height && a.Y+a.Height > b.Y
 }
 
 // ComputeBottomMargin returns the distance from the display's bottom physical

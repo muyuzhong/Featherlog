@@ -656,3 +656,122 @@ func TestErrorHandlingAndMethodGuards(t *testing.T) {
 		t.Fatalf("invalid state status = %d, want 400", code)
 	}
 }
+
+func TestExternalClientActivityTrackingAndExpiry(t *testing.T) {
+	srv, _, clk, _, _ := startTestServer(t)
+
+	if srv.HasActiveClient() {
+		t.Fatalf("expected HasActiveClient=false before any /api/bar request")
+	}
+
+	var mu sync.Mutex
+	var transitions []bool
+	unsub := srv.OnClientActivity(func(active bool) {
+		mu.Lock()
+		transitions = append(transitions, active)
+		mu.Unlock()
+	})
+	defer unsub()
+
+	snapshotTransitions := func() []bool {
+		mu.Lock()
+		defer mu.Unlock()
+		out := make([]bool, len(transitions))
+		copy(out, transitions)
+		return out
+	}
+
+	// Bad request does not mark an external client active.
+	if code, _ := doJSON(t, http.MethodGet, srv.URL()+"/api/bar?rev=bad", "", nil); code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", code)
+	}
+	if srv.HasActiveClient() || len(snapshotTransitions()) != 0 {
+		t.Fatalf("bad request should not activate client: active=%v transitions=%v", srv.HasActiveClient(), snapshotTransitions())
+	}
+
+	// First valid GET /api/bar transitions false -> true.
+	var snap BarSnapshot
+	if code, _ := doJSON(t, http.MethodGet, srv.URL()+"/api/bar", "", &snap); code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", code)
+	}
+	if !srv.HasActiveClient() {
+		t.Fatalf("expected HasActiveClient=true right after GET /api/bar")
+	}
+	if got := snapshotTransitions(); len(got) != 1 || !got[0] {
+		t.Fatalf("transitions = %v, want [true]", got)
+	}
+
+	// Another poll at +20s extends the window without emitting duplicate true.
+	clk.Advance(20 * time.Second)
+	doJSON(t, http.MethodGet, srv.URL()+"/api/bar", "", &snap)
+	if !srv.HasActiveClient() {
+		t.Fatalf("expected HasActiveClient=true after refresh poll")
+	}
+	if got := snapshotTransitions(); len(got) != 1 {
+		t.Fatalf("expected no duplicate true transition, got %v", got)
+	}
+
+	// At exact 35s boundary, client is still active.
+	clk.Advance(ClientActiveWindow)
+	if !srv.HasActiveClient() {
+		t.Fatalf("expected HasActiveClient=true at exact 35s boundary")
+	}
+	if got := snapshotTransitions(); len(got) != 1 {
+		t.Fatalf("expected no false transition at exact 35s boundary, got %v", got)
+	}
+
+	// Advancing past 35s expires client activity and emits false.
+	clk.Advance(10 * time.Millisecond)
+	if srv.HasActiveClient() {
+		t.Fatalf("expected HasActiveClient=false after >35s idle")
+	}
+	if got := snapshotTransitions(); len(got) != 2 || got[1] {
+		t.Fatalf("transitions = %v, want [true false]", got)
+	}
+
+	// Parked long-poll waiter keeps client active even past 35s, and wakes cleanly.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var s BarSnapshot
+		doJSON(t, http.MethodGet, fmt.Sprintf("%s/api/bar?rev=%d&wait=10", srv.URL(), snap.Rev), "", &s)
+	}()
+	waitForWaiter(t, srv, 1)
+
+	if !srv.HasActiveClient() {
+		t.Fatalf("expected HasActiveClient=true while long-poll waiter is parked")
+	}
+	if got := snapshotTransitions(); len(got) != 3 || !got[2] {
+		t.Fatalf("transitions = %v, want [true false true]", got)
+	}
+
+	clk.Advance(60 * time.Second)
+	if !srv.HasActiveClient() {
+		t.Fatalf("expected HasActiveClient=true while long-poll waiter remains parked after 60s")
+	}
+	if got := snapshotTransitions(); len(got) != 3 {
+		t.Fatalf("expected no false transition while waiter parked, got %v", got)
+	}
+
+	// Wake the waiter; the post-response window stays active until Close.
+	srv.NotifyChange()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("long-poll waiter did not finish")
+	}
+	if !srv.HasActiveClient() {
+		t.Fatalf("expected HasActiveClient=true immediately after long-poll wakeup")
+	}
+
+	// Closing server while active notifies false.
+	if err := srv.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if srv.HasActiveClient() {
+		t.Fatalf("expected HasActiveClient=false after Close")
+	}
+	if got := snapshotTransitions(); len(got) != 4 || got[3] {
+		t.Fatalf("transitions = %v, want [true false true false]", got)
+	}
+}

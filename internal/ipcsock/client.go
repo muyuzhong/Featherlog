@@ -100,7 +100,10 @@ func (c *Client) Call(ctx context.Context, cmd string, params any, out any) erro
 }
 
 func isNotRunningErr(err error) bool {
-	if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ECONNREFUSED) {
+	if errors.Is(err, os.ErrNotExist) ||
+		errors.Is(err, syscall.ENOENT) ||
+		errors.Is(err, syscall.ECONNREFUSED) ||
+		isPlatformNotRunningErr(err) {
 		return true
 	}
 	return false
