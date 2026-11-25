@@ -64,6 +64,7 @@ type BarSnapshot struct {
 	PanelOpen  bool      `json:"panelOpen"`
 	Pinned     bool      `json:"pinned"`
 	Theme      string    `json:"theme"`
+	Language   string    `json:"language"`
 	TodayDone  int       `json:"todayDone"`
 	TodayTotal int       `json:"todayTotal"`
 	Slots      []BarSlot `json:"slots"`
@@ -753,6 +754,7 @@ func (s *Server) snapshot() (BarSnapshot, error) {
 		PanelOpen:  panelOpen,
 		Pinned:     st.Pinned,
 		Theme:      string(st.Theme),
+		Language:   string(st.Language),
 		TodayDone:  todayDone,
 		TodayTotal: todayTotal,
 		Slots:      outSlots,

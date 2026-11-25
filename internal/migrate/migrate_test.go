@@ -126,11 +126,11 @@ func TestMigrateSettingsV1ToV2(t *testing.T) {
 	got := svc.Get()
 	want := settings.Settings{
 		Theme:        settings.ThemeStone,
+		Language:     settings.LangZH,
 		DayStartHour: 6,
 		Sound:        false,
 		Volume:       8,
 		Pinned:       false,
-		BarMode:      settings.BarModeAuto,
 	}
 	if !settings.Equal(got, want) {
 		t.Fatalf("migrated settings = %+v, want %+v", got, want)
@@ -192,6 +192,42 @@ func TestMigrateSettingsEdgeCases(t *testing.T) {
 		got := svc.Get()
 		if got.Volume != 10 || got.DayStartHour != 0 || !got.Sound {
 			t.Fatalf("unexpected clamped settings: %+v", got)
+		}
+	})
+
+	t.Run("migrates english language or locale from v1 settings", func(t *testing.T) {
+		cases := []struct {
+			name string
+			raw  string
+			want settings.LanguageMode
+		}{
+			{"shell_language_en_us", `{"shell":{"language":"en-US","sound":true}}`, settings.LangEN},
+			{"shell_locale_en_gb", `{"shell":{"locale":"en-GB"}}`, settings.LangEN},
+			{"top_locale_en", `{"locale":"EN","shell":{"volume":4}}`, settings.LangEN},
+			{"top_language_en", `{"language":"en","plugins":{"quest":{"dayStartHour":5}}}`, settings.LangEN},
+			{"shell_zh_cn", `{"shell":{"language":"zh-CN"}}`, settings.LangZH},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				dir := t.TempDir()
+				st := store.New(dir)
+				mustWriteFile(t, filepath.Join(dir, settings.FileName), []byte(tc.raw))
+
+				report, err := Run(st, clk)
+				if err != nil {
+					t.Fatalf("Run: %v", err)
+				}
+				if !report.SettingsMigrated {
+					t.Fatalf("expected SettingsMigrated=true")
+				}
+				svc, err := settings.Open(st, clk)
+				if err != nil {
+					t.Fatalf("settings.Open: %v", err)
+				}
+				if got := svc.Get().Language; got != tc.want {
+					t.Fatalf("migrated Language = %q, want %q", got, tc.want)
+				}
+			})
 		}
 	})
 

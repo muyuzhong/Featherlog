@@ -10,12 +10,12 @@
 羽记 v2 从旧版 Electron 羊皮卷游戏化任务面板重构为 **轻量级原生并发工作台**：
 
 - **核心场景**：同时推进多个任务或 AI Agent 编排线程（例如正在手写功能 A、后台 Agent 跑测试 B、等 CI/审 PR C），在切换上下文时不再忘事或断片。
-- **核心交互形态（跨平台自适应放置 / Cross-Platform Adaptive Placement）**：
-  1. **常驻状态条（自动择优，绝不重复叠加）**：
-     - **Linux KDE Plasma 6**：原生 Plasma 6 小组件（`plasmoid/io.github.muyuzhong.featherlog/`）直接嵌在 KDE 底部浮动 Dock 内，经 `127.0.0.1` 长轮询 API 实时同步；当检测到 KDE 会话且已安装 Plasmoid（或已有外部 `/api/bar` 客户端活跃连接）时，`auto` 模式自动让位隐藏独立悬浮条。
-     - **Windows / macOS / 非 KDE Linux（或手动选 `standalone`）**：宿主自动展示 `312×40px` 不透明无边框**独立 3D 滚筒条**（标题 `featherlog-bar`，URL `/?mode=bar`），以 `ShowInactive()` 非抢焦浮起于屏幕底部居中（支持自由拖拽并防抖落盘坐标，Windows 11 下允许拖放至任务栏空白区域）；亦可切换为 `tray-only` 仅保留系统托盘。
-  2. **跨平台单色系统托盘（`internal/tray`）**：纯 Go 生成 `32×32` 抗锯齿单色透明模板图标（`IconIsTemplate: true`），左键切换工作台显隐，右键/上下文菜单提供工作台开关、最多 6 个活跃槽位快切、「常驻滚筒条」模式单选、`重置滚筒条位置`与退出入口；macOS 以 `ActivationPolicyAccessory` + `LSUIElement` 隐藏 Dock 图标并在菜单栏显示简短状态文字（`┃ <标题>` 或 `待看 N`）。
-  3. **弹出工作台面板（`MyGo` Opaque Workspace Panel）**：固定 `880×520px` 不透明无边框弹出窗口（标题 `featherlog-panel`，URL `/?mode=panel`），后台常驻、默认启动隐藏（传 `--show` 可立即显示），点击状态条/系统托盘或按全局快捷键 `Alt+Shift+Space` 时弹出并聚焦在底部正上方 `10px` 处；按 `Esc`、点收起 `⌄` 或未钉住失焦时立即隐藏窗口而不退出宿主进程。
+- **核心交互形态（单一自动 3D 滚筒条策略 / Single Automatic 3D Drum Bar）**：
+  1. **常驻状态条（单一自动择优，绝不重复叠加，无手动模式切换）**：
+     - **Linux KDE Plasma 6（已安装原生 Plasmoid）**：原生 Plasma 6 小组件（`plasmoid/io.github.muyuzhong.featherlog/`）直接嵌在 KDE 底部浮动 Dock 内，经 `127.0.0.1` 长轮询 API 实时同步（含中英双语切换）；宿主在 `NeedsMiniBarWindow()` 返回 `false` 时完全跳过创建 `featherlog-bar` 窗口，彻底杜绝重复悬浮条或多余任务栏图标，同时节省一个 WebKitGTK 渲染进程。
+     - **Windows / macOS / 非 KDE Linux / 未安装 Plasmoid 的 KDE**：宿主自动创建并展示 `312×40px` 不透明无边框**独立 3D 滚筒条**（标题 `featherlog-bar`，URL `/?mode=bar`），以 `ShowInactive()` 非抢焦浮起于屏幕底部居中（支持自由拖拽并防抖落盘 `barX`/`barY` 坐标，Windows 11 下允许拖放至任务栏空白区域）；一旦检测到外部 `/api/bar` 客户端活跃连接即自动让位隐藏。
+  2. **跨平台单色系统托盘（`internal/tray`）**：纯 Go 生成 `32×32` 抗锯齿单色透明模板图标（`IconIsTemplate: true`），全部文案随 `settings.language`（`zh` / `en`）实时切换；左键切换工作台显隐，右键/上下文菜单提供工作台开关、最多 6 个活跃槽位快切、「语言 / Language」单选子菜单、条件显示的「重置滚筒位置 / Reset Bar Position」（仅在 `barX`/`barY` 已保存时展示）与退出入口；macOS 以 `ActivationPolicyAccessory` + `LSUIElement` 隐藏 Dock 图标并在菜单栏显示简短状态文字（`┃ <标题>` 或 `待看 N` / `Ready N`）。
+  3. **弹出工作台面板（`MyGo` Opaque Workspace Panel）**：固定 `880×520px` 不透明无边框弹出窗口（标题 `featherlog-panel`，URL `/?mode=panel`），后台常驻、默认启动隐藏（传 `--show` 可立即显示），点击状态条/系统托盘或按全局快捷键 `Alt+Shift+Space` 时弹出并聚焦在底部正上方 `10px` 处；顶部内置轻量「设置浮层（`⚙`）」（语言、主题、提示音开关、换日时间、可选重置滚筒位置）；按 `Esc`、点收起 `⌄` 或未钉住失焦时立即隐藏窗口而不退出宿主进程。
   4. **CLI / Agent Hooks**：单文件二进制 `featherlog`（Windows 发布包同时提供无黑框 GUI 宿主 `featherlog.exe` 与同步终端输出 `featherlog-cli.exe`），通过本机 Unix Socket（`<userData>/featherlog.sock`）实时操作并发槽与随笔，AI 助手或构建脚本可直接汇报进度并同步刷新全部状态条与弹出面板。
 
 ### 1.1 视觉与美学铁律
@@ -66,14 +66,14 @@
 | `internal/workbench/` | 并发工作槽领域逻辑、单焦点不变量、提醒定时器与睡眠恢复 |
 | `internal/tasks/` | 扁平化精简任务（无主线/支线等级；可选自由子步骤、可选配额 `×N`、可选每日/每周重置）、`dayStartHour` 跨周期与单调保护 |
 | `internal/notes/` | 随笔与任务手记（`1..20000` 字）、大小写不敏感检索、任务删除解绑（`DetachTask`） |
-| `internal/settings/` | 应用设置校验（`settings/invalid`，含 `barMode`、`barX`/`barY` 成对与范围校验、`null` 重置）与损坏备份恢复（`settings.json.corrupt-<ms>-<id>`） |
+| `internal/settings/` | 应用设置校验（`settings/invalid`，含 `language` 归一化与校验、`barX`/`barY` 成对与范围校验、`null` 重置、无害忽略历史 `barMode` 字段）与损坏备份恢复（`settings.json.corrupt-<ms>-<id>`） |
 | `internal/app/` | 组合根与 5 个 `mygo.Bind` 服务（含 `DockService.Toggle`）、跨领域协调、WebView 实时事件推送、IPC 命令路由 |
-| `internal/dock/` | 底部居中几何、不透明 `880×520` 面板与 `312×40` 独立滚筒条显隐生命周期、跨平台自适应策略（`ShouldShowMiniBar` / `DetectKDEPlasmoid` / 400ms 拖拽防抖）、Linux Wayland `gtk-layer-shell`（`purego`）、KDE KWin Script 定位（`kwin_linux.go`）、全局快捷键 |
-| `internal/tray/` | 跨平台系统托盘控制器与纯 Go `32×32` 单色抗锯齿模板图标（`TemplateIconPNG`）、macOS 菜单栏状态文字与左/右键行为适配 |
-| `internal/barhttp/` | 仅绑定 `127.0.0.1` 的本机环回 HTTP 长轮询、控制 API 与外部 `/api/bar` 客户端活跃探测（`HasActiveClient` / `OnClientActivity`） |
+| `internal/dock/` | 底部居中几何、不透明 `880×520` 面板与按需创建的 `312×40` 独立滚筒条显隐生命周期、单一自动单条策略（`NeedsMiniBarWindow` / `ShouldShowMiniBar` / `DetectKDEPlasmoid` / 400ms 拖拽防抖）、Linux Wayland `gtk-layer-shell`（`purego`）、KDE KWin Script 定位与防平铺（`kwin_linux.go`）、全局快捷键 |
+| `internal/tray/` | 跨平台系统托盘控制器与纯 Go `32×32` 单色抗锯齿模板图标（`TemplateIconPNG`）、中英双语状态文字与菜单、macOS 菜单栏状态文字与左/右键行为适配 |
+| `internal/barhttp/` | 仅绑定 `127.0.0.1` 的本机环回 HTTP 长轮询（含 `language` 字段）、控制 API 与外部 `/api/bar` 客户端活跃探测（`HasActiveClient` / `OnClientActivity`） |
 | `internal/ipcsock/` | 单实例 Unix Domain Socket 服务/客户端（`0600` 权限、Windows `AF_UNIX` 错码/重解析点兼容、僵尸 socket 清理、换行分隔 JSON 协议） |
-| `frontend/` | 独立 React + TypeScript + Vite 前端（`/?mode=panel` 工作台抽屉与 `/?mode=bar` 独立 3D 滚筒条，构建输出 `frontend/dist`） |
-| `plasmoid/io.github.muyuzhong.featherlog/` | KDE Plasma 6 原生底部 Dock 状态条小组件（QML + 长轮询客户端，无彩色状态灯） |
+| `frontend/` | 独立 React + TypeScript + Vite 前端（`/?mode=panel` 工作台抽屉含设置浮层与 `/?mode=bar` 独立 3D 滚筒条，支持中英双语，构建输出 `frontend/dist`） |
+| `plasmoid/io.github.muyuzhong.featherlog/` | KDE Plasma 6 原生底部 Dock 状态条小组件（QML + 长轮询客户端，随 `language` 自动切换中英文，无彩色状态灯） |
 | `scripts/install-plasmoid.sh` | Plasma 6 小组件幂等安装/升级脚本（`kpackagetool6`） |
 
 ### 2.2 架构约束
@@ -123,16 +123,18 @@
 | 字段 | 类型 | 合法值 | 默认值 |
 |---|---|---|---|
 | `theme` | `string` | `"stone"` \| `"graphite"` | `"stone"` |
+| `language` | `string` | `"zh"` \| `"en"`（输入/读盘时兼容归一化 `zh-CN`/`zh-Hans`/`zh-TW` → `"zh"`、`en-US`/`en-GB` → `"en"`） | `"zh"` |
 | `dayStartHour` | `int` | `0..23` | `4` |
 | `sound` | `bool` | `true` \| `false` | `true` |
-| `volume` | `int` | `0..10` | `5` |
+| `volume` | `int` | `0..10`（后端保留兼容，前端设置浮层仅暴露提示音开关） | `5` |
 | `pinned` | `bool` | `true` \| `false` | `false` |
-| `barMode` | `string` | `"auto"` \| `"standalone"` \| `"tray-only"` | `"auto"` |
 | `barX` | `int \| null`（可省略） | 与 `barY` 同时省略/`null`，或同时在 `-32768..32767` 内 | `null`（省略） |
 | `barY` | `int \| null`（可省略） | 与 `barX` 同时省略/`null`，或同时在 `-32768..32767` 内 | `null`（省略） |
 
 - `SettingsService.Update` 支持显式 JSON `{"barX": null, "barY": null}` 清除自定义坐标（恢复默认底部居中），也支持 `{"barX": 420, "barY": 980}` 保存拖拽坐标；相等性判定按 `*int` 指向值比较，避免同值无变更触发多余写盘与广播。
-- 修改 `dayStartHour` 时立即通知 `tasks` 更新周期配置；修改 `pinned`、`theme`、`barMode`、`barX`/`barY` 时立即同步到 `dock.Controller`。
+- 向后兼容：已存在的 `settings.json` 中若缺失 `"language"` 则默认 `"zh"`；若包含旧版 `"barMode"` 字段则无害忽略，不触发报错或损坏备份。v1 迁移器（`internal/migrate`）也会在旧配置包含以 `"en"` 开头的 `"language"` / `"locale"` 时自动迁移为 `"en"`。
+- 前端设置浮层（`⚙` Popover）提供：语言（`简体中文` / `English`）、主题（`纸石` / `石墨` / `跟随系统`，跟随系统在前端解析为 `stone` / `graphite`）、提示音开关、换日时间（`00:00..23:00`）以及在存在自定义坐标时的「重置滚筒位置」。
+- 修改 `dayStartHour` 时立即通知 `tasks` 更新周期配置；修改 `pinned`、`theme`、`barX`/`barY` 时立即同步到 `dock.Controller`；修改 `language` 时即时推送 `settings:changed` 并同步刷新系统托盘与 `barhttp`（KDE Plasmoid）。
 
 ---
 
@@ -177,15 +179,14 @@ MyGo 在页面文档加载起点注入 `window.mygo`：
 - **为何不透明**：在双显卡 Intel+NVIDIA Wayland 环境下（尤其开启 `WEBKIT_DISABLE_DMABUF_RENDERER=1` 时），GTK3/WebKitGTK 透明窗口会出现严重的局部脏区重绘缺陷；两个窗口均使用 `Transparent: false` 配合与主题一致的纯色 `BackgroundColor`（`stone`：`#F6F5F2`，`graphite`：`#131416`，切换主题时同步更新双窗口），在原生 Wayland / Windows / macOS 下均保持 100% 锐利完整渲染。
 - **常驻不退出**：面板与滚筒条分别通过 `OnPageTitleUpdated` 锁定原生标题为 `"featherlog-panel"` 与 `"featherlog-bar"`，并通过 `OnClose` 与 `OnWindowAllClosed` 防止意外关闭导致进程退出；仅在 `DockService.Quit` / 系统托盘「退出羽记」/ `SIGTERM` / `SIGINT` 时优雅退出。
 
-### 5.2 跨平台自适应放置策略（`ShouldShowMiniBar`）与坐标持久化
+### 5.2 单一自动 3D 滚筒条策略（`NeedsMiniBarWindow` / `ShouldShowMiniBar`）与坐标持久化
 
-- **展示策略**：
-  - `barMode == "tray-only"`：始终隐藏独立滚筒条。
-  - `barMode == "standalone"`：始终显示独立滚筒条（即使用户处于 KDE Plasma 且安装了 Plasmoid）。
-  - `barMode == "auto"`（默认）：
-    1. 若 `internal/barhttp` 存在活跃外部 `/api/bar` 客户端（`waiters > 0` 或最近 35 秒内有请求，如 KDE Plasmoid 已连接），自动让位隐藏独立滚筒条；
-    2. 若运行在 `linux` 且检测到 KDE 会话（`XDG_CURRENT_DESKTOP` / `DESKTOP_SESSION` / `KDE_FULL_SESSION`）且存在 `<XDG_DATA_HOME 或 ~/.local/share>/plasma/plasmoids/io.github.muyuzhong.featherlog/metadata.json` 或 `/usr/share/plasma/plasmoids/io.github.muyuzhong.featherlog/metadata.json`，自动让位隐藏独立滚筒条；
-    3. 其余平台（Windows、macOS、GNOME/Hyprland 等非 KDE Linux 或未安装 Plasmoid 的 KDE）自动展示独立 3D 滚筒条。
+- **单一自动单条策略（无手动模式开关）**：
+  - `NeedsMiniBarWindow()`：在 `linux` 且检测到 KDE 会话（`XDG_CURRENT_DESKTOP` / `DESKTOP_SESSION` / `KDE_FULL_SESSION`）且本地已安装 Featherlog Plasmoid（`<XDG_DATA_HOME 或 ~/.local/share>/plasma/plasmoids/io.github.muyuzhong.featherlog/metadata.json` 或 `/usr/share/plasma/plasmoids/io.github.muyuzhong.featherlog/metadata.json`）时返回 `false`，宿主在 `App.WhenReady` 阶段完全不创建 `featherlog-bar` 窗口，保证 KDE 底部 Dock 插件为唯一状态条且零冗余进程。
+  - `ShouldShowMiniBar(hasExternalClient, goos, kdeSession, plasmoidInstalled)`：
+    1. 若 `internal/barhttp` 存在活跃外部 `/api/bar` 客户端（`waiters > 0` 或最近 35 秒内有请求），返回 `false` 自动让位隐藏；
+    2. 若 `goos == "linux" && kdeSession && plasmoidInstalled`，返回 `false`；
+    3. 其余平台（Windows、macOS、GNOME/Hyprland 等非 KDE Linux 或未安装 Plasmoid 的 KDE）返回 `true`，自动展示独立 `312×40` 3D 滚筒条。
 - **独立滚筒条几何（`ComputeMiniBarBounds`）**：
   - 未保存自定义坐标（`barX == nil || barY == nil`）时：在目标显示器 `WorkArea` 内水平居中，位于底边上方 `MiniBarBottomInset = 8px` 处，严格保持 `312×40`（仅当屏幕窄于 `312px` 时夹紧，不向上放大到 `MinWidth = 320`）。
   - 保存了自定义坐标时：优先通过 `Screen.ActiveDisplay` 匹配所在显示器，并按**物理屏幕边界 `display.Bounds`**（而非 `WorkArea`）夹紧，使 Windows 11 用户将 `312×40` 滚筒条拖放至底部任务栏空白区域时可精确保留坐标；若拔掉外接屏导致坐标与当前显示器 `Bounds` 无交集，则自动回退到主屏默认底部居中。
@@ -202,17 +203,17 @@ MyGo 在页面文档加载起点注入 `window.mygo`：
 
 - **纯 Go 单色模板图标**：`TemplateIconPNG()` 在内存中通过 4×4 超采样生成 `32×32` 抗锯齿羽毛+滚筒图标（透明底 + 深炭墨 `RGB(24,24,27)`，零彩色像素），配合 `IconIsTemplate: true` 自动适配 macOS 菜单栏、Windows 11 深/浅色任务栏与 Linux StatusNotifierItem。
 - **平台交互**：
-  - **macOS**：启动前设置 `ActivationPolicyAccessory`（且打包 `Info.plist` 含 `LSUIElement = true`）隐藏 Dock 图标；菜单栏标题在有焦点时展示 `┃ <最多14字标题>`，无焦点但有待看槽位时展示 `待看 N`；`TrayOptions.Menu` 保持 `nil` 以便左键直接切换工作台面板，右键按需弹出上下文菜单。
-  - **Windows / Linux**：菜单栏标题留空，悬停 Tooltip 显示当前焦点、断点备忘与 `待办 done/total`；左键切换工作台面板，右键打开上下文菜单；若 Linux 缺少托盘库导致 `mygo.NewTray` 失败，仅记录一次日志并安全降级。
-- **上下文菜单**：`打开/收起工作台` → 最多 6 个活跃槽位（标 `[专注]`/`[待看]`，点击即切焦点）→ 子菜单 `常驻滚筒条`（`自动（推荐）` / `始终显示桌面滚筒条` / `仅系统托盘图标`）→ `重置滚筒条位置`（发送 `barX: null, barY: null`）→ `退出羽记`。
+  - **macOS**：启动前设置 `ActivationPolicyAccessory`（且打包 `Info.plist` 含 `LSUIElement = true`）隐藏 Dock 图标；菜单栏标题在有焦点时展示 `┃ <最多14字标题>`，无焦点但有待看槽位时展示 `待看 N`（`zh`）/ `Ready N`（`en`）；`TrayOptions.Menu` 保持 `nil` 以便左键直接切换工作台面板，右键按需弹出上下文菜单。
+  - **Windows / Linux**：菜单栏标题留空，悬停 Tooltip 按当前 `language` 展示（中文：`羽记 · 专注中：<title>（待办 done/total）` / `羽记 · 待看 N · 后台 M（待办 done/total）` / `羽记 · 空闲（待办 done/total）`；英文：`Featherlog · Focusing: <title> (Tasks done/total)` / `Featherlog · Ready N · Running M (Tasks done/total)` / `Featherlog · Idle (Tasks done/total)`）；左键切换工作台面板，右键打开上下文菜单；若 Linux 缺少托盘库导致 `mygo.NewTray` 失败，仅记录一次日志并安全降级。
+- **上下文菜单（动态中英双语）**：`打开工作台 / 收起工作台`（`Open Workbench / Hide Workbench`）→ 最多 6 个活跃槽位（标 `[专注]`/`[待看]` 或 `[Focus]`/`[Ready]`，点击即切焦点）→ 子菜单 `语言` / `Language`（单选 `简体中文` / `English`）→ 条件项 `重置滚筒位置` / `Reset Bar Position`（仅在 `barX != nil && barY != nil` 时展示，点击发送 `barX: null, barY: null`）→ `退出羽记` / `Quit Featherlog`。
 
 ### 5.5 Linux Wayland `gtk-layer-shell` 与 KDE KWin Script 定位
 
 1. **优先 `gtk-layer-shell`**：在支持 `wlr-layer-shell` 且安装了 `libgtk-layer-shell.so.0` 的 Wayland 环境下，`internal/dock` 通过 `purego` 动态加载（零 CGO），锚定底边（`EDGE_BOTTOM = true`、`exclusive_zone = -1`、`KEYBOARD_MODE_ON_DEMAND`）。
 2. **KDE Plasma Wayland KWin Scripting 回退（`internal/dock/kwin_linux.go`）**：当 `WAYLAND_DISPLAY` 非空、`XDG_CURRENT_DESKTOP` 包含 `KDE` 且系统缺失 `libgtk-layer-shell.so.0` 时，Wayland 会忽略 `gtk_window_move` 与 `keep_above`。宿主自动原子写入 `<dataDir>/kwin/featherlog-panel.js`，依次探测 `qdbus6` / `qdbus` / `gdbus` 调用 `org.kde.KWin /Scripting` 先卸载旧脚本再加载运行，并在退出 `Close()` 时自动卸载：
-   - 监听 `windowList()`、`windowAdded` 与 `captionChanged`，匹配 `w.caption === "featherlog-panel"`。
-   - 设置 `keepAbove = true`、`onAllDesktops = true`、`skipTaskbar = true`、`skipPager = true`、`skipSwitcher = true` 与 `w.tile = null`（附 `tileChanged` 保护，防止被 KDE 平铺接管）。
-   - 在初次接管及 `minimizedChanged` / `activeChanged` / `frameGeometryChanged` / `outputChanged` 时，将窗口精确置于 `workspace.clientArea(KWin.PlacementArea, w.output, workspace.currentDesktop)` 底边上方 `10px` 且水平居中。
+   - 监听 `windowList()`、`windowAdded` 与 `captionChanged`，同时匹配 `w.caption === "featherlog-panel"` 与 `w.caption === "featherlog-bar"`（后者仅在 KDE 未安装 Plasmoid 时创建）。
+   - 对两个窗口统一设置 `keepAbove = true`、`onAllDesktops = true`、`skipTaskbar = true`、`skipPager = true`、`skipSwitcher = true` 与 `w.tile = null`（附 `tileChanged` 保护，防止被 KDE 平铺接管或显示在任务栏）。
+   - 对 `"featherlog-panel"` 在初次接管及 `minimizedChanged` / `activeChanged` / `frameGeometryChanged` / `outputChanged` 时，将窗口精确置于 `workspace.clientArea(KWin.PlacementArea, w.output, workspace.currentDesktop)` 底边上方 `10px` 且水平居中（`"featherlog-bar"` 保留用户拖拽自由，不强行覆盖坐标）。
 3. **其他平台 / 合成器**：安全回退到标准 `win.SetBounds`，绝不崩溃。
 
 ### 5.6 全局快捷键、Pin 与 Dock 防抖
@@ -234,7 +235,7 @@ MyGo 在页面文档加载起点注入 `window.mygo`：
 
 | 方法与路径 | 请求体 / 查询参数 | 响应 |
 |---|---|---|
-| `GET /api/bar` | `?rev=<uint64>&wait=<0..25>`；当 `rev > 0` 且等于当前修订号且 `wait > 0` 时阻塞至多 `wait` 秒，任一槽位 / 任务 / 设置 / `panelOpen` 变化立即唤醒 | `200 OK`：`{ rev, panelOpen, pinned, theme, todayDone, todayTotal, slots: [{ id, title, state, breadcrumb, tag, stateChangedAt, remindAt, order }] }` |
+| `GET /api/bar` | `?rev=<uint64>&wait=<0..25>`；当 `rev > 0` 且等于当前修订号且 `wait > 0` 时阻塞至多 `wait` 秒，任一槽位 / 任务 / 设置 / `panelOpen` 变化立即唤醒 | `200 OK`：`{ rev, panelOpen, pinned, theme, language, todayDone, todayTotal, slots: [{ id, title, state, breadcrumb, tag, stateChangedAt, remindAt, order }] }` |
 | `POST /api/panel/toggle` | 可选 `{ "open": true \| false }`（空体或 `{}` 表示取反切换） | `200 OK`：`{ "panelOpen": bool, "rev": uint64 }` |
 | `POST /api/slot/focus` | `{ "id": "<slotId>" }` | `200 OK`：更新后的完整 `GET /api/bar` 快照 |
 | `POST /api/slot/cycle` | `{ "delta": 1 \| -1 }`（无焦点时 `+1` 聚焦首个，`-1` 聚焦末个） | `200 OK`：更新后的完整 `GET /api/bar` 快照 |
@@ -245,7 +246,7 @@ MyGo 在页面文档加载起点注入 `window.mygo`：
 
 ### 6.3 外部客户端活跃探测
 
-`barhttp.Server` 使用注入 `clock.Clock` 记录 `/api/bar` 外部消费端活跃状态（`HasActiveClient()` 在 `waiters > 0` 或距最近一次 `/api/bar` 请求不超过 `35s` 时返回 `true`），并在状态变化（首次连接、超时到期或 `Close()`）时通过 `OnClientActivity` 回调通知 `dock.Controller.SetExternalBarActive`，使 `barMode == "auto"` 在外部 Dock 插件接入时自动隐藏独立滚筒条、断开超时后自动恢复。
+`barhttp.Server` 使用注入 `clock.Clock` 记录 `/api/bar` 外部消费端活跃状态（`HasActiveClient()` 在 `waiters > 0` 或距最近一次 `/api/bar` 请求不超过 `35s` 时返回 `true`），并在状态变化（首次连接、超时到期或 `Close()`）时通过 `OnClientActivity` 回调通知 `dock.Controller.SetExternalBarActive`，使单一自动策略在外部 Dock 插件接入时自动隐藏独立滚筒条、断开超时后自动恢复。
 
 ---
 

@@ -378,33 +378,35 @@ func runGUI(dataDir string, devMode, showOnStart bool, httpPort int) error {
 			win.Focus()
 		}
 
-		miniInitial := application.Dock.InitialMiniBarRect()
-		miniOpts := dock.MiniBarWindowOptions("/?mode=bar", app.PreloadScript, miniInitial, theme)
-		miniWin := mygo.NewWindow(miniOpts)
-		if page := miniWin.Page(); page != nil {
-			page.OnPageTitleUpdated(func(e *mygo.TitleEvent) {
-				// Preserve native title "featherlog-bar".
-				e.PreventDefault()
-			})
-		}
-		miniWin.OnClose(func(e *mygo.CloseEvent) {
-			if !quitting.Load() {
-				e.PreventDefault()
+		if application.Dock.NeedsMiniBarWindow() {
+			miniInitial := application.Dock.InitialMiniBarRect()
+			miniOpts := dock.MiniBarWindowOptions("/?mode=bar", app.PreloadScript, miniInitial, theme)
+			miniWin := mygo.NewWindow(miniOpts)
+			if page := miniWin.Page(); page != nil {
+				page.OnPageTitleUpdated(func(e *mygo.TitleEvent) {
+					// Preserve native title "featherlog-bar".
+					e.PreventDefault()
+				})
 			}
-		})
-		application.Dock.AttachMiniBar(dock.MyGoWindow{W: miniWin})
+			miniWin.OnClose(func(e *mygo.CloseEvent) {
+				if !quitting.Load() {
+					e.PreventDefault()
+				}
+			})
+			application.Dock.AttachMiniBar(dock.MyGoWindow{W: miniWin})
 
-		// Wire external /api/bar client activity only once MyGo is ready and
-		// the Mini-Bar window exists so display queries never fire pre-ready.
-		offAct := barSrv.OnClientActivity(application.Dock.SetExternalBarActive)
-		hostMu.Lock()
-		if hostClosed || quitting.Load() {
-			hostMu.Unlock()
-			offAct()
-		} else {
-			offBarActivity = offAct
-			hostMu.Unlock()
-			application.Dock.SetExternalBarActive(barSrv.HasActiveClient())
+			// Wire external /api/bar client activity only once MyGo is ready and
+			// the Mini-Bar window exists so display queries never fire pre-ready.
+			offAct := barSrv.OnClientActivity(application.Dock.SetExternalBarActive)
+			hostMu.Lock()
+			if hostClosed || quitting.Load() {
+				hostMu.Unlock()
+				offAct()
+			} else {
+				offBarActivity = offAct
+				hostMu.Unlock()
+				application.Dock.SetExternalBarActive(barSrv.HasActiveClient())
+			}
 		}
 
 		tc, err := tray.Start(tray.Config{

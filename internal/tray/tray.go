@@ -199,16 +199,23 @@ func (c *Controller) buildSnapshot() (title, tooltip string, items []MenuItemSpe
 	}
 	todayDone, todayTotal := computeTodayCounts(taskList.Tasks, taskList.PeriodKey, st.DayStartHour, loc)
 
-	title = FormatTitle(c.goos, slots)
-	tooltip = FormatToolTip(slots, todayDone, todayTotal)
+	title, tooltip = FormatStatus(c.goos, slots, todayDone, todayTotal, st.Language)
 	items = c.buildMenuItems(panelOpen, slots, st)
 	return title, tooltip, items
 }
 
 func (c *Controller) buildMenuItems(panelOpen bool, slots []workbench.WorkSlot, st settings.Settings) []MenuItemSpec {
+	isEn := st.Language == settings.LangEN
+
 	toggleLabel := "打开工作台"
+	if isEn {
+		toggleLabel = "Open Workbench"
+	}
 	if panelOpen {
 		toggleLabel = "收起工作台"
+		if isEn {
+			toggleLabel = "Hide Workbench"
+		}
 	}
 	items := []MenuItemSpec{
 		{
@@ -232,7 +239,7 @@ func (c *Controller) buildMenuItems(panelOpen bool, slots []workbench.WorkSlot, 
 			slotID := slot.ID
 			items = append(items, MenuItemSpec{
 				ID:    "slot:" + slotID,
-				Label: formatSlotMenuLabel(slot),
+				Label: formatSlotMenuLabel(slot, st.Language),
 				Kind:  MenuNormal,
 				OnClick: func() {
 					_, _ = c.app.Workbench.SetState(workbench.SetStateInput{
@@ -244,46 +251,50 @@ func (c *Controller) buildMenuItems(panelOpen bool, slots []workbench.WorkSlot, 
 		}
 	}
 
-	setBarMode := func(mode settings.BarMode) func() {
+	setLanguage := func(lang settings.LanguageMode) func() {
 		return func() {
-			m := mode
-			_, _ = c.app.Settings.Update(settings.Patch{BarMode: &m})
+			l := lang
+			_, _ = c.app.Settings.Update(settings.Patch{Language: &l})
 		}
 	}
 
+	langSubmenuLabel := "语言"
+	if isEn {
+		langSubmenuLabel = "Language"
+	}
 	items = append(items,
 		MenuItemSpec{Kind: MenuSeparator},
 		MenuItemSpec{
-			ID:    "bar-mode",
-			Label: "常驻滚筒条",
+			ID:    "language",
+			Label: langSubmenuLabel,
 			Kind:  MenuSubmenu,
 			Submenu: []MenuItemSpec{
 				{
-					ID:      "bar-mode:auto",
-					Label:   "自动（推荐）",
+					ID:      "language:zh",
+					Label:   "简体中文",
 					Kind:    MenuRadio,
-					Checked: st.BarMode == settings.BarModeAuto,
-					OnClick: setBarMode(settings.BarModeAuto),
+					Checked: !isEn,
+					OnClick: setLanguage(settings.LangZH),
 				},
 				{
-					ID:      "bar-mode:standalone",
-					Label:   "始终显示桌面滚筒条",
+					ID:      "language:en",
+					Label:   "English",
 					Kind:    MenuRadio,
-					Checked: st.BarMode == settings.BarModeStandalone,
-					OnClick: setBarMode(settings.BarModeStandalone),
-				},
-				{
-					ID:      "bar-mode:tray-only",
-					Label:   "仅系统托盘图标",
-					Kind:    MenuRadio,
-					Checked: st.BarMode == settings.BarModeTrayOnly,
-					OnClick: setBarMode(settings.BarModeTrayOnly),
+					Checked: isEn,
+					OnClick: setLanguage(settings.LangEN),
 				},
 			},
 		},
-		MenuItemSpec{
+	)
+
+	if st.BarX != nil && st.BarY != nil {
+		resetLabel := "重置滚筒位置"
+		if isEn {
+			resetLabel = "Reset Bar Position"
+		}
+		items = append(items, MenuItemSpec{
 			ID:    "reset-bar-position",
-			Label: "重置滚筒条位置",
+			Label: resetLabel,
 			Kind:  MenuNormal,
 			OnClick: func() {
 				_, _ = c.app.Settings.Update(settings.Patch{
@@ -291,11 +302,18 @@ func (c *Controller) buildMenuItems(panelOpen bool, slots []workbench.WorkSlot, 
 					ClearBarY: true,
 				})
 			},
-		},
+		})
+	}
+
+	quitLabel := "退出羽记"
+	if isEn {
+		quitLabel = "Quit Featherlog"
+	}
+	items = append(items,
 		MenuItemSpec{Kind: MenuSeparator},
 		MenuItemSpec{
 			ID:      "quit",
-			Label:   "退出羽记",
+			Label:   quitLabel,
 			Kind:    MenuNormal,
 			OnClick: c.quitFunc,
 		},
@@ -304,9 +322,15 @@ func (c *Controller) buildMenuItems(panelOpen bool, slots []workbench.WorkSlot, 
 	return items
 }
 
+// FormatStatus formats both the macOS menu bar title and the hover tooltip for
+// the active language ("zh" or "en") without any colored status indicators.
+func FormatStatus(goos string, slots []workbench.WorkSlot, todayDone, todayTotal int, lang settings.LanguageMode) (title, tooltip string) {
+	return FormatTitle(goos, slots, lang), FormatToolTip(slots, todayDone, todayTotal, lang)
+}
+
 // FormatTitle formats the short menu bar title shown beside the tray icon on
 // macOS. Outside macOS ("darwin") it always returns "".
-func FormatTitle(goos string, slots []workbench.WorkSlot) string {
+func FormatTitle(goos string, slots []workbench.WorkSlot, lang settings.LanguageMode) string {
 	if goos != "darwin" {
 		return ""
 	}
@@ -320,6 +344,9 @@ func FormatTitle(goos string, slots []workbench.WorkSlot) string {
 		}
 	}
 	if readyCount > 0 {
+		if lang == settings.LangEN {
+			return fmt.Sprintf("Ready %d", readyCount)
+		}
 		return fmt.Sprintf("待看 %d", readyCount)
 	}
 	return ""
@@ -327,7 +354,9 @@ func FormatTitle(goos string, slots []workbench.WorkSlot) string {
 
 // FormatToolTip formats the hover tooltip for the system tray icon without any
 // colored status indicators.
-func FormatToolTip(slots []workbench.WorkSlot, todayDone, todayTotal int) string {
+func FormatToolTip(slots []workbench.WorkSlot, todayDone, todayTotal int, lang settings.LanguageMode) string {
+	isEn := lang == settings.LangEN
+
 	var focus *workbench.WorkSlot
 	var readyCount, runningCount int
 	for i := range slots {
@@ -343,28 +372,58 @@ func FormatToolTip(slots []workbench.WorkSlot, todayDone, todayTotal int) string
 		}
 	}
 
-	tally := fmt.Sprintf("待办 %d/%d", todayDone, todayTotal)
 	if focus != nil {
 		desc := truncateRunes(focus.Title, 40)
 		if bc := strings.TrimSpace(focus.Breadcrumb); bc != "" {
 			desc += " — " + truncateRunes(bc, 60)
 		}
-		return fmt.Sprintf("羽记 · %s · %s", desc, tally)
+		if isEn {
+			return fmt.Sprintf("Featherlog · Focusing: %s (Tasks %d/%d)", desc, todayDone, todayTotal)
+		}
+		return fmt.Sprintf("羽记 · 专注中：%s（待办 %d/%d）", desc, todayDone, todayTotal)
 	}
+
+	parts := make([]string, 0, 2)
 	if readyCount > 0 {
-		return fmt.Sprintf("羽记 · 待看 %d · %s", readyCount, tally)
+		if isEn {
+			parts = append(parts, fmt.Sprintf("Ready %d", readyCount))
+		} else {
+			parts = append(parts, fmt.Sprintf("待看 %d", readyCount))
+		}
 	}
 	if runningCount > 0 {
-		return fmt.Sprintf("羽记 · 进行中 %d · %s", runningCount, tally)
+		if isEn {
+			parts = append(parts, fmt.Sprintf("Running %d", runningCount))
+		} else {
+			parts = append(parts, fmt.Sprintf("后台 %d", runningCount))
+		}
 	}
-	return fmt.Sprintf("羽记 Featherlog · %s", tally)
+	if len(parts) > 0 {
+		summary := strings.Join(parts, " · ")
+		if isEn {
+			return fmt.Sprintf("Featherlog · %s (Tasks %d/%d)", summary, todayDone, todayTotal)
+		}
+		return fmt.Sprintf("羽记 · %s（待办 %d/%d）", summary, todayDone, todayTotal)
+	}
+
+	if isEn {
+		return fmt.Sprintf("Featherlog · Idle (Tasks %d/%d)", todayDone, todayTotal)
+	}
+	return fmt.Sprintf("羽记 · 空闲（待办 %d/%d）", todayDone, todayTotal)
 }
 
-func formatSlotMenuLabel(slot workbench.WorkSlot) string {
+func formatSlotMenuLabel(slot workbench.WorkSlot, lang settings.LanguageMode) string {
+	isEn := lang == settings.LangEN
 	switch slot.State {
 	case workbench.StateFocus:
+		if isEn {
+			return "[Focus] " + truncateRunes(slot.Title, maxSlotTitleRunes)
+		}
 		return "[专注] " + truncateRunes(slot.Title, maxSlotTitleRunes)
 	case workbench.StateReady:
+		if isEn {
+			return "[Ready] " + truncateRunes(slot.Title, maxSlotTitleRunes)
+		}
 		return "[待看] " + truncateRunes(slot.Title, maxSlotTitleRunes)
 	default:
 		return truncateRunes(slot.Title, maxRunningTitleRunes)

@@ -129,9 +129,6 @@ func Open(cfg Config) (*App, error) {
 		dockCfg.Clock = clk
 	}
 	dockCfg.InitialPin = initialSettings.Pinned
-	if dockCfg.InitialBarMode == "" {
-		dockCfg.InitialBarMode = string(initialSettings.BarMode)
-	}
 	if dockCfg.InitialBarX == nil && dockCfg.InitialBarY == nil {
 		dockCfg.InitialBarX = initialSettings.BarX
 		dockCfg.InitialBarY = initialSettings.BarY
@@ -190,7 +187,7 @@ func Open(cfg Config) (*App, error) {
 	offSettings := settingsSvc.OnChange(func(next settings.Settings) {
 		a.Dock.SetPinned(next.Pinned)
 		a.Dock.SetTheme(string(next.Theme))
-		a.Dock.SetBarPrefs(string(next.BarMode), next.BarX, next.BarY)
+		a.Dock.SetBarPosition(next.BarX, next.BarY)
 		if err := a.Tasks.SetDayStartHour(next.DayStartHour); err != nil {
 			log.Printf("featherlog: apply dayStartHour=%d: %v", next.DayStartHour, err)
 		}

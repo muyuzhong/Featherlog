@@ -8,12 +8,12 @@
 
 ## 核心特性
 
-### 1. 跨平台自适应状态条 + 系统托盘 + 弹出工作台面板
-- **跨平台自适应放置（`barMode`: `auto` / `standalone` / `tray-only`）**：
-  - **Linux KDE Plasma 6**：原生 Plasma 6 小组件（`plasmoid/io.github.muyuzhong.featherlog/`）直接嵌在底部 Dock 中，经本机环回 HTTP 长轮询 API（`127.0.0.1:39173`，开发模式 `39174`）实时呈现活跃并发槽位、今日任务进度与面板开关；在 `auto` 模式下检测到 KDE Plasmoid 已安装或已连接时自动让位，绝不出现重复悬浮条。
-  - **Windows 11 / macOS / 非 KDE Linux**：默认自动启用 **`312×40` 独立 3D 滚筒条**（`featherlog-bar`，`/?mode=bar`），以不抢焦（`ShowInactive`）方式停靠底部居中，支持自由拖拽并防抖保存坐标（Windows 11 支持直接拖放至底部任务栏空白区域），随时可通过托盘或设置一键「重置滚筒条位置」或切为「仅系统托盘图标（`tray-only`）」。
-- **跨平台单色系统托盘（`internal/tray`）**：纯 Go 32×32 单色透明模板图标，自动适配深浅任务栏/菜单栏；左键快速开关工作台，右键菜单支持切焦点（最多 6 个活跃槽位）、切换常驻滚筒条模式、重置位置与退出；macOS 隐藏 Dock 图标（`LSUIElement` / `ActivationPolicyAccessory`）并在菜单栏展示 `┃ <当前焦点>` 或 `待看 N`。
-- **不透明 `880×520` 弹出工作台（`featherlog-panel`，`/?mode=panel`）**：宿主默认后台常驻并隐藏弹出窗口（传入 `--show` 可启动即显示），按全局快捷键（`Alt+Shift+Space` / `CmdOrCtrl+Shift+Space`）或点击滚筒条/系统托盘/KDE 插件时立即在底部正上方 `10px` 弹出并聚焦；按 `Esc`、点收起 `⌄` 或未钉住失焦时仅隐藏窗口而不退出宿主进程。
+### 1. 单一自动 3D 滚筒条 + 双语系统托盘 + 弹出工作台面板与设置浮层
+- **单一自动 3D 滚筒条策略（零手动模式切换，绝不重复叠加）**：
+  - **Linux KDE Plasma 6（已安装原生 Plasmoid）**：原生 Plasma 6 小组件（`plasmoid/io.github.muyuzhong.featherlog/`）直接嵌在底部 Dock 中，经本机环回 HTTP 长轮询 API（`127.0.0.1:39173`，开发模式 `39174`）实时呈现活跃并发槽位、今日任务进度、中英双语界面与面板开关；宿主检测到 KDE 会话且已安装 Plasmoid 时直接跳过创建独立滚筒条窗口，杜绝重复窗口或多余任务栏图标并节省一个渲染进程。
+  - **Windows 11 / macOS / 非 KDE Linux（及未安装 Plasmoid 的 KDE）**：宿主自动启用 **`312×40` 独立 3D 滚筒条**（`featherlog-bar`，`/?mode=bar`），以不抢焦（`ShowInactive`）方式停靠底部居中，支持自由拖拽并防抖保存坐标（Windows 11 支持直接拖放至底部任务栏空白区域）；检测到外部 `/api/bar` 客户端接入时自动让位隐藏，拖移后可通过托盘或设置浮层一键「重置滚筒位置 / Reset Bar Position」。
+- **跨平台单色系统托盘（`internal/tray`）**：纯 Go 32×32 单色透明模板图标，自动适配深浅任务栏/菜单栏；状态文案与右键菜单随 `language`（`简体中文` / `English`）实时切换；左键快速开关工作台，右键菜单支持切焦点（最多 6 个活跃槽位）、切换语言、条件显示重置滚筒位置与退出；macOS 隐藏 Dock 图标（`LSUIElement` / `ActivationPolicyAccessory`）并在菜单栏展示 `┃ <当前焦点>` 或 `待看 N` / `Ready N`。
+- **不透明 `880×520` 弹出工作台（`featherlog-panel`，`/?mode=panel`）**：宿主默认后台常驻并隐藏弹出窗口（传入 `--show` 可启动即显示），按全局快捷键（`Alt+Shift+Space` / `CmdOrCtrl+Shift+Space`）或点击滚筒条/系统托盘/KDE 插件时立即在底部正上方 `10px` 弹出并聚焦；顶栏内置轻量「设置浮层（`⚙`）」，集中提供语言（`简体中文` / `English`）、主题（`纸石` / `石墨` / `跟随系统`）、提示音开关、换日时间（`00:00..23:00`）与可选重置滚筒位置；按 `Esc`、点收起 `⌄` 或未钉住失焦时仅隐藏窗口而不退出宿主进程。
 - **零彩色发光灯设计**：绝不使用红/黄/绿亮灯，纯靠实体文具质感与单色层次清晰区分并发三态：
   - **`focus`（专注中，全局至多 1 个）**：高对比度浮起卡片与深墨主标题，聚焦你此刻手头正在推进的一件事。
   - **`running`（后台推进中）**：低对比度哑光次级卡片，右侧等宽数字（`tabular-nums`）静默计时，可一键设回看提醒（`+10m` / `+20m` / `+45m`）。
@@ -59,7 +59,7 @@ featherlog note "KDE Wayland 下通过 KWin Script 精准锚定在底部 Dock �
 - **不透明原生渲染**：弹出工作台（`featherlog-panel`）与独立 3D 滚筒条（`featherlog-bar`）均采用 `Transparent: false` + 主题纯色背景，避免 Intel+NVIDIA 双显卡下 WebKitGTK 透明窗口局部脏区重绘问题，无需强制 `GDK_BACKEND=x11`。
 - **Linux 双层 Wayland 定位策略（零 CGO）**：
   - 安装了 `libgtk-layer-shell.so.0` 时通过 `purego` 动态加载，使用 `wlr-layer-shell` 底边居中锚定。
-  - 在 KDE Plasma 6 Wayland 缺失 `libgtk-layer-shell.so.0` 时，自动加载 KWin Scripting 定位脚本（`<userData>/kwin/featherlog-panel.js`，经 `qdbus6` / `qdbus` / `gdbus` 管理），将 `"featherlog-panel"` 保持置顶、全桌面可见、禁止平铺，并始终置于底部 Dock 上方 `10px` 水平居中，退出时自动卸载。
+  - 在 KDE Plasma 6 Wayland 缺失 `libgtk-layer-shell.so.0` 时，自动加载 KWin Scripting 定位脚本（`<userData>/kwin/featherlog-panel.js`，经 `qdbus6` / `qdbus` / `gdbus` 管理），对 `"featherlog-panel"` 与（未安装 Plasmoid 时的）`"featherlog-bar"` 统一保持置顶、全桌面可见、隐藏任务栏/切换器并禁止平铺，同时将 `"featherlog-panel"` 置于底部 Dock 上方 `10px` 水平居中，退出时自动卸载。
 - **Windows 11 & macOS 原生体验**：
   - Windows 发布包内含 GUI `featherlog.exe`（无控制台黑框）与 `featherlog-cli.exe`（同步 CLI），支持 Windows 11 任务栏物理边界拖拽停靠与 Windows `AF_UNIX` 单实例/僵尸套接字恢复。
   - macOS `.app` 配置 `LSUIElement = true` 与 `ActivationPolicyAccessory` 隐藏 Dock 图标，弹出面板与独立滚筒条启用原生 `Panel` 模式可覆盖全屏 Space 且不抢占原应用焦点。

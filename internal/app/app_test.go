@@ -381,10 +381,10 @@ func TestJSONv2TriStateDecodingCompatibility(t *testing.T) {
 	}
 
 	var settingsSet settings.Patch
-	if err := json.Unmarshal([]byte(`{"barMode":"standalone","barX":420,"barY":980}`), &settingsSet); err != nil {
+	if err := json.Unmarshal([]byte(`{"language":"en-US","barX":420,"barY":980}`), &settingsSet); err != nil {
 		t.Fatalf("json/v2 settings.Patch set: %v", err)
 	}
-	if settingsSet.ClearBarX || settingsSet.ClearBarY || settingsSet.BarMode == nil || *settingsSet.BarMode != settings.BarModeStandalone ||
+	if settingsSet.ClearBarX || settingsSet.ClearBarY || settingsSet.Language == nil || *settingsSet.Language != settings.LangEN ||
 		settingsSet.BarX == nil || *settingsSet.BarX != 420 || settingsSet.BarY == nil || *settingsSet.BarY != 980 {
 		t.Fatalf("unexpected settingsSet: %+v", settingsSet)
 	}
@@ -757,11 +757,11 @@ func TestOpenMigratesV1ElectronDataDirEndToEnd(t *testing.T) {
 	gotSettings := a.SettingsSvc.Get()
 	wantSettings := settings.Settings{
 		Theme:        settings.ThemeStone,
+		Language:     settings.LangZH,
 		DayStartHour: 5,
 		Sound:        false,
 		Volume:       7,
 		Pinned:       false,
-		BarMode:      settings.BarModeAuto,
 	}
 	if !settings.Equal(gotSettings, wantSettings) {
 		t.Fatalf("Settings = %+v, want %+v", gotSettings, wantSettings)
@@ -933,9 +933,9 @@ func TestDockServiceToggleAndMiniBarSettingsWiring(t *testing.T) {
 		t.Fatalf("DockSvc.Toggle(false) = (%+v, %v), want expanded=false", res, err)
 	}
 
-	// 2. MiniBar shown initially in auto mode on Windows; drag persists to settings.json after 400ms.
+	// 2. MiniBar shown initially on Windows; drag persists to settings.json after 400ms.
 	if vis, _ := a.Dock.MiniBarState(); !vis {
-		t.Fatalf("expected MiniBar visible on Windows auto mode")
+		t.Fatalf("expected MiniBar visible on Windows")
 	}
 	miniWin.bounds = dock.Rect{X: 1200, Y: 1036, Width: dock.MiniBarWidth, Height: dock.MiniBarHeight}
 	miniWin.triggerMove()
@@ -946,24 +946,16 @@ func TestDockServiceToggleAndMiniBarSettingsWiring(t *testing.T) {
 		t.Fatalf("dragged position not persisted to Settings: %+v", st)
 	}
 
-	// 3. Updating barMode to tray-only hides MiniBar; resetting barX/barY via JSON null clears coords.
-	trayOnly := settings.BarModeTrayOnly
-	if _, err := a.SettingsSvc.Update(settings.Patch{BarMode: &trayOnly}); err != nil {
-		t.Fatalf("Update tray-only: %v", err)
-	}
-	if vis, _ := a.Dock.MiniBarState(); vis {
-		t.Fatalf("expected MiniBar hidden in tray-only mode")
-	}
-
+	// 3. Updating language + resetting barX/barY via JSON null persists language and restores default bounds.
 	var resetPatch settings.Patch
-	if err := json.Unmarshal([]byte(`{"barMode":"standalone","barX":null,"barY":null}`), &resetPatch); err != nil {
+	if err := json.Unmarshal([]byte(`{"language":"en-GB","barX":null,"barY":null}`), &resetPatch); err != nil {
 		t.Fatalf("unmarshal reset patch: %v", err)
 	}
 	updated, err := a.SettingsSvc.Update(resetPatch)
 	if err != nil {
 		t.Fatalf("Update resetPatch: %v", err)
 	}
-	if updated.BarMode != settings.BarModeStandalone || updated.BarX != nil || updated.BarY != nil {
+	if updated.Language != settings.LangEN || updated.BarX != nil || updated.BarY != nil {
 		t.Fatalf("unexpected updated settings after reset: %+v", updated)
 	}
 	vis, bounds := a.Dock.MiniBarState()

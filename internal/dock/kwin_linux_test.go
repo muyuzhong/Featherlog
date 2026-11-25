@@ -134,7 +134,10 @@ func TestKWinPlacerStartAndCloseWithQdbus6(t *testing.T) {
 	js := string(raw)
 	requiredSnippets := []string{
 		`var TARGET_CAPTION = "featherlog-panel"`,
+		`var BAR_CAPTION = "featherlog-bar"`,
 		`var BOTTOM_GAP = 10`,
+		`function isTargetCaption(c)`,
+		`c === TARGET_CAPTION || c === BAR_CAPTION`,
 		`workspace.windowList()`,
 		`workspace.windowAdded.connect`,
 		`w.captionChanged.connect`,

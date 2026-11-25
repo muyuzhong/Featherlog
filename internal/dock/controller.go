@@ -339,7 +339,6 @@ type Controller struct {
 	platformOS            string
 	kdeSession            bool
 	plasmoidInstalled     bool
-	barMode               string
 	barX                  *int
 	barY                  *int
 	externalBarActive     bool
@@ -377,7 +376,6 @@ type Config struct {
 	StartHidden           bool
 	BlurToggleGrace       time.Duration
 	OnToggle              func(expanded bool)
-	InitialBarMode        string
 	InitialBarX           *int
 	InitialBarY           *int
 	InitialExternalActive bool
@@ -393,14 +391,6 @@ func cloneIntPtr(v *int) *int {
 	}
 	cp := *v
 	return &cp
-}
-
-func normalizeBarMode(mode string) string {
-	trimmed := strings.ToLower(strings.TrimSpace(mode))
-	if trimmed == "" {
-		return "auto"
-	}
-	return trimmed
 }
 
 // NewController creates a new dock controller.
@@ -464,12 +454,21 @@ func NewController(cfg Config) *Controller {
 		platformOS:        goos,
 		kdeSession:        kdeSession,
 		plasmoidInstalled: plasmoidInstalled,
-		barMode:           normalizeBarMode(cfg.InitialBarMode),
 		barX:              cloneIntPtr(cfg.InitialBarX),
 		barY:              cloneIntPtr(cfg.InitialBarY),
 		externalBarActive: cfg.InitialExternalActive,
 		onMiniBarMoved:    cfg.OnMiniBarMoved,
 	}
+}
+
+// NeedsMiniBarWindow reports whether the desktop host should create the
+// standalone 312x40 3D Drum Mini-Bar window. On Linux KDE Plasma with the
+// Featherlog Plasmoid installed, the native dock applet is the sole status bar
+// and no standalone Mini-Bar window is created.
+func (c *Controller) NeedsMiniBarWindow() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return !(c.platformOS == "linux" && c.kdeSession && c.plasmoidInstalled)
 }
 
 // InitialRect computes the initial bottom-center rectangle on the active display.
@@ -582,16 +581,15 @@ func (c *Controller) AttachMiniBar(win Window) Rect {
 	return c.syncMiniBar()
 }
 
-// SetBarPrefs updates the Mini-Bar mode and custom coordinates and reconciles
-// Mini-Bar visibility and bounds immediately.
-func (c *Controller) SetBarPrefs(barMode string, barX, barY *int) {
+// SetBarPosition updates the saved standalone Mini-Bar coordinates (or clears
+// them when nil) and reconciles Mini-Bar visibility and bounds immediately.
+func (c *Controller) SetBarPosition(barX, barY *int) {
 	c.mu.Lock()
 	if c.moveDebounceStop != nil {
 		c.moveDebounceStop()
 		c.moveDebounceStop = nil
 	}
 	c.moveDebounceGen++
-	c.barMode = normalizeBarMode(barMode)
 	c.barX = cloneIntPtr(barX)
 	c.barY = cloneIntPtr(barY)
 	c.mu.Unlock()
@@ -600,7 +598,8 @@ func (c *Controller) SetBarPrefs(barMode string, barX, barY *int) {
 }
 
 // SetExternalBarActive reports whether an external /api/bar client (such as the
-// KDE Plasma 6 dock applet) is currently active, causing "auto" mode to yield.
+// KDE Plasma 6 dock applet) is currently active, causing the standalone Mini-Bar
+// to yield automatically.
 func (c *Controller) SetExternalBarActive(active bool) {
 	c.mu.Lock()
 	c.externalBarActive = active
@@ -918,14 +917,13 @@ func (c *Controller) syncMiniBar() Rect {
 	}
 	miniWin := c.miniWin
 	screen := c.screen
-	barMode := c.barMode
 	barX := cloneIntPtr(c.barX)
 	barY := cloneIntPtr(c.barY)
 	extActive := c.externalBarActive
 	goos := c.platformOS
 	kdeSession := c.kdeSession
 	plasmoidInstalled := c.plasmoidInstalled
-	shouldShow := ShouldShowMiniBar(barMode, extActive, goos, kdeSession, plasmoidInstalled)
+	shouldShow := ShouldShowMiniBar(extActive, goos, kdeSession, plasmoidInstalled)
 	if miniWin == nil {
 		// Defer screen queries until AttachMiniBar binds the real window inside App.WhenReady.
 		c.miniVisible = shouldShow

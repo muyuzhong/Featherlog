@@ -28,8 +28,8 @@ func TestDefaultsAndPersistence(t *testing.T) {
 	if got != want {
 		t.Fatalf("default settings = %+v, want %+v", got, want)
 	}
-	if got.Theme != ThemeStone || got.DayStartHour != 4 || !got.Sound || got.Volume != 5 || got.Pinned ||
-		got.BarMode != BarModeAuto || got.BarX != nil || got.BarY != nil {
+	if got.Theme != ThemeStone || got.Language != LangZH || got.DayStartHour != 4 || !got.Sound || got.Volume != 5 || got.Pinned ||
+		got.BarX != nil || got.BarY != nil {
 		t.Fatalf("unexpected default fields: %+v", got)
 	}
 
@@ -38,6 +38,7 @@ func TestDefaultsAndPersistence(t *testing.T) {
 
 	updated, err := svc.Update(Patch{
 		Theme:        ptr(ThemeGraphite),
+		Language:     ptr(LangEN),
 		DayStartHour: ptr(6),
 		Sound:        ptr(false),
 		Volume:       ptr(10),
@@ -46,7 +47,7 @@ func TestDefaultsAndPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Update failed: %v", err)
 	}
-	if updated.Theme != ThemeGraphite || updated.DayStartHour != 6 || updated.Sound || updated.Volume != 10 || !updated.Pinned {
+	if updated.Theme != ThemeGraphite || updated.Language != LangEN || updated.DayStartHour != 6 || updated.Sound || updated.Volume != 10 || !updated.Pinned {
 		t.Fatalf("updated settings = %+v", updated)
 	}
 	if len(events) != 1 || events[0] != updated {
@@ -95,6 +96,13 @@ func TestValidationBoundaries(t *testing.T) {
 		{Volume: ptr(10)},
 		{Theme: ptr(ThemeStone)},
 		{Theme: ptr(ThemeGraphite)},
+		{Language: ptr(LangZH)},
+		{Language: ptr(LangEN)},
+		{Language: ptr(LanguageMode("zh-CN"))},
+		{Language: ptr(LanguageMode("zh-Hans"))},
+		{Language: ptr(LanguageMode("zh-TW"))},
+		{Language: ptr(LanguageMode("en-US"))},
+		{Language: ptr(LanguageMode("en-GB"))},
 	} {
 		if _, err := svc.Update(p); err != nil {
 			t.Fatalf("expected valid patch %+v to succeed, got %v", p, err)
@@ -106,6 +114,11 @@ func TestValidationBoundaries(t *testing.T) {
 	invalidPatches := []Patch{
 		{Theme: ptr(ThemeMode(""))},
 		{Theme: ptr(ThemeMode("vellum"))},
+		{Language: ptr(LanguageMode(""))},
+		{Language: ptr(LanguageMode("fr"))},
+		{Language: ptr(LanguageMode("ja-JP"))},
+		{Language: ptr(LanguageMode("english"))},
+		{Language: ptr(LanguageMode("zh-"))},
 		{DayStartHour: ptr(-1)},
 		{DayStartHour: ptr(24)},
 		{Volume: ptr(-1)},
@@ -158,14 +171,16 @@ func TestCorruptSettingsBackupAndFallback(t *testing.T) {
 		{"top_level_array", `["stone"]`},
 		{"invalid_theme", `{"theme": "neon"}`},
 		{"null_theme", `{"theme": null}`},
+		{"invalid_language", `{"language": "fr"}`},
+		{"empty_language", `{"language": ""}`},
+		{"null_language", `{"language": null}`},
+		{"int_language", `{"language": 42}`},
 		{"float_dayStartHour", `{"dayStartHour": 4.5}`},
 		{"oob_dayStartHour", `{"dayStartHour": 24}`},
 		{"string_volume", `{"volume": "5"}`},
 		{"oob_volume", `{"volume": 11}`},
 		{"wrong_sound_type", `{"sound": "true"}`},
 		{"null_pinned", `{"pinned": null}`},
-		{"invalid_barMode", `{"barMode": "floating"}`},
-		{"null_barMode", `{"barMode": null}`},
 		{"only_barX", `{"barX": 420}`},
 		{"only_barY", `{"barY": 980}`},
 		{"barX_set_barY_null", `{"barX": 420, "barY": null}`},
@@ -224,7 +239,7 @@ func TestCorruptSettingsBackupAndFallback(t *testing.T) {
 	}
 }
 
-func TestBarModeAndCoordinatesPersistenceAndNoOpEquality(t *testing.T) {
+func TestLanguageAndCoordinatesPersistenceAndNoOpEquality(t *testing.T) {
 	dir := t.TempDir()
 	st := store.New(dir)
 	clk := clock.NewFake(time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC))
@@ -238,16 +253,16 @@ func TestBarModeAndCoordinatesPersistenceAndNoOpEquality(t *testing.T) {
 	unsub := svc.OnChange(func(s Settings) { events = append(events, s) })
 	defer unsub()
 
-	// Set barMode and custom coordinates.
+	// Set language (normalized from locale) and custom coordinates.
 	got, err := svc.Update(Patch{
-		BarMode: ptr(BarModeStandalone),
-		BarX:    ptr(420),
-		BarY:    ptr(980),
+		Language: ptr(LanguageMode("en-US")),
+		BarX:     ptr(420),
+		BarY:     ptr(980),
 	})
 	if err != nil {
-		t.Fatalf("Update standalone + coords: %v", err)
+		t.Fatalf("Update language + coords: %v", err)
 	}
-	if got.BarMode != BarModeStandalone || got.BarX == nil || *got.BarX != 420 || got.BarY == nil || *got.BarY != 980 {
+	if got.Language != LangEN || got.BarX == nil || *got.BarX != 420 || got.BarY == nil || *got.BarY != 980 {
 		t.Fatalf("unexpected updated settings: %+v", got)
 	}
 	if len(events) != 1 {
@@ -260,11 +275,11 @@ func TestBarModeAndCoordinatesPersistenceAndNoOpEquality(t *testing.T) {
 		t.Fatalf("caller mutation leaked into Service state: %+v", cur)
 	}
 
-	// Re-applying identical coordinate values with distinct *int pointers must be a no-op!
+	// Re-applying identical coordinate values & normalized language with distinct pointers must be a no-op!
 	if _, err := svc.Update(Patch{
-		BarMode: ptr(BarModeStandalone),
-		BarX:    ptr(420),
-		BarY:    ptr(980),
+		Language: ptr(LanguageMode("en-GB")),
+		BarX:     ptr(420),
+		BarY:     ptr(980),
 	}); err != nil {
 		t.Fatalf("no-op coords Update: %v", err)
 	}
@@ -290,8 +305,8 @@ func TestBarModeAndCoordinatesPersistenceAndNoOpEquality(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Update clearPatch: %v", err)
 	}
-	if cleared.BarX != nil || cleared.BarY != nil || cleared.BarMode != BarModeStandalone {
-		t.Fatalf("cleared settings = %+v, want BarX=nil BarY=nil BarMode=standalone", cleared)
+	if cleared.BarX != nil || cleared.BarY != nil || cleared.Language != LangEN {
+		t.Fatalf("cleared settings = %+v, want BarX=nil BarY=nil Language=en", cleared)
 	}
 	if len(events) != 2 {
 		t.Fatalf("events = %d, want 2", len(events))
@@ -305,16 +320,19 @@ func TestBarModeAndCoordinatesPersistenceAndNoOpEquality(t *testing.T) {
 		t.Fatalf("second clear should be a no-op; events = %d, want 2", len(events))
 	}
 
-	// JSON/v2 set & clear roundtrip (matches MyGo RPC argument decoder).
+	// JSON/v2 set & clear roundtrip (matches MyGo RPC argument decoder), including language normalization.
 	var v2Set Patch
-	if err := jsonv2.Unmarshal([]byte(`{"barMode":"tray-only","barX":-1200,"barY":1040}`), &v2Set); err != nil {
+	if err := jsonv2.Unmarshal([]byte(`{"language":"zh-Hans","barX":-1200,"barY":1040}`), &v2Set); err != nil {
 		t.Fatalf("json/v2 set patch: %v", err)
+	}
+	if v2Set.Language == nil || *v2Set.Language != LangZH {
+		t.Fatalf("v2Set.Language = %v, want zh", v2Set.Language)
 	}
 	gotV2, err := svc.Update(v2Set)
 	if err != nil {
 		t.Fatalf("Update v2Set: %v", err)
 	}
-	if gotV2.BarMode != BarModeTrayOnly || gotV2.BarX == nil || *gotV2.BarX != -1200 || gotV2.BarY == nil || *gotV2.BarY != 1040 {
+	if gotV2.Language != LangZH || gotV2.BarX == nil || *gotV2.BarX != -1200 || gotV2.BarY == nil || *gotV2.BarY != 1040 {
 		t.Fatalf("gotV2 = %+v", gotV2)
 	}
 
@@ -332,34 +350,66 @@ func TestBarModeAndCoordinatesPersistenceAndNoOpEquality(t *testing.T) {
 	if gotV2Cleared.BarX != nil || gotV2Cleared.BarY != nil {
 		t.Fatalf("expected cleared coords, got %+v", gotV2Cleared)
 	}
+
+	// Invalid language in Patch JSON (both v1 and v2) returns settings/invalid.
+	for _, raw := range []string{`{"language":"fr"}`, `{"language":""}`, `{"language":null}`} {
+		var p1 Patch
+		if err := json.Unmarshal([]byte(raw), &p1); !store.IsCode(err, ErrCodeInvalid) {
+			t.Fatalf("json.Unmarshal(%s): expected %q, got %v", raw, ErrCodeInvalid, err)
+		}
+		var p2 Patch
+		if err := jsonv2.Unmarshal([]byte(raw), &p2); !store.IsCode(err, ErrCodeInvalid) {
+			t.Fatalf("jsonv2.Unmarshal(%s): expected %q, got %v", raw, ErrCodeInvalid, err)
+		}
+	}
 }
 
-func TestBarValidationAndBackwardCompatJSON(t *testing.T) {
-	dir := t.TempDir()
-	st := store.New(dir)
+func TestBarValidationLanguageNormalizationAndLegacyBarModeCompat(t *testing.T) {
 	clk := clock.NewFake(time.Date(2026, 11, 25, 10, 0, 0, 0, time.UTC))
 
-	// Explicit null barX/barY and omitted barMode load cleanly with defaults.
-	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(`{"theme":"stone","barX":null,"barY":null}`), 0o600); err != nil {
-		t.Fatalf("write fixture: %v", err)
+	// Legacy settings.json containing "barMode": "standalone" (and missing "language")
+	// must load cleanly without error or corrupt backup.
+	legacyCases := []struct {
+		name     string
+		raw      string
+		wantLang LanguageMode
+	}{
+		{"legacy_barMode_standalone_default_lang", `{"theme":"graphite","barMode":"standalone","barX":null,"barY":null}`, LangZH},
+		{"legacy_barMode_tray_only_en_us", `{"theme":"stone","barMode":"tray-only","language":"en-US"}`, LangEN},
+		{"legacy_barMode_null_zh_tw", `{"theme":"stone","barMode":null,"language":"zh-TW"}`, LangZH},
+		{"locale_zh_cn", `{"language":"zh-CN"}`, LangZH},
+		{"locale_zh_hans_uppercase", `{"language":"ZH-HANS"}`, LangZH},
+		{"locale_en_gb", `{"language":"en-GB"}`, LangEN},
+		{"locale_en_underscore", `{"language":"en_US"}`, LangEN},
 	}
+	for _, tc := range legacyCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			st := store.New(dir)
+			if err := os.WriteFile(filepath.Join(dir, FileName), []byte(tc.raw), 0o600); err != nil {
+				t.Fatalf("write fixture: %v", err)
+			}
+			svc, err := Open(st, clk)
+			if err != nil {
+				t.Fatalf("Open(%s): %v", tc.raw, err)
+			}
+			if svc.BackupPath() != "" {
+				t.Fatalf("unexpected corrupt backup %q for %s", svc.BackupPath(), tc.raw)
+			}
+			if got := svc.Get(); got.Language != tc.wantLang {
+				t.Fatalf("Language = %q, want %q (settings=%+v)", got.Language, tc.wantLang, got)
+			}
+		})
+	}
+
+	// Valid boundary coordinates (-32768..32767).
+	dir := t.TempDir()
+	st := store.New(dir)
 	svc, err := Open(st, clk)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if svc.BackupPath() != "" {
-		t.Fatalf("unexpected backup for valid null barX/barY: %q", svc.BackupPath())
-	}
-	got := svc.Get()
-	if got.BarMode != BarModeAuto || got.BarX != nil || got.BarY != nil {
-		t.Fatalf("got %+v, want auto/nil/nil", got)
-	}
-
-	// Valid boundary coordinates (-32768..32767) and all 3 barMode values.
 	for _, p := range []Patch{
-		{BarMode: ptr(BarModeAuto)},
-		{BarMode: ptr(BarModeStandalone)},
-		{BarMode: ptr(BarModeTrayOnly)},
 		{BarX: ptr(MinBarCoord), BarY: ptr(MaxBarCoord)},
 		{BarX: ptr(MaxBarCoord), BarY: ptr(MinBarCoord)},
 		{ClearBarX: true, ClearBarY: true},
@@ -369,11 +419,9 @@ func TestBarValidationAndBackwardCompatJSON(t *testing.T) {
 		}
 	}
 
-	// Invalid barMode or mismatched/out-of-range coordinates return settings/invalid.
+	// Mismatched/out-of-range coordinates return settings/invalid.
 	before := svc.Get()
 	for _, p := range []Patch{
-		{BarMode: ptr(BarMode(""))},
-		{BarMode: ptr(BarMode("dock"))},
 		{BarX: ptr(100)},
 		{BarY: ptr(200)},
 		{BarX: ptr(MinBarCoord - 1), BarY: ptr(0)},
