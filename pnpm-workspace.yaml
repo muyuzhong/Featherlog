@@ -1,8 +1,0 @@
-packages:
-  - packages/*
-  - plugins/*
-  - examples/*
-allowBuilds:
-  electron-winstaller: false
-  esbuild: true
-  usocket: false
