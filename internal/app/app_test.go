@@ -905,10 +905,27 @@ func TestDockServiceToggleAndMiniBarSettingsWiring(t *testing.T) {
 		t.Fatalf("PreloadScript missing DockService.Toggle")
 	}
 
-	// 1. DockService.Toggle toggles and sets explicit expanded state.
+	// 1. DockService.Toggle toggles and sets explicit expanded state, and
+	// DockService.Resize(expanded=false) broadcasts dock:toggle { expanded: false }
+	// so the standalone Mini-Bar stays in sync when the Panel collapses via Esc/blur.
 	res, err := a.DockSvc.Toggle(nil)
 	if err != nil || !res.Expanded {
 		t.Fatalf("DockSvc.Toggle(nil) = (%+v, %v), want expanded=true", res, err)
+	}
+	if err := a.DockSvc.Resize(dock.Geometry{Width: dock.PanelWidth, Height: dock.PanelHeight, Expanded: false}); err != nil {
+		t.Fatalf("DockSvc.Resize(expanded=false): %v", err)
+	}
+	sink.mu.Lock()
+	gotToggles := append([]DockToggleEvent(nil), sink.toggles...)
+	sink.mu.Unlock()
+	if len(gotToggles) != 2 || gotToggles[0].Expanded == nil || !*gotToggles[0].Expanded ||
+		gotToggles[1].Expanded == nil || *gotToggles[1].Expanded {
+		t.Fatalf("dock:toggle events after Toggle+Resize(false) = %+v, want [true, false]", gotToggles)
+	}
+	expand := true
+	res, err = a.DockSvc.Toggle(&DockToggleInput{Expanded: &expand})
+	if err != nil || !res.Expanded {
+		t.Fatalf("DockSvc.Toggle(true) = (%+v, %v), want expanded=true", res, err)
 	}
 	collapse := false
 	res, err = a.DockSvc.Toggle(&DockToggleInput{Expanded: &collapse})

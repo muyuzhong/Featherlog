@@ -329,9 +329,10 @@ type Controller struct {
 	barY                  *int
 	externalBarActive     bool
 	miniVisible           bool
-	miniApplied           bool
 	lastMiniBounds        Rect
-	miniApplyGen          uint64
+	miniWinApplied        bool
+	miniWinVisible        bool
+	miniWinBounds         Rect
 	miniProgrammaticDepth int
 	onMiniBarMoved        func(x, y int)
 	moveDebounceGen       uint64
@@ -541,8 +542,10 @@ func (c *Controller) Attach(win Window) Rect {
 func (c *Controller) AttachMiniBar(win Window) Rect {
 	c.mu.Lock()
 	c.miniWin = win
-	c.miniApplied = false
 	c.miniVisible = false
+	c.miniWinApplied = false
+	c.miniWinVisible = false
+	c.miniWinBounds = Rect{}
 	c.mu.Unlock()
 
 	if mv, ok := win.(MovableWindow); ok {
@@ -612,6 +615,7 @@ func (c *Controller) Resize(geom Geometry) Rect {
 		w := defaultIfNonPositive(geom.Width, c.width)
 		h := defaultIfNonPositive(geom.Height, c.height)
 		cur := c.lastBounds
+		cb := c.onToggle
 		listeners := c.snapshotExpandedListenersLocked()
 		c.mu.Unlock()
 
@@ -627,6 +631,9 @@ func (c *Controller) Resize(geom Geometry) Rect {
 		c.mu.Unlock()
 
 		if wasExpanded {
+			if cb != nil {
+				cb(false)
+			}
 			for _, fn := range listeners {
 				fn(false)
 			}
@@ -817,7 +824,6 @@ func (c *Controller) Close() {
 		c.moveDebounceStop = nil
 	}
 	c.moveDebounceGen++
-	c.miniApplyGen++
 	acc := c.registeredShortcut
 	c.registeredShortcut = ""
 	cleanups := c.cleanups
@@ -905,60 +911,84 @@ func (c *Controller) syncMiniBar() Rect {
 		return last
 	}
 	miniWin := c.miniWin
-	wasVisible := c.miniVisible
-	needBounds := !c.miniApplied || target != c.lastMiniBounds
 	c.miniVisible = shouldShow
 	c.lastMiniBounds = target
-	c.miniApplied = true
-	c.miniApplyGen++
-	gen := c.miniApplyGen
+
+	var needsDispatch bool
+	if shouldShow {
+		needsDispatch = !c.miniWinVisible || !c.miniWinApplied || c.miniWinBounds != target
+	} else {
+		needsDispatch = c.miniWinVisible
+	}
 	c.mu.Unlock()
 
-	if miniWin == nil || miniWin.IsDestroyed() {
+	if miniWin == nil || miniWin.IsDestroyed() || !needsDispatch {
 		return target
 	}
 
-	if shouldShow {
-		if needBounds || !wasVisible {
-			miniWin.RunOnMain(func() {
-				if miniWin.IsDestroyed() {
-					return
-				}
-				c.mu.Lock()
-				if c.closed || c.miniWin != miniWin || gen != c.miniApplyGen {
-					c.mu.Unlock()
-					return
-				}
-				c.miniProgrammaticDepth++
-				c.mu.Unlock()
-
-				if needBounds || !wasVisible {
-					miniWin.SetBounds(target)
-				}
-
-				c.mu.Lock()
-				c.miniProgrammaticDepth--
-				c.mu.Unlock()
-
-				if !wasVisible {
-					miniWin.ShowInactive()
-				}
-			})
+	miniWin.RunOnMain(func() {
+		if miniWin.IsDestroyed() {
+			return
 		}
-	} else if wasVisible {
-		miniWin.RunOnMain(func() {
-			if miniWin.IsDestroyed() {
-				return
-			}
-			c.mu.Lock()
-			if c.closed || c.miniWin != miniWin || gen != c.miniApplyGen {
+		c.mu.Lock()
+		if c.closed || c.miniWin != miniWin {
+			c.mu.Unlock()
+			return
+		}
+		desiredShow := c.miniVisible
+		desiredBounds := c.lastMiniBounds
+		actualShow := c.miniWinVisible
+		actualApplied := c.miniWinApplied
+		actualBounds := c.miniWinBounds
+
+		if !desiredShow {
+			if !actualShow {
 				c.mu.Unlock()
 				return
 			}
+			c.miniWinVisible = false
 			c.mu.Unlock()
 			miniWin.Hide()
-		})
-	}
+			return
+		}
+
+		needBounds := !actualApplied || actualBounds != desiredBounds
+		needShow := !actualShow
+		if !needBounds && !needShow {
+			c.mu.Unlock()
+			return
+		}
+		if needBounds {
+			c.miniProgrammaticDepth++
+		}
+		c.mu.Unlock()
+
+		if needBounds {
+			miniWin.SetBounds(desiredBounds)
+		}
+
+		c.mu.Lock()
+		if needBounds {
+			c.miniProgrammaticDepth--
+		}
+		stillActive := !c.closed && c.miniWin == miniWin
+		shouldShowNow := false
+		if stillActive {
+			if needBounds {
+				c.miniWinApplied = true
+				c.miniWinBounds = desiredBounds
+			}
+			if needShow && c.miniVisible {
+				c.miniWinVisible = true
+				shouldShowNow = true
+			}
+		}
+		c.mu.Unlock()
+
+		if shouldShowNow && !miniWin.IsDestroyed() {
+			miniWin.ShowInactive()
+		}
+	})
 
 	return target
 }
@@ -1011,6 +1041,8 @@ func (c *Controller) flushMiniBarMove(gen uint64) {
 	x, y := c.pendingMoveX, c.pendingMoveY
 	c.lastMiniBounds.X = x
 	c.lastMiniBounds.Y = y
+	c.miniWinBounds.X = x
+	c.miniWinBounds.Y = y
 	bx, by := x, y
 	c.barX = &bx
 	c.barY = &by
