@@ -351,8 +351,13 @@ func TestControllerPanelLifecycleHideOnCollapseAndStartHidden(t *testing.T) {
 	if len(expandedChanges) != 2 || expandedChanges[0] != true || expandedChanges[1] != false {
 		t.Fatalf("expandedChanges = %v, want [true false]", expandedChanges)
 	}
-	if len(toggleEvents) != 1 || toggleEvents[0] != true {
-		t.Fatalf("toggleEvents = %v, want [true]", toggleEvents)
+	if len(toggleEvents) != 2 || toggleEvents[0] != true || toggleEvents[1] != false {
+		t.Fatalf("toggleEvents = %v, want [true false]", toggleEvents)
+	}
+	// Duplicate Resize(expanded=false) while already collapsed must not emit another toggle event.
+	ctrl.Resize(Geometry{Width: 880, Height: 520, Expanded: false})
+	if len(toggleEvents) != 2 {
+		t.Fatalf("duplicate collapse emitted extra toggleEvent: %v", toggleEvents)
 	}
 
 	// Theme update updates solid native window background color.
@@ -768,4 +773,119 @@ func TestControllerMiniBarLifecycleThemeAndDebouncedMove(t *testing.T) {
 	if miniWin.hidden != 2 {
 		t.Fatalf("expected Hide=2, got %d", miniWin.hidden)
 	}
+}
+
+type deferredWindow struct {
+	fakeWindow
+	queue []func()
+}
+
+func (d *deferredWindow) RunOnMain(fn func()) {
+	d.mainRuns++
+	d.queue = append(d.queue, fn)
+}
+
+func (d *deferredWindow) drainMain() {
+	for len(d.queue) > 0 {
+		fn := d.queue[0]
+		d.queue = d.queue[1:]
+		fn()
+	}
+}
+
+func TestControllerMiniBarAsyncRunOnMainConvergence(t *testing.T) {
+	primary := Display{
+		ID:       1,
+		Bounds:   Rect{X: 0, Y: 0, Width: 1920, Height: 1080},
+		WorkArea: Rect{X: 0, Y: 0, Width: 1920, Height: 1032},
+		Primary:  true,
+	}
+	screen := &fakeScreen{display: primary}
+
+	t.Run("a_noop_sync_does_not_drop_pending_show_or_hide", func(t *testing.T) {
+		ctrl := NewController(Config{
+			Screen:            screen,
+			Layer:             &fakeLayerShell{available: false},
+			StartHidden:       true,
+			PlatformOS:        "windows",
+			KDESession:        boolPtr(false),
+			PlasmoidInstalled: boolPtr(false),
+			InitialBarMode:    "auto",
+		})
+		defer ctrl.Close()
+
+		miniWin := &deferredWindow{}
+		// AttachMiniBar queues ShowInactive + SetBounds without running them yet.
+		ctrl.AttachMiniBar(miniWin)
+		// Follow immediately with no-op syncMiniBar calls before main thread runs.
+		ctrl.SetExternalBarActive(false)
+		ctrl.SetBarPrefs("auto", nil, nil)
+
+		miniWin.drainMain()
+		wantDefault := ComputeMiniBarBounds(primary, nil, nil)
+		if miniWin.shownInactive != 1 || miniWin.hidden != 0 || miniWin.bounds != wantDefault {
+			t.Fatalf("after show+noop drain: shownInactive=%d hidden=%d bounds=%+v, want 1/0/%+v",
+				miniWin.shownInactive, miniWin.hidden, miniWin.bounds, wantDefault)
+		}
+
+		// Queue Hide, then follow with a no-op SetExternalBarActive(true) before drain.
+		ctrl.SetExternalBarActive(true)
+		ctrl.SetExternalBarActive(true)
+		miniWin.drainMain()
+		if miniWin.hidden != 1 {
+			t.Fatalf("after hide+noop drain: hidden=%d, want 1", miniWin.hidden)
+		}
+	})
+
+	t.Run("b_rapid_show_bounds_update_before_drain_still_shows_at_latest_bounds", func(t *testing.T) {
+		ctrl := NewController(Config{
+			Screen:            screen,
+			Layer:             &fakeLayerShell{available: false},
+			StartHidden:       true,
+			PlatformOS:        "windows",
+			KDESession:        boolPtr(false),
+			PlasmoidInstalled: boolPtr(false),
+			InitialBarMode:    "tray-only",
+		})
+		defer ctrl.Close()
+
+		miniWin := &deferredWindow{}
+		ctrl.AttachMiniBar(miniWin)
+		miniWin.drainMain()
+		if miniWin.shownInactive != 0 {
+			t.Fatalf("expected hidden initially in tray-only")
+		}
+
+		// hidden -> show(B1) immediately followed by show(B2) before main thread runs.
+		ctrl.SetBarPrefs("standalone", intPtr(400), intPtr(900))
+		ctrl.SetBarPrefs("standalone", intPtr(1200), intPtr(1036))
+
+		miniWin.drainMain()
+		wantB2 := Rect{X: 1200, Y: 1036, Width: MiniBarWidth, Height: MiniBarHeight}
+		if miniWin.shownInactive != 1 || miniWin.bounds != wantB2 {
+			t.Fatalf("after show(B1)+show(B2) drain: shownInactive=%d bounds=%+v, want 1/%+v",
+				miniWin.shownInactive, miniWin.bounds, wantB2)
+		}
+	})
+
+	t.Run("c_show_canceled_by_hide_before_drain_never_flashes", func(t *testing.T) {
+		ctrl := NewController(Config{
+			Screen:            screen,
+			Layer:             &fakeLayerShell{available: false},
+			StartHidden:       true,
+			PlatformOS:        "windows",
+			KDESession:        boolPtr(false),
+			PlasmoidInstalled: boolPtr(false),
+			InitialBarMode:    "auto",
+		})
+		defer ctrl.Close()
+
+		miniWin := &deferredWindow{}
+		ctrl.AttachMiniBar(miniWin)
+		ctrl.SetBarPrefs("tray-only", nil, nil)
+		miniWin.drainMain()
+		if miniWin.shownInactive != 0 || miniWin.hidden != 0 {
+			t.Fatalf("canceled show flashed window: shownInactive=%d hidden=%d", miniWin.shownInactive, miniWin.hidden)
+		}
+	})
 }
