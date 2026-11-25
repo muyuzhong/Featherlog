@@ -1,211 +1,111 @@
-<div align="center">
+# 羽记 · Featherlog v2
 
-<img src="packages/shell/resources/icon.png" width="128" alt="羽记图标：写着「羽」字的卷轴" />
+**KDE Plasma 6 底部 Dock 并发状态条 + 不透明弹出工作台面板 + 轻量待办与随笔 + 终端 / AI Agent CLI Hooks。**
 
-# 羽记 · Featherlog
+羽记 v2 基于 [`github.com/egoist/mygo`](https://github.com/egoist/mygo) 重构为单文件原生 Go 桌面常驻宿主与 KDE Plasma 6 原生底部 Dock 插件，告别臃肿的 Electron 运行时与复杂游戏化系统，专注解决**多线程工作 / 多开 AI 编程任务时频繁切换、切回来断片**的问题。
 
-**把日子过成一场冒险。**<br/>
-一本羊皮纸任务日志，收在桌面边上的一只小卷轴里。
+---
 
-[![版本](https://img.shields.io/github/v/release/muyuzhong/Featherlog?label=%E7%89%88%E6%9C%AC&color=8a2b1d&labelColor=2a1c11)](https://github.com/muyuzhong/Featherlog/releases/latest)
-[![CI](https://img.shields.io/github/actions/workflow/status/muyuzhong/Featherlog/ci.yml?branch=main&label=CI&labelColor=2a1c11)](https://github.com/muyuzhong/Featherlog/actions/workflows/ci.yml)
-[![平台](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-5b4430?labelColor=2a1c11)](#下载安装)
-[![许可证](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-5b4430?labelColor=2a1c11)](LICENSE)
+## 核心特性
 
-[下载](https://github.com/muyuzhong/Featherlog/releases/latest) · [设计文档](docs/design.md) · [写一个插件](examples/flashcards/README.md) · [参与开发](#开发)
+### 1. KDE Plasma 6 底部 Dock 插件 + 弹出工作台面板
+- **原生常驻 Dock 状态条**：Plasma 6 小组件（`plasmoid/io.github.muyuzhong.featherlog/`）直接嵌在底部 Dock 中，经本机环回 HTTP 长轮询 API（`127.0.0.1:39173`，开发模式 `39174`）实时呈现活跃并发槽位、今日任务进度与面板开关；滚轮切换焦点、单击未聚焦槽位即刻切焦点、单击焦点槽位或箭头弹出工作台。
+- **不透明 `880×520` 弹出工作台（`featherlog-panel`）**：宿主默认后台常驻并隐藏弹出窗口（传入 `--show` 可启动即显示），按全局快捷键（`Alt+Shift+Space` / `CmdOrCtrl+Shift+Space`）或点击 Dock 插件时立即在底部 Dock 正上方 `10px` 弹出并聚焦；按 `Esc`、点收起 `⌄` 或未钉住失焦时仅隐藏窗口而不退出宿主进程。
+- **零彩色发光灯设计**：绝不使用红/黄/绿亮灯，纯靠实体文具质感与单色层次清晰区分并发三态：
+  - **`focus`（专注中，全局至多 1 个）**：高对比度浮起卡片与深墨主标题，聚焦你此刻手头正在推进的一件事。
+  - **`running`（后台推进中）**：低对比度哑光次级卡片，右侧等宽数字（`tabular-nums`）静默计时，可一键设回看提醒（`+10m` / `+20m` / `+45m`）。
+  - **`ready`（待看）**：后台跑完或到点提醒后，右侧出现克制醒目的单色反白小签条 `待看`，低头 0.3 秒定位。
+- **一句话断点备忘（Breadcrumb）**：每张卡片原位记录「下一步干嘛 / 等什么结果」，回车或失焦即存，悬停 KDE Dock 即可预览，切回来零恢复成本。
+- **双中性主题**：Warm Stone（`#F6F5F2` 温润纸石浅色）与 Graphite Ink（`#131416` 石墨暗色），不透明窗口底色与主题同步，支持 `Ctrl+P` 钉住面板（Pin）。
 
-<br/>
+### 2. 精简待办 + 随笔手记
+- **扁平待办清单**：不再区分「主线 / 支线」等级，所有任务平级统一管理；每条任务均可按需附带自由子步骤（任意顺序勾选、无顺序锁）、可选配额计数（`×N` 内联 `+1` / `-1`）与可选每日/每周重置（`dayStartHour` 跨周期自动重置与睡眠恢复），一键将任意任务推上并发工作槽。
+- **随笔与手记**：无弹窗原位落笔，支持全文检索与任务关联；删除任务时其手记自动转为独立随笔，绝不丢字。
 
-<a href="docs/images/promo.mp4"><img src="docs/images/promo.webp" alt="四十秒的演示：悬停卷轴展开便签，落笔完成一个目标、翎在页边回一句；翻开任务日志，了结一件事盖下朱印「功成」；对翎说一句话起草新任务；角色页；在卷轴上背一题八股" /></a>
-
-<sub>四十秒看一遍羽记 · <a href="docs/images/promo.mp4">高清视频</a></sub>
-
-</div>
-
-<br/>
-
-## 不是待办清单，是任务
-
-待办清单只会越列越长。羽记借用了游戏里"任务"的样子：同一时间只追踪一件事，眼前只摆着**下一步**。
-
-<img src="docs/images/journal.webp" alt="任务日志：左页是任务索引，右页是正在追踪的主线「内存之王」和它的手记" />
-
-- **主线**：一条任务线，分成若干章，每章若干目标，**按顺序一个个解锁**。还没走到的部分藏在"尚未揭晓"后面。整条线和每一章都可以有自己的限期。
-- **支线**：一件单独的事，可以拆几步，也可以就是一件事。
-- **每日委托**：每天（或每周几）重来一次的习惯，可以设配额，比如"背十张卡片"。断了不罚，接着来就是。
-- **追踪**：给一个任务盖上火漆，它的当前目标就会出现在卷轴里。
-- **手感**：下一个目标像墨水洇开一样浮现；一章写完钟声响起，一个任务完成时盖下朱印「功成」。落笔、翻页、盖火漆都有声音，在设置里可以调小或关掉。
-
-每个任务都有一个**真实目标**（"背完 Redis 八股"），也可以起一个**任务名**（"内存之王"）、写几句**简报**，再挑一两项它锻炼的**属性**。
-
-<table>
-  <tr>
-    <td width="36%" valign="top">
-      <img src="docs/images/dock.webp" alt="浮动的卷轴，悬停时展开便签：正在追踪的任务、今日委托、翎的一句批注和「对翎说」输入行" />
-      <p align="center"><b>浮动的卷轴</b><br/><sub>置顶在屏幕边上，拖到哪里都行。<br/>悬停时朝屏幕中间展开便签，<br/>点一下翻开日志。</sub></p>
-    </td>
-    <td width="64%" valign="top">
-      <img src="docs/images/editor.webp" alt="在日志右页修订主线任务：真实目标、属性、任务名、简报，以及每章的限期和目标" />
-      <p align="center"><b>在日志里落笔</b><br/><sub>新建和修订都在右页进行，排版就是它将来被读到的样子。<br/>回车起新目标，修订不丢进度。</sub></p>
-    </td>
-  </tr>
-</table>
-
-## 翎：替你执笔的书记官
-
-翎是住在这本日志里的老书记官，话少、干脆，带一点冷幽默。你落笔，它在页边回一句；你卡住了，它出个主意；一条主线走完，它替你写下尾声。它的字用偏蓝的墨色，和你自己的字一眼就能分开。
-
-- **一句话立项**：在便签上"对翎说"一句"这个月把 Redis 八股背完"，它起草一份分好章节的任务，摆在编辑稿纸上让你改。**翎只提议，落笔的永远是你。**
-- **即时回应**：完成目标、写完一章、了结一个任务时，页边多一句批注，一笔一笔写出来。话多话少可以调，夜里不主动开口。
-- **今日先做与今日战报**：每天第一次打开时建议先做哪三件事；到了晚上，写一页今天的战报。
-- **卡住了**：一个目标五天没动静，它提议拆成几步更小的。
-- **尾声**：任务完成后，尾声留在「功成」下方；一条主线完成时，翎还会为它题一个称号。
-
-<img src="docs/images/scribe.webp" alt="翎的札记：左页是翎的状态与今日先做的三件事，右页是今日战报与往日战报" />
-
-**模型由你自己配置**，不预设任何服务商：选 OpenAI 兼容接口或 Anthropic Messages API，填上地址、模型名和密钥即可；本地模型也行（`localhost` 允许 `http://`）。札记页里可以"试一试"连接，并查看本月用了多少 token。
-
-> [!IMPORTANT]
-> 翎**默认关闭**。第一次启用时，它会先说清楚哪些内容会发给你配置的接口：任务的标题、目标、简报和最近的进展。随笔永远不发；手记只有在你打开"让翎读我的手记"之后才发。翎只访问你填的那个地址，它说过的话只存在本机。
->
-> 密钥交给系统的密钥库加密保存（macOS 钥匙串、Windows DPAPI、Linux 上的 KWallet 或 GNOME 钥匙环），不进设置文件。Linux 上找不到密钥库时，羽记拒绝保存，而不是退回明文。
-
-## 角色：做完的事，变成一个人的样子
-
-四项属性：**学识**、**体魄**、**心性**、**技艺**。完成目标、章节、任务和每日委托，都会在任务挂的属性上攒下历练，一路从「初涉」走到「入门」「小成」「精熟」「大成」，直至「化境」。
-
-- **称号**：固定的成就（初落笔、卷终、晨钟不辍……），没得到的也写着条件，像一面成就墙；翎为每条完成的主线题的称号也收在这里。挑一个佩戴在名字上。
-- **编年**：按月记下完成的每个任务、每一章、每次境界提升和每个称号，写下就不再改。
-- **没有金币，没有商店**：历练只增不减，也不能花；撤回一个目标不扣，再完成一次也不会多给。完成目标时不飘"+10"，成长按天、按周在这一页上看。
-
-<img src="docs/images/character.webp" alt="角色页：左页是佩戴的称号、四项属性的境界与称号墙，右页是按月记录的编年" />
-
-## 手记与随笔
-
-- **手记**挂在任务上：在任务页上记下这一步做了什么、学到了什么。任务完成后手记还在；任务删了，手记变成随笔，不会跟着丢。
-- **随笔**不属于任何任务，有自己的一本，可以翻找，也可以连同手记一起看。
-- 卷轴上有一支笔，悬停就能随手记一笔，记作随笔或记到正在追踪的任务上。
-
-## 八股：一个可选插件
-
-<table>
-  <tr>
-    <td width="44%" valign="top">
-      <img src="docs/images/flashcards.webp" alt="卷轴旁翻开的八股卡片：问题、答案，以及「忘了 / 模糊 / 记得」三个按钮" />
-    </td>
-    <td width="56%" valign="top">
-      <p>背八股的小卡片，正好填进写代码时等 AI 输出、等编译的空档。</p>
-      <ul>
-        <li>鼠标移到卷轴上的图标翻一题，按<b>忘了 / 模糊 / 记得</b>安排下次复习，间隔从 10 分钟到 60 天。</li>
-        <li>题库在面板的"八股"页里录入，也能批量粘贴或导入 Markdown：<code>##</code> 标题是问题，下面是答案，<code>#</code> 标题是题组。</li>
-        <li>默认不启用。在设置的"插件"一节勾选后立即出现；取消勾选就卸下，题库和复习记录都留着。</li>
-      </ul>
-      <p>它也是编写插件的示例，见 <a href="examples/flashcards/README.md">examples/flashcards</a>。</p>
-    </td>
-  </tr>
-</table>
-
-## 下载安装
-
-从 [**Releases**](https://github.com/muyuzhong/Featherlog/releases/latest) 下载对应的安装包：
-
-| 系统 | 安装包 | 自动更新 |
-|---|---|---|
-| **Linux** x64 | `Featherlog-<版本>-x86_64.AppImage`，加上执行权限后直接运行 | ✅ 后台下载，退出时安装 |
-| **Windows** x64 | `Featherlog-<版本>-x64.exe`，按用户安装，不需要管理员权限 | ✅ 后台下载，退出时安装 |
-| **macOS** | Apple 芯片选 `arm64`，Intel 选 `x64`（`.dmg`） | 有新版本时提示前往下载 |
-| **Arch Linux** | 仓库里的 PKGBUILD，见下方 | 跟着包管理器更新 |
-
-**AppImage 的 FUSE 依赖**：若运行时报 `libfuse.so.2` 缺失，只有 FUSE 3 还不够；Arch Linux 可安装兼容库 `sudo pacman -S fuse2`，保留现有 FUSE 3。也可以执行 `./Featherlog-<版本>-x86_64.AppImage --appimage-extract-and-run`，或使用下方无需 FUSE 的 PKGBUILD。其他发行版见 [AppImage 官方 FUSE 排错说明](https://docs.appimage.org/user-guide/troubleshooting/fuse.html)。
-
-**Arch Linux**：AUR 目前暂停了新账号注册，上架之前可以直接用仓库里的 PKGBUILD 构建安装。它从 Release 下载同一个 AppImage 并校验，装到 `/opt/featherlog`，不需要 FUSE。每次发版后 PKGBUILD 会随之更新：
+### 3. 本地 Unix Socket CLI（AI Agent / 终端 Hooks）
+同一个 `featherlog` 二进制既是桌面客户端，也是终端命令行工具。它通过本机 `<userData>/featherlog.sock`（`0600` 权限）与桌面端实时同步，未运行桌面端时亦可安全直连本地存储：
 
 ```sh
-git clone https://github.com/muyuzhong/Featherlog
-cd Featherlog/packaging/aur/featherlog-bin
-makepkg -si          # 以后更新：git pull，再 makepkg -si
+# 后台启动桌面宿主与 127.0.0.1:39173 环回 API（若已在运行，则切换面板显隐）
+featherlog
+
+# 启动并立即弹出 880×520 工作台面板（可用 --http-port 覆盖环回端口）
+featherlog --show
+
+# 查看当前所有并发槽位（支持 --json）
+featherlog status
+featherlog status --json
+
+# 聚焦当前工作（原有 focus 槽位自动降级为 running）
+featherlog focus "实现 OAuth 回调" --tag "Backend" --note "先补 token 刷新单测"
+
+# 挂起后台任务并设置 15 分钟回看提醒
+featherlog run "Claude 重构前端" --tag "Featherlog" --remind 15m --note "等 vitest 全绿"
+
+# AI / CI 跑完后通知桌面卡槽与 KDE Dock 切为「待看」
+featherlog ready "前端" --note "构建通过，等待核对视觉细节"
+
+# 结束并移出槽位（加 --complete-task 可一并完成关联任务）
+featherlog done "OAuth"
+
+# 随手记一条随笔
+featherlog note "KDE Wayland 下通过 KWin Script 精准锚定在底部 Dock 上方 10px"
 ```
 
-> [!NOTE]
-> 目前的安装包**没有代码签名**。Windows 首次运行可能出现 SmartScreen 提示，点"更多信息 → 仍要运行"；macOS 需要在"应用程序"里右键选择"打开"。
+### 4. Linux Wayland 与 KDE Plasma 6 原生支持
+- **不透明原生 Wayland 渲染**：弹出面板固定采用 `Transparent: false` + 主题纯色背景，避免 Intel+NVIDIA 双显卡下 WebKitGTK 透明窗口局部脏区重绘问题，无需强制 `GDK_BACKEND=x11`。
+- **双层 Wayland 定位策略（零 CGO）**：
+  - 安装了 `libgtk-layer-shell.so.0` 时通过 `purego` 动态加载，使用 `wlr-layer-shell` 底边居中锚定。
+  - 在 KDE Plasma 6 Wayland 缺失 `libgtk-layer-shell.so.0` 时，自动加载 KWin Scripting 定位脚本（`<userData>/kwin/featherlog-panel.js`，经 `qdbus6` / `qdbus` / `gdbus` 管理），将 `"featherlog-panel"` 保持置顶、全桌面可见、禁止平铺，并始终置于底部 Dock 上方 `10px` 水平居中，退出时自动卸载。
+- **本机环回 HTTP API（`internal/barhttp`）**：仅绑定 `127.0.0.1`（默认生产 `39173`、开发/自定义 `--data-dir` `39174`，可通过 `--http-port` 或 `FEATHERLOG_HTTP_PORT` 覆盖），支持 `/api/bar` 长轮询、`/api/panel/toggle`、`/api/slot/{focus,cycle,state,done}`，并将活跃地址原子写入 `<userData>/bar-http.url`。
 
-**隐私**：羽记不需要账号，日志、笔记和角色都存在本机。会联网的只有两处：检查更新，只访问 GitHub，不带任何标识，也不做统计，在设置里可以关掉自动检查；以及你启用并配置之后的翎，只访问你填的接口。
+---
 
-<details>
-<summary><b>桌面环境说明</b></summary>
+## 快速构建与安装
 
-<br/>
+需要 Go `1.24+`（推荐 Go `1.27`）与 Node `22+` / `pnpm`。
 
-- **KDE Plasma（Wayland）**：通过一个很小的 KWin 脚本让卷轴置顶，不需要额外设置。
-- **其他 Wayland 桌面**：卷轴可能无法置顶，可以在设置里打开"兼容模式"（改走 XWayland）后重启。混合缩放的多块屏上，兼容模式下可能发糊。
-- **Windows、macOS、X11**：直接置顶，并记住卷轴的位置。
-
-</details>
-
-## 开发
-
-需要 Node 22+ 和 pnpm（版本见 `package.json` 的 `packageManager`）。
+### 生产构建（单文件二进制，内嵌 `frontend/dist`）
 
 ```sh
-pnpm install
-pnpm dev          # 浏览器演示台 http://127.0.0.1:5173：真实的内核与插件，不需要 Electron
-pnpm app          # 启动 Electron 应用
-pnpm typecheck
-pnpm test
+# 1. 构建前端产物到 frontend/dist
+cd frontend && pnpm install && pnpm build && cd ..
+
+# 2. 编译单文件二进制（零 CGO，自动 embed frontend/dist）
+CGO_ENABLED=0 go build -o featherlog .
+
+# 3. （KDE Plasma 6）安装/升级底部 Dock 小组件
+./scripts/install-plasmoid.sh
 ```
 
-演示台（`packages/playground`）在浏览器里运行真实的内核、全部插件和界面，由一个模拟的外壳代替 Electron 主进程，翎换成一个不联网的替身。工具栏可以切换纸张、把卷轴挪到另一侧、跳到第二天、切换翎是否可用、模拟各种更新结果，还能查看总线上的每一条消息。README 顶部的宣传片也是从演示台录的，界面改了就用 `pnpm --filter @featherlog/playground promo` 重录，见 [packages/playground/promo](packages/playground/promo/README.md)。
+### 开发模式（Vite HMR 热更新）
 
-### 一切皆插件
+```sh
+# 终端 1：启动前端开发服务器（默认 http://localhost:5173）
+cd frontend && pnpm dev
 
-内核很小，只负责送信；任务日志、翎、笔记、角色、八股，全都是通过总线收发纯 JSON 消息的插件。插件之间、插件与外壳之间从不互相 import，唯一的接口是 [`packages/contracts`](packages/contracts) 里的类型契约。
+# 终端 2：启动 MyGo 桌面宿主连接 dev server（数据隔离在 Featherlog-dev，环回 API 默认 127.0.0.1:39174）
+go run -tags noembed . --dev --show
+```
 
-<img src="docs/images/architecture.webp" alt="架构：主进程里的外壳和各插件、渲染进程里的两个窗口，都只通过中间的内核（总线）互相通信" />
+### 运行测试
 
-| 目录 | 内容 |
-|---|---|
-| [`packages/contracts`](packages/contracts) | 消息、插件、preload 的类型契约，各方共同的接口 |
-| [`packages/kernel`](packages/kernel) | 总线与插件生命周期，没有运行时依赖，Node 和浏览器都能跑 |
-| [`packages/shell`](packages/shell) | Electron 外壳：主进程、preload、渲染层的窗口与主题 |
-| [`plugins/quest`](plugins/quest) | 任务：主线、支线、每日委托，日志与便签 |
-| [`plugins/scribe`](plugins/scribe) | 翎：两种接口的适配器、回应、战报与尾声，札记页 |
-| [`plugins/notes`](plugins/notes) | 手记与随笔 |
-| [`plugins/character`](plugins/character) | 角色：历练、境界、称号与编年 |
-| [`examples/flashcards`](examples/flashcards) | 八股：可选插件，也是编写插件的示例 |
-| [`packages/playground`](packages/playground) | 浏览器演示台 |
+```sh
+# Go 领域层 + 宿主层单元测试（含竞态检测）
+go test -race ./internal/...
 
-每个插件都是一个工作区包：`manifest.json` 声明它收发哪些消息、往哪些插槽（卷轴图标、面板标签页、设置小节）里放东西；`src/main/` 在主进程里管数据和规则，`src/ui/` 在每个窗口里画界面。想写自己的插件，照着 [examples/flashcards](examples/flashcards/README.md) 抄一份最快，它的 README 逐项讲了清单字段、`ctx.storage` / `ctx.settings` / `ctx.clock` 的用法、怎样请求别的插件并在它不在时降级，以及怎样写测试。目前只支持仓库内置的插件，新插件在外壳的两个组合根里登记。
+# 含 main 包 CLI 测试（已构建 frontend/dist 时无需 -tags noembed）
+go test -race -tags noembed ./...
 
-完整设计见 [docs/design.md](docs/design.md)：总线语义、插件生命周期、任务模型的每条规则、各平台的浮窗实现、翎、笔记、角色与可选插件，以及发布与更新。
+# 前端类型检查与单测
+cd frontend && pnpm typecheck && pnpm test
+```
 
-### 协作方式
+---
 
-这个项目由两个 AI 分工协作完成：**Claude** 负责方案设计、契约和全部前端，并审查 PR；**Codex** 负责内核、插件的主进程部分和 Electron 主进程。规则写在 [AGENTS.md](AGENTS.md)：契约只加不改，每条设计规则都要有测试，每个 PR 只做一件事。
+## 架构文档
 
-<details>
-<summary><b>发布新版本（维护者）</b></summary>
-
-<br/>
-
-发版的决定就是合并一个修改 `packages/shell/package.json` 中 `version` 的 PR，之后全部由 CI 完成：
-
-1. 推送到 `main` 后，CI 发现 `v<版本号>` 标签还不存在，就打上标签，准备一个**草稿** Release。
-2. 在 Linux、Windows、macOS 上测试、构建，并把安装包上传到草稿。
-3. 在 Linux 上实际启动打出的 AppImage，等内核和全部插件加载完再退出（冒烟测试）。
-4. 安装包、blockmap 和 `latest*.yml` 齐全、冒烟通过后，自动正式发布并设为 latest；发布说明按上一个正式版本以来合并的 PR 生成。
-5. 发布后，CI 开一个 PR 更新 `packaging/aur/featherlog-bin` 的 PKGBUILD 与 `.SRCINFO`。
-
-任何一步失败都停在草稿，不会发布残缺的版本；修好后用新的补丁版本号重发，不复用失败的标签。已安装的客户端只会看到正式发布的版本，草稿和预发布版都不会触发更新。手动推送 `v*` 标签也仍然可以触发发版。
-
-本地打包：`pnpm --filter @featherlog/shell package:app`，产物在 `packages/shell/dist`。
-
-</details>
-
-## 致谢
-
-- 字体：[马善政毛笔楷书](https://fonts.google.com/specimen/Ma+Shan+Zheng)（标题）与 [小赖字体](https://github.com/lxgw/kose-font)（正文），均为 SIL Open Font License。
-- 图标：[Lucide](https://lucide.dev)（ISC License），加粗成墨迹。
-- 构建在 [Electron](https://www.electronjs.org)、[React](https://react.dev) 与 [Motion](https://motion.dev) 之上。
+完整架构、领域不变量、RPC 契约与平台适配细节见 [`docs/design.md`](docs/design.md)，协作与开发规范见 [`AGENTS.md`](AGENTS.md)。
 
 ## 许可证
 

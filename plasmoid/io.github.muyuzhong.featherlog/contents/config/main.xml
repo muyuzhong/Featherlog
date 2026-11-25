@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0
+      http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+    <kcfgfile name=""/>
+
+    <group name="General">
+        <entry name="apiPort" type="Int">
+            <label>Local HTTP API port (0 or 39173 automatically probes dev port 39174 as fallback).</label>
+            <default>39173</default>
+        </entry>
+        <entry name="maxVisibleSlots" type="Int">
+            <label>Maximum number of concurrent work slots shown inline in the panel.</label>
+            <default>3</default>
+        </entry>
+        <entry name="showTodayCount" type="Bool">
+            <label>Show today's task completion tally beside the work slots.</label>
+            <default>true</default>
+        </entry>
+        <entry name="featherlogCommand" type="String">
+            <label>Command used to launch the Featherlog daemon when offline.</label>
+            <default>featherlog</default>
+        </entry>
+    </group>
+</kcfg>

@@ -2,6 +2,6 @@
 
 ## Claude 的角色
 
-Claude 负责方案设计、`packages/contracts`、全部前端（`packages/shell/src/renderer/`、`plugins/*/src/ui/`），以及审查 Codex 提交的 PR。后端由 Codex 实现。
+Claude 负责 `frontend/` 目录下的全新 Web 前端（React + TypeScript + Vite）与视觉交互实现；Go 宿主、领域服务、存储、底部停靠与 CLI 由 Go 后端团队负责。
 
-审查 PR 时重点检查：是否符合契约和 `docs/design.md`、有没有跨模块 import、测试是否覆盖了设计文档里的边界情况、有没有悄悄修改契约。
+前后端通过 `docs/design.md` 定义的 5 个 `mygo.Bind` 服务与 5 类实时推送事件对齐。

@@ -1,0 +1,7 @@
+# frontend/ is its own pnpm root: the repository's workspace (packages/*,
+# plugins/*, examples/*) belongs to the v1 Electron app and must not pick this
+# package up, nor this package its lockfile.
+packages:
+  - .
+allowBuilds:
+  esbuild: true

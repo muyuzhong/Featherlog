@@ -1,0 +1,20 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "muyuzhong@users.noreply.github.com",
+                "Name": "muyuzhong"
+            }
+        ],
+        "Category": "Utilities",
+        "Description": "并发工作槽状态栏与快速切换",
+        "Icon": "view-list-details",
+        "Id": "io.github.muyuzhong.featherlog",
+        "License": "MIT",
+        "Name": "羽记 Featherlog",
+        "Version": "2.0.0",
+        "Website": "https://github.com/muyuzhong/Featherlog"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

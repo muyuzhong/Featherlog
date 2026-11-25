@@ -1,0 +1,160 @@
+package dock
+
+const (
+	DefaultCollapsedWidth  = 640
+	DefaultCollapsedHeight = 44
+	DefaultExpandedWidth   = 880
+	DefaultExpandedHeight  = 520
+	DefaultBottomInset     = 12
+
+	PanelWindowTitle        = "featherlog-panel"
+	PanelWidth              = DefaultExpandedWidth
+	PanelHeight             = DefaultExpandedHeight
+	PanelBottomInset        = 10
+	StoneBackgroundColor    = "#F6F5F2"
+	GraphiteBackgroundColor = "#131416"
+
+	MinWidth  = 320
+	MaxWidth  = 1280
+	MinHeight = 36
+	MaxHeight = 900
+)
+
+// ThemeBackgroundColor returns the solid opaque window background color for
+// the given Featherlog theme ("stone" or "graphite"). Keeping the window
+// opaque avoids GTK3/WebKitGTK partial dirty-rect rendering bugs on hybrid GPU
+// Wayland setups.
+func ThemeBackgroundColor(theme string) string {
+	if theme == "graphite" {
+		return GraphiteBackgroundColor
+	}
+	return StoneBackgroundColor
+}
+
+// Rect represents a window or display rectangle in DIPs.
+type Rect struct {
+	X      int `json:"x"`
+	Y      int `json:"y"`
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+// Display describes a monitor's physical bounds and usable work area.
+type Display struct {
+	ID       int64
+	Bounds   Rect
+	WorkArea Rect
+	Primary  bool
+}
+
+// Geometry matches the shared frontend DockGeometry contract (§4.1).
+type Geometry struct {
+	Width    int   `json:"width"`
+	Height   int   `json:"height"`
+	Expanded bool  `json:"expanded"`
+	Pinned   *bool `json:"pinned,omitempty"`
+}
+
+// DefaultInitialRect returns the initial collapsed dock rectangle on display.
+func DefaultInitialRect(display Display) Rect {
+	return ComputeBounds(display, DefaultCollapsedWidth, DefaultCollapsedHeight, DefaultBottomInset)
+}
+
+// ComputeBounds computes a horizontally centered, bottom-anchored rectangle
+// clamped strictly inside the display's usable work area. Increasing height
+// keeps the bottom edge fixed so the drawer expands strictly upward.
+func ComputeBounds(display Display, width, height, bottomInset int) Rect {
+	area := usableArea(display)
+	if area.Width <= 0 || area.Height <= 0 {
+		w := clampInt(defaultIfNonPositive(width, DefaultCollapsedWidth), MinWidth, MaxWidth)
+		h := clampInt(defaultIfNonPositive(height, DefaultCollapsedHeight), MinHeight, MaxHeight)
+		return Rect{X: 0, Y: 0, Width: w, Height: h}
+	}
+
+	w := clampInt(defaultIfNonPositive(width, DefaultCollapsedWidth), MinWidth, MaxWidth)
+	if w > area.Width {
+		w = area.Width
+	}
+	if w < 1 {
+		w = 1
+	}
+
+	h := clampInt(defaultIfNonPositive(height, DefaultCollapsedHeight), MinHeight, MaxHeight)
+	if h > area.Height {
+		h = area.Height
+	}
+	if h < 1 {
+		h = 1
+	}
+
+	if bottomInset < 0 {
+		bottomInset = 0
+	}
+	maxInset := area.Height - h
+	if maxInset < 0 {
+		maxInset = 0
+	}
+	effectiveInset := bottomInset
+	if effectiveInset > maxInset {
+		effectiveInset = maxInset
+	}
+
+	x := area.X + (area.Width-w)/2
+	x = clampInt(x, area.X, area.X+area.Width-w)
+
+	bottomY := area.Y + area.Height - effectiveInset
+	y := bottomY - h
+	y = clampInt(y, area.Y, area.Y+area.Height-h)
+
+	return Rect{
+		X:      x,
+		Y:      y,
+		Width:  w,
+		Height: h,
+	}
+}
+
+// ComputeBottomMargin returns the distance from the display's bottom physical
+// edge to the bottom edge of bounds, used for Wayland layer-shell bottom anchoring.
+func ComputeBottomMargin(display Display, bounds Rect, bottomInset int) int {
+	if bottomInset < 0 {
+		bottomInset = 0
+	}
+	if display.Bounds.Height <= 0 {
+		return bottomInset
+	}
+	monitorBottom := display.Bounds.Y + display.Bounds.Height
+	dockBottom := bounds.Y + bounds.Height
+	margin := monitorBottom - dockBottom
+	if margin < 0 {
+		return 0
+	}
+	return margin
+}
+
+func usableArea(d Display) Rect {
+	if d.WorkArea.Width > 0 && d.WorkArea.Height > 0 {
+		return d.WorkArea
+	}
+	return d.Bounds
+}
+
+func defaultIfNonPositive(v, fallback int) int {
+	if v <= 0 {
+		return fallback
+	}
+	return v
+}
+
+func clampInt(v, lo, hi int) int {
+	if hi < lo {
+		return lo
+	}
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
