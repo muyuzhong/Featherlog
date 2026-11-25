@@ -167,6 +167,25 @@ html[data-mode="panel"] body,
   top: 0;
 }
 
+/* The standalone bar window (?mode=bar, 312×40): an opaque strip filling the
+   window, its own ground, square corners and a 1px inner hairline. */
+html[data-mode="bar"],
+html[data-mode="bar"] body,
+.stage[data-mode="bar"] {
+  background: var(--bg-tray);
+}
+
+.stage[data-mode="bar"] .shell {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  translate: none;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg-tray);
+  box-shadow: inset 0 0 0 1px var(--hair);
+}
+
 /* ---------- controls ---------- */
 
 .icon-btn {
@@ -476,103 +495,134 @@ html[data-mode="panel"] body,
   flex: none;
 }
 
-/* ---------- collapsed tray ---------- */
+/* ---------- the always-on bar: grip, 3D drum, way in ---------- */
 
 .tray {
+  /* What the drum's edges fade into: the bar window's own ground, or the preview shell's. */
+  --tray-bg: var(--ground);
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 var(--pad-bar);
+  gap: 3px;
+  padding: 0 4px 0 2px;
 }
 
+.tray[data-variant="bar"] {
+  --tray-bg: var(--bg-tray);
+}
+
+/* Windows and macOS have no Plasma panel: the grip lets the user drag the bar anywhere. */
 .tray-handle {
-  display: flex;
-  align-items: center;
+  --app-region: drag;
+  -webkit-app-region: drag;
+  display: grid;
+  place-items: center;
+  width: 14px;
   height: 100%;
+  color: var(--ink-3);
+  cursor: grab;
   flex: none;
 }
 
-.grip {
-  display: grid;
-  place-items: center;
-  width: 12px;
-  height: 100%;
-  color: var(--ink-3);
-}
-
-.grip svg {
+.tray-handle svg {
   width: 12px;
   height: 14px;
 }
 
-.tray-slots {
-  display: flex;
-  align-items: center;
-  gap: 2px;
+.tray button,
+.tray .drum {
+  --app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.drum {
+  --drum-card-w: 116px;
+  position: relative;
   flex: 1;
   min-width: 0;
   height: 100%;
+  overflow: hidden;
+  perspective: 520px;
+  perspective-origin: 50% 50%;
+}
+
+/* The horizon: cards curl out of sight into the bar's own ground. */
+.drum::before,
+.drum::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 300;
+  width: 14px;
+  pointer-events: none;
+}
+
+.drum::before {
+  left: 0;
+  background: linear-gradient(to right, var(--tray-bg), transparent);
+}
+
+.drum::after {
+  right: 0;
+  background: linear-gradient(to left, var(--tray-bg), transparent);
+}
+
+.drum-cards {
+  position: absolute;
+  inset: 0;
   margin: 0;
   padding: 0;
   list-style: none;
-  overflow: hidden;
+  transform-style: preserve-3d;
 }
 
-.tray-slot {
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex: 0 1 168px;
-  min-width: 76px;
-  height: 28px;
-  border-radius: var(--r-chip);
-  transition: translate 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.tray-slot[data-state="focus"] {
-  translate: 0 var(--lift-y);
-}
-
-.tray-slot:not([data-state="focus"]):hover {
-  background: var(--hover);
-}
-
-.tray-plate {
+.drum-card {
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: var(--card-focus);
-  box-shadow: var(--lift), var(--edge-light);
+  top: 50%;
+  left: 50%;
+  width: var(--drum-card-w);
+  height: 28px;
+  margin: -14px 0 0 calc(var(--drum-card-w) / -2);
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
 }
 
-.tray-slot-main {
+.drum-card[data-place="back"] {
+  pointer-events: none;
+}
+
+.drum-face {
   position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
-  flex: 1;
-  min-width: 0;
+  width: 100%;
   height: 100%;
   padding: 0 8px;
+  overflow: hidden;
   border: 0;
-  border-radius: inherit;
-  background: none;
+  border-radius: var(--r-chip);
+  background: var(--card-run);
+  box-shadow: inset 0 0 0 1px var(--hair);
   color: var(--ink-2);
   text-align: left;
 }
 
-.tray-index {
-  min-width: 7px;
-  color: var(--ink-3);
-  font-size: 10.5px;
-  font-weight: 500;
-  flex: none;
+/* The one card in front: solid, lifted, full ink. */
+.drum-card[data-place="front"] .drum-face {
+  background: var(--card-focus);
+  box-shadow: var(--lift), var(--edge-light), inset 0 0 0 1px var(--hair);
+  color: var(--ink);
 }
 
-.tray-title {
-  flex: 0 1 auto;
+.drum-card[data-place="front"][data-state="running"] .drum-face {
+  color: var(--ink-2);
+}
+
+.drum-title {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
@@ -581,77 +631,89 @@ html[data-mode="panel"] body,
   text-overflow: ellipsis;
 }
 
-.tray-tag {
-  flex: 0 3 auto;
-  min-width: 0;
-  max-width: 64px;
-  overflow: hidden;
-  color: var(--ink-3);
-  font: 10px var(--font-mono);
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.drum-card[data-state="focus"] .drum-title,
+.drum-card[data-state="ready"] .drum-title {
+  font-weight: 650;
 }
 
-.tray-slot-main > .elapsed,
-.tray-slot-main > .ready-tag {
+.drum-face > .elapsed,
+.drum-face > .ready-tag {
   margin-left: auto;
 }
 
-.tray-slot[data-state="focus"] .tray-slot-main,
-.tray-slot[data-state="ready"] .tray-slot-main {
-  color: var(--ink);
+.drum-card:not([data-place="front"]) .elapsed {
+  display: none;
 }
 
-.tray-slot[data-state="focus"] .tray-index {
-  color: var(--ink);
-  font-weight: 650;
+.drum-card:not([data-place="front"]) .ready-tag {
+  height: 14px;
+  padding: 0 6px 0 4px;
+  font-size: 9.5px;
 }
 
-.tray-slot[data-state="focus"] .tray-title,
-.tray-slot[data-state="ready"] .tray-title {
-  font-weight: 650;
+/* The side curling away darkens in plain grey, never a hue. */
+.drum-shade {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
 }
 
-.tray-actions {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  overflow: hidden;
-  padding-right: 3px;
-  flex: none;
+.drum-shade-left {
+  background: linear-gradient(to left, transparent 15%, rgb(var(--shade) / var(--drum-shade)));
 }
 
-.tray-actions button {
-  height: 22px;
-  padding: 0 6px;
+.drum-shade-right {
+  background: linear-gradient(to right, transparent 15%, rgb(var(--shade) / var(--drum-shade)));
+}
+
+.drum-hidden-ready {
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  z-index: 400;
+  height: 15px;
+  padding: 0 5px;
+  translate: 0 -50%;
   border: 0;
-  border-radius: 6px;
-  background: var(--well);
-  color: var(--ink);
-  font-size: 11px;
+  border-radius: var(--r-label);
+  background: var(--label-bg);
+  color: var(--label-fg);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   white-space: nowrap;
 }
 
-.tray-actions button:hover {
-  background: var(--press);
-}
-
-.tray-empty {
-  padding: 0 8px;
+.drum-empty {
+  position: absolute;
+  inset: 4px 6px;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: none;
   color: var(--ink-3);
   font-size: 11.5px;
   white-space: nowrap;
 }
 
-.tray-notice {
-  max-width: 160px;
+.drum-empty:hover {
+  background: var(--hover);
+  color: var(--ink-2);
+}
+
+.drum-notice {
+  position: absolute;
+  inset: 0;
+  z-index: 500;
+  display: grid;
+  place-items: center;
   overflow: hidden;
+  padding: 0 8px;
+  background: var(--tray-bg);
   color: var(--ink-2);
   font-size: 11px;
   white-space: nowrap;
   text-overflow: ellipsis;
-  flex: 0 1 auto;
 }
 
 .tray-quick {
@@ -662,14 +724,14 @@ html[data-mode="panel"] body,
 }
 
 .tray-quick .icon-btn {
-  width: 24px;
+  width: 22px;
   height: 24px;
 }
 
 .tray-tally {
-  height: 24px;
-  margin-left: 3px;
-  padding: 0 9px;
+  height: 22px;
+  margin: 0 1px;
+  padding: 0 7px;
   border: 0;
   border-radius: var(--r-chip);
   background: var(--well);

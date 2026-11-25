@@ -13,12 +13,33 @@ pnpm test             # vitest run（jsdom）
 pnpm build            # 产物在 frontend/dist，给 MyGo 的 frontendDist
 ```
 
-## 两种显示模式
+## 三种显示模式
+
+URL 的 `?mode=` 优先（`bar` / `panel` / `dock`，区分大小写）；没有合法的 `mode` 时，有 `window.__FEATHERLOG_MYGO__` 或 `window.mygo` 就是 panel，否则是 dock。宿主用同一份 `frontend/dist` 开两个窗口：`/?mode=bar` 和 `/`（或 `/?mode=panel`）。
 
 | 模式 | 什么时候 | 页面 |
 |---|---|---|
-| **panel** | 有 `window.__FEATHERLOG_MYGO__` 或 `window.mygo`，或 URL 带 `?mode=panel` | 只有展开工作台（Drawer），铺满整个窗口：`html/body/.stage` 用实心 `var(--bg-canvas)`，外框无圆角、只有 1px 内描边，四周不留透明边距 |
-| **dock** | 普通浏览器标签页、没有 `?mode=panel` | 底部 Tray 收起条 ↔ Drawer 展开，带弹簧动画（原来的完整切换） |
+| **bar** | `?mode=bar` | 独立的 312×40 无边框滚筒常驻条窗口：只有 Tray，铺满 100vw×100vh，实心 `var(--bg-tray)`、直角、1px 内描边。给没有 KDE 插件的系统（Windows、macOS、GNOME…）用 |
+| **panel** | 有 MyGo 运行时且没有 `?mode=`，或 `?mode=panel` | 只有展开工作台（Drawer），铺满整个窗口：`html/body/.stage` 用实心 `var(--bg-canvas)`，外框无圆角、只有 1px 内描边，四周不留透明边距 |
+| **dock** | 普通浏览器标签页，或 `?mode=dock` | 底部滚筒条 ↔ Drawer 展开，带弹簧动画（浏览器预览用） |
+
+### bar：滚筒常驻条
+
+- 左边是拖拽把手（`--app-region: drag` + `-webkit-app-region: drag`），按钮和滚筒都是 `no-drag`，可以把条拖到任务栏空白处或屏幕任意位置。
+- 中间是 3D 圆柱滚筒（`perspective: 520px`），和 KDE 插件同一套几何：
+  - 正面只有一张卡：实心卡片、专注时左侧 2px 墨线、加粗标题、后台显示等宽时长、待看显示反白签条。
+  - 相邻槽位卷到两侧：`rotateY(±52deg) translateZ(-26px) scale(0.84)`，朝外的一侧压上中性灰渐变。2 张时只有右侧一张（两张互换时都从右侧进出，不跳边），3 张起左右各一张，更远的在 1～1.5 的位置淡出，看不到背面换位。
+  - 位置是无界浮点数：从最后一张滚到第一张是向前一步（目标从 2 变 3），不会倒带。动画用 motion 的 `animate` + 同一个 `SPRING`，没有 CSS `@keyframes`；系统开了「减少动态效果」时直接跳到位。
+  - 4 张及以上、背面有待看时，右侧显示「待看 N」，点一下转到第一张待看。
+- 交互：滚轮上下切焦点（75ms 内只算一格），点两侧卷起的卡片转到正面并专注，点正面已专注的卡片开关工作台，中键在待看 / 后台之间切换（滚筒不动），获得键盘焦点时方向键也能转。
+- 右侧：「+ 新并发槽」、等宽的待办计数 `done/total`、展开 / 收起箭头。
+- 工作台是宿主的另一个窗口，bar 页面自己**从不改变窗口大小**（不调用 `DockService.Resize`），也**不会因失焦收起**：
+  - 箭头、正面已专注卡片：`DockService.Toggle()`（不带参数，由宿主翻转）；
+  - 「+」、待办计数、Alt+N、Ctrl+K：`DockService.Toggle({ expanded: true })`，只打开、不会把已开的面板关掉。新卡输入框和搜索框在另一个窗口里，bar 只负责把它打开；
+  - 收到 `dock:toggle` 只更新箭头的展开状态（`ui.panelOpen`）。
+- 在 dock 模式（浏览器预览的收起态）里用的是同一个滚筒组件，只是「打开工作台」变成展开本页的 Drawer。
+
+### panel：弹出工作台
 
 panel 模式对应现在的宿主分工：收起态由 KDE 底部状态栏插件（Plasmoid）原生显示，MyGo 窗口只负责点插件后弹出的 880×520 面板，并且是**不透明窗口**（`Transparent: false`，规避 WebKitGTK 在混合显卡下透明窗口局部重绘残缺）。
 
@@ -26,6 +47,18 @@ panel 模式对应现在的宿主分工：收起态由 KDE 底部状态栏插件
 - 同一次收起里 `Esc` 之后紧跟的失焦只发一次请求（500ms 内去重）。
 - panel 模式下前端**不主动发** `expanded: true` 或收起条尺寸；窗口何时显示、多大由宿主决定。收到 `dock:toggle` 也不改视图（宿主已经自己显示或隐藏了）。
 - `?mode=panel` 不带 MyGo 时用 mock 后端，可以在浏览器里预览弹窗本身。
+- 顶栏新增「常驻条」切换：自动 / 滚筒 / 托盘（`Settings.barMode` 的 `auto` / `standalone` / `tray-only`）。Ctrl+K 里也能切换，并有「重置滚筒条位置」（`SettingsService.Update({ barX: null, barY: null })`）。
+
+### 契约变更（前端已改，Go 与 `docs/design.md` 需要跟进）
+
+这次只改了 `frontend/`，按 AGENTS.md 第 7 条，下面这些需要后端和设计文档同步：
+
+1. `Settings` 新增 `barMode: "auto" | "standalone" | "tray-only"`（默认 `"auto"`），以及可选的 `barX?: number | null`、`barY?: number | null`（滚筒条被拖到的屏幕坐标；`null` 或缺省表示用宿主的默认位置）。前端读到没有 `barMode` 或值不认识时按 `"auto"` 处理，所以旧后端也能用。
+2. `DockService` 新增 `Toggle(input?: { expanded?: boolean }) → { expanded: boolean }`：显示或隐藏 880×520 工作台窗口，不带 `expanded` 时翻转；前端调用 `window.mygo.call("DockService.Toggle", input ?? {})`。宿主应在之后向所有窗口（包括 bar 窗口）广播 `dock:toggle { expanded }`。
+3. 期望宿主做的事（前端不做）：
+   - 按 `barMode` 决定是否开 `?mode=bar` 窗口：312×40、无边框、不透明、置顶、不进任务栏；
+   - 用户拖动后把位置写进 `barX/barY`（前端只会写 `null` 来重置），收到 `settings:changed` 里位置被清空时把窗口放回默认位置；
+   - bar 窗口不要因失焦隐藏。
 
 浏览器里打开时没有 `window.mygo`，自动使用 `LocalMockBridge`：数据存在 localStorage（`featherlog.mock.v2`），首次打开带 3 个并发槽（专注 / 后台带回看提醒 / 待看）、几条平等的工程待办（两条每日重置、一条今天已完成）和几条随笔。之前打开过预览的浏览器里存的是旧示例数据，点“重置示例数据”即可换成新的。页面左上角可以“模拟全局快捷键”和“重置示例数据”。
 

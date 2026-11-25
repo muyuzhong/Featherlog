@@ -1,18 +1,21 @@
 import { omitUndefined } from '../lib/json';
 import { LocalMockBridge, type MockOptions } from './mock';
-import type {
-  BridgeEventName,
-  BridgeEvents,
-  DockService,
-  Note,
-  NoteService,
-  Settings,
-  SettingsService,
-  Task,
-  TaskList,
-  TaskService,
-  WorkbenchService,
-  WorkSlot,
+import {
+  BAR_MODES,
+  DEFAULT_SETTINGS,
+  type BridgeEventName,
+  type BridgeEvents,
+  type DockService,
+  type DockToggleResult,
+  type Note,
+  type NoteService,
+  type Settings,
+  type SettingsService,
+  type Task,
+  type TaskList,
+  type TaskService,
+  type WorkbenchService,
+  type WorkSlot,
 } from './types';
 
 /** What the UI talks to: the Go services in a MyGo window, or the local mock anywhere else. */
@@ -78,7 +81,7 @@ export const GO_METHODS = {
     delete: 'NoteService.Delete',
   },
   settings: { get: 'SettingsService.Get', update: 'SettingsService.Update' },
-  dock: { resize: 'DockService.Resize', quit: 'DockService.Quit' },
+  dock: { resize: 'DockService.Resize', quit: 'DockService.Quit', toggle: 'DockService.Toggle' },
 } as const;
 
 // Go sends a nil slice as [] but a nil pointer as null; the UI reads optional
@@ -99,6 +102,13 @@ export function normalizeTask(task: Task): Task {
 
 export function normalizeTaskList(list: TaskList): TaskList {
   return { periodKey: list.periodKey, tasks: (list.tasks ?? []).map(normalizeTask) };
+}
+
+/** A backend from before barMode reads as "auto"; an unknown mode too. */
+export function normalizeSettings(settings: Settings): Settings {
+  const s = { ...DEFAULT_SETTINGS, ...omitUndefined(settings ?? {}) };
+  if (!BAR_MODES.includes(s.barMode)) s.barMode = DEFAULT_SETTINGS.barMode;
+  return s;
 }
 
 export function normalizeNote(note: Note): Note {
@@ -149,12 +159,14 @@ export class MyGoBridge implements Bridge {
       delete: (input) => call<null>(N.delete, input),
     };
     this.settings = {
-      get: () => call<Settings>(GO_METHODS.settings.get),
-      update: (patch) => call<Settings>(GO_METHODS.settings.update, patch),
+      get: () => call<Settings>(GO_METHODS.settings.get).then(normalizeSettings),
+      update: (patch) => call<Settings>(GO_METHODS.settings.update, patch).then(normalizeSettings),
     };
     this.dock = {
       resize: (geom) => call<null>(GO_METHODS.dock.resize, geom),
       quit: () => call<null>(GO_METHODS.dock.quit),
+      toggle: (input) =>
+        call<DockToggleResult | null>(GO_METHODS.dock.toggle, input ?? {}).then((r) => ({ expanded: Boolean(r?.expanded) })),
     };
   }
 
@@ -167,6 +179,7 @@ function normalizeEvent<E extends BridgeEventName>(event: E, payload: unknown): 
   if (event === 'workbench:changed') return slots(payload as WorkSlot[] | null) as BridgeEvents[E];
   if (event === 'tasks:changed') return normalizeTaskList(payload as TaskList) as BridgeEvents[E];
   if (event === 'dock:toggle') return (payload ?? {}) as BridgeEvents[E];
+  if (event === 'settings:changed') return normalizeSettings(payload as Settings) as BridgeEvents[E];
   return payload as BridgeEvents[E];
 }
 

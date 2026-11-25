@@ -15,7 +15,7 @@ export function App() {
   const state = useAppState();
   const theme = resolvedTheme(state);
   const { expanded } = state.ui;
-  const mode = store.panel ? 'panel' : 'dock';
+  const mode = store.mode;
 
   useLayoutEffect(() => {
     const root = document.documentElement;
@@ -74,6 +74,19 @@ export function App() {
     window.addEventListener('blur', onBlur);
     return () => window.removeEventListener('blur', onBlur);
   }, [store]);
+
+  if (store.bar) {
+    // The standalone 312×40 bar window: the drum fills it, and it never grows into the drawer.
+    return (
+      <MotionConfig reducedMotion="user" transition={SPRING}>
+        <div className="stage" data-mode="bar" data-runtime={store.bridge.kind}>
+          <div className="shell" data-expanded="false">
+            <Tray />
+          </div>
+        </div>
+      </MotionConfig>
+    );
+  }
 
   if (store.panel) {
     // The opaque popup window: the drawer fills it edge to edge, with no

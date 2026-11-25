@@ -25,6 +25,13 @@ export function PreviewBar() {
       >
         重置示例数据
       </button>
+      <span className="preview-sep">·</span>
+      <a className="text-btn" href="?mode=bar" target="_blank" rel="noreferrer">
+        滚筒条窗口（?mode=bar）
+      </a>
+      <a className="text-btn" href="?mode=panel" target="_blank" rel="noreferrer">
+        面板窗口（?mode=panel）
+      </a>
     </div>
   );
 }

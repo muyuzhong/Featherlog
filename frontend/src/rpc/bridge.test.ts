@@ -50,6 +50,8 @@ describe('MyGoBridge', () => {
     await bridge.notes.list();
     await bridge.settings.update({ pinned: true });
     await bridge.dock.resize({ width: 880, height: 520, expanded: true });
+    await bridge.dock.toggle();
+    await bridge.dock.toggle({ expanded: false });
     expect(rt.calls).toEqual([
       [GO_METHODS.workbench.list, []],
       ['WorkbenchService.SetState', [{ id: 's', state: 'running', remindInMinutes: 10 }]],
@@ -57,7 +59,29 @@ describe('MyGoBridge', () => {
       ['NoteService.List', [{}]],
       ['SettingsService.Update', [{ pinned: true }]],
       ['DockService.Resize', [{ width: 880, height: 520, expanded: true }]],
+      ['DockService.Toggle', [{}]],
+      ['DockService.Toggle', [{ expanded: false }]],
     ]);
+  });
+
+  it('reads Toggle\'s answer, and fills settings a backend from before barMode leaves out', async () => {
+    const rt = fakeRuntime((method) => {
+      if (method === 'DockService.Toggle') return { expanded: true };
+      if (method === 'SettingsService.Get') return { theme: 'graphite', dayStartHour: 4, sound: true, volume: 5, pinned: false };
+      if (method === 'SettingsService.Update') return { theme: 'stone', dayStartHour: 4, sound: true, volume: 5, pinned: false, barMode: 'weird', barX: null };
+      return null;
+    });
+    const bridge = new MyGoBridge(rt);
+    expect(await bridge.dock.toggle()).toEqual({ expanded: true });
+    expect((await bridge.settings.get()).barMode).toBe('auto');
+    const updated = await bridge.settings.update({ barX: null, barY: null });
+    expect(updated).toMatchObject({ barMode: 'auto', barX: null });
+    expect(rt.calls.at(-1)).toEqual(['SettingsService.Update', [{ barX: null, barY: null }]]);
+  });
+
+  it('treats a missing Toggle answer as closed', async () => {
+    const bridge = new MyGoBridge(fakeRuntime(() => null));
+    expect(await bridge.dock.toggle({ expanded: true })).toEqual({ expanded: false });
   });
 
   it('never sends undefined fields', async () => {

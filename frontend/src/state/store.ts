@@ -8,6 +8,7 @@ import { setCompleted, stepQuota as stepTaskQuota, toggleItem as toggleTaskItem 
 import { periodKeyOf, type ReminderStarts, trackReminders } from '../lib/time';
 import type { Bridge } from '../rpc/bridge';
 import {
+  type BarMode,
   DEFAULT_SETTINGS,
   type DockGeometry,
   type Note,
@@ -29,7 +30,10 @@ export type NotesScope = 'all' | 'focus';
 export type ThemeChoice = ThemeMode | 'system';
 
 export interface UiState {
+  /** dock mode: the drawer shows instead of the bar; always true in panel mode, always false in bar mode */
   expanded: boolean;
+  /** bar mode: whether the host's separate workbench window is showing, as dock:toggle last said */
+  panelOpen: boolean;
   /** the slot a double-click in the tray asked to see */
   highlightSlotId: string | null;
   selectedTaskId: string | null;
@@ -88,7 +92,7 @@ export interface StoreDeps {
   sound?: (cue: Cue, settings: Settings) => void;
   /** collapse when the window loses focus (unpinned); on by default inside a host */
   collapseOnBlur?: boolean;
-  /** "panel" inside the MyGo popup window, "dock" in a browser tab (the default) */
+  /** "panel" inside the MyGo popup window, "bar" in the standalone drum bar window, "dock" in a browser tab (the default) */
   mode?: AppMode;
 }
 
@@ -99,8 +103,11 @@ export class AppStore {
   readonly bridge: Bridge;
   readonly clock: Clock;
   readonly collapseOnBlur: boolean;
+  readonly mode: AppMode;
   /** Always the drawer; "collapsing" asks the host to hide its window. */
   readonly panel: boolean;
+  /** Always the bar, in a window that never grows; the workbench is the host's other window. */
+  readonly bar: boolean;
   #state: AppState;
   readonly #listeners = new Set<() => void>();
   readonly #prefs: PrefStorage | null;
@@ -119,8 +126,11 @@ export class AppStore {
     this.clock = deps.clock;
     this.#prefs = deps.prefs ?? null;
     this.#sound = deps.sound;
-    this.collapseOnBlur = deps.collapseOnBlur ?? deps.bridge.kind === 'mygo';
-    this.panel = deps.mode === 'panel';
+    this.mode = deps.mode ?? 'dock';
+    this.panel = this.mode === 'panel';
+    this.bar = this.mode === 'bar';
+    // The bar stays up when the user clicks elsewhere: that is the point of it.
+    this.collapseOnBlur = this.bar ? false : (deps.collapseOnBlur ?? deps.bridge.kind === 'mygo');
     const prefs = readPrefs(this.#prefs);
     this.#state = {
       ready: false,
@@ -132,6 +142,7 @@ export class AppStore {
       reminders: {},
       ui: {
         expanded: this.panel,
+        panelOpen: false,
         highlightSlotId: null,
         selectedTaskId: null,
         notesScope: prefs.notesScope ?? 'all',
@@ -162,9 +173,11 @@ export class AppStore {
       b.on('tasks:changed', (list) => this.#applyTaskList(list)),
       b.on('notes:changed', () => void this.refreshNotes()),
       b.on('settings:changed', (settings) => this.#applySettings(settings)),
-      // In panel mode the host shows and hides its window itself and then says so; there is nothing to echo.
+      // The panel's host shows and hides its window itself and then says so: nothing to echo.
+      // The bar only mirrors whether the workbench window is open.
       b.on('dock:toggle', ({ expanded }) => {
-        if (!this.panel) this.setExpanded(expanded ?? !this.#state.ui.expanded);
+        if (this.bar) this.#setUi({ panelOpen: expanded ?? !this.#state.ui.panelOpen }, false);
+        else if (!this.panel) this.setExpanded(expanded ?? !this.#state.ui.expanded);
       }),
     );
     try {
@@ -200,6 +213,11 @@ export class AppStore {
   // ---- expansion & window ----
 
   setExpanded(expanded: boolean, options: { highlightSlotId?: string } = {}): void {
+    if (this.bar) {
+      // The bar window never grows: whatever would open the drawer opens the host's workbench window.
+      void this.togglePanel(expanded);
+      return;
+    }
     if (this.panel) {
       // The view stays the drawer, so the next click on the Plasmoid shows it at once.
       if (expanded) {
@@ -220,6 +238,23 @@ export class AppStore {
 
   toggleExpanded(): void {
     this.setExpanded(!this.#state.ui.expanded);
+  }
+
+  /**
+   * Opens or closes the workbench. In the bar it is the host's other window,
+   * through DockService.Toggle (no argument flips it, as the host knows best
+   * whether it shows); elsewhere it is this page's drawer.
+   */
+  async togglePanel(open?: boolean): Promise<void> {
+    if (!this.bar) {
+      this.setExpanded(open ?? (this.panel ? false : !this.#state.ui.expanded));
+      return;
+    }
+    const was = this.#state.ui.panelOpen;
+    const result = await this.#run('切换工作台', () => this.bridge.dock.toggle(open === undefined ? undefined : { expanded: open }));
+    if (!result) return;
+    this.#setUi({ panelOpen: result.expanded }, false);
+    if (was !== result.expanded) this.#cue(result.expanded ? 'lift' : 'settle');
   }
 
   /** Escape and blur: back to the bar (or, in panel mode, hide the window) unless pinned. */
@@ -495,6 +530,15 @@ export class AppStore {
     if (this.#state.ui.systemDark !== systemDark) this.#setUi({ systemDark }, false);
   }
 
+  async setBarMode(barMode: BarMode): Promise<void> {
+    if (this.#state.settings.barMode !== barMode) await this.updateSettings({ barMode });
+  }
+
+  /** Forget where the standalone bar was dragged; the host puts it back in its default place. */
+  async resetBarPosition(): Promise<void> {
+    await this.updateSettings({ barX: null, barY: null });
+  }
+
   async togglePin(): Promise<void> {
     const pinned = !this.#state.settings.pinned;
     this.#cue(pinned ? 'lift' : 'settle');
@@ -605,7 +649,8 @@ export class AppStore {
 
   #syncDock(): void {
     // The popup's size and visibility belong to the host; the page only asks it to hide.
-    if (this.panel) return;
+    // The bar's window is a fixed 312×40 strip: it must never be resized to the drawer.
+    if (this.panel || this.bar) return;
     const { ui, slots, settings } = this.#state;
     const next = dockGeometry(ui.expanded, slots.length, settings.pinned);
     if (this.#lastGeom && sameGeometry(this.#lastGeom, next)) return;
