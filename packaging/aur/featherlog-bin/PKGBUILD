@@ -18,7 +18,7 @@ conflicts=('featherlog')
 options=('!strip' '!debug')
 source=("featherlog-${pkgver}-linux-amd64.tar.gz::${url}/releases/download/v${pkgver}/featherlog-${pkgver}-linux-amd64.tar.gz"
         "LICENSE-${pkgver}::https://raw.githubusercontent.com/muyuzhong/Featherlog/v${pkgver}/LICENSE")
-sha256sums=('5aaf7ee9b33927ac18a63cdc97ebe4e2072f2e5120e3c7699cd6d803c3cb7902'
+sha256sums=('f93a71ec1499ceb8086c646e0f6e05f56599a13d31d6ac3421b26de5eeb7e1f7'
             '869313596787f2dfd98d34c7c9d3c000f263bfe3b09162654de7aa1d054e3cda')
 
 package() {
