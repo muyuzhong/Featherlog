@@ -31,7 +31,7 @@ import (
 const defaultDevURL = "http://localhost:5173"
 
 // version is embedded at build time via -ldflags "-X main.version=...".
-var version = "2.1.1"
+var version = "2.1.2"
 
 func main() {
 	attachParentConsoleIfCLI(os.Args)
