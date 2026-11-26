@@ -1,6 +1,6 @@
 # Maintainer: muyuzhong (https://github.com/muyuzhong)
 pkgname=featherlog-bin
-pkgver=2.1.1
+pkgver=2.1.2
 pkgrel=1
 pkgdesc='Lightweight concurrent workbench panel, KDE Plasma 6 dock applet, and CLI hooks (羽记)'
 arch=('x86_64')
@@ -18,7 +18,7 @@ conflicts=('featherlog')
 options=('!strip' '!debug')
 source=("featherlog-${pkgver}-linux-amd64.tar.gz::${url}/releases/download/v${pkgver}/featherlog-${pkgver}-linux-amd64.tar.gz"
         "LICENSE-${pkgver}::https://raw.githubusercontent.com/muyuzhong/Featherlog/v${pkgver}/LICENSE")
-sha256sums=('8e12f1b93a0453d51cb772248eb2cdc7844243ba2945df87ad249167da1dbd2f'
+sha256sums=('3ff82196bf8d714abca584dec1a509bc4a21a26c2d3e7593fe534db1ea11c78d'
             '869313596787f2dfd98d34c7c9d3c000f263bfe3b09162654de7aa1d054e3cda')
 
 package() {
