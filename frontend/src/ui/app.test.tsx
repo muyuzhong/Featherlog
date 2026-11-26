@@ -573,6 +573,36 @@ describe('now deck', () => {
     expect(store.getState().slots.at(-1)).toMatchObject({ title: '复盘 PR #42', state: 'focus' });
     expect(store.getState().slots.filter((s) => s.state === 'focus')).toHaveLength(1);
   });
+
+  it('scrolls the overflowing deck row horizontally on vertical wheel and keeps focused cards in view', async () => {
+    const { store, container } = await renderApp({ expanded: true });
+    await act(async () => {
+      await store.createSlot({ title: '毕业设计', state: 'running' });
+    });
+    await flush();
+
+    // Linked task titles live in an inner span so ellipsis works inside inline-flex.
+    expect(card(1).querySelector('.card-task > span')?.textContent).toBe('v2 前端：面板模式联调');
+
+    const row = container.querySelector('.deck-row') as HTMLElement;
+    Object.defineProperty(row, 'clientWidth', { configurable: true, value: 852 });
+    Object.defineProperty(row, 'scrollWidth', { configurable: true, value: 1004 });
+    row.scrollLeft = 0;
+
+    const wheel = new WheelEvent('wheel', { deltaY: 120, bubbles: true, cancelable: true });
+    row.dispatchEvent(wheel);
+    expect(row.scrollLeft).toBe(120);
+    expect(wheel.defaultPrevented).toBe(true);
+
+    // Focusing the 4th card brings it into view.
+    const card4 = card(4);
+    const scrollIntoView = vi.fn();
+    card4.scrollIntoView = scrollIntoView;
+    fireEvent.keyDown(window, { key: '4', code: 'Digit4', altKey: true });
+    await flush();
+    expect(card(4).dataset.state).toBe('focus');
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  });
 });
 
 describe('todos', () => {

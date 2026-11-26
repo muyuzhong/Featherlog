@@ -15,10 +15,27 @@ export function NowDeck() {
   const { slots, ui } = useAppState();
   const t = useT();
   const [adding, setAdding] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (ui.newSlotSignal > 0) setAdding(true);
   }, [ui.newSlotSignal]);
+
+  // Turn vertical wheel movement into horizontal scroll when 4+ cards overflow the deck.
+  useEffect(() => {
+    const el = rowRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || el.scrollWidth <= el.clientWidth) return;
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      const step = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * el.clientWidth : e.deltaY;
+      const prev = el.scrollLeft;
+      el.scrollLeft += step;
+      if (el.scrollLeft !== prev) e.preventDefault();
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
 
   return (
     <section className="deck" aria-label={t.deck.region}>
@@ -31,7 +48,7 @@ export function NowDeck() {
           {t.deck.newCard}
         </button>
       </div>
-      <div className="deck-row">
+      <div className="deck-row" ref={rowRef}>
         <LayoutGroup id="deck">
           <AnimatePresence initial={false}>
             {slots.map((slot, i) => (
@@ -60,6 +77,11 @@ function SlotCard({ slot, index, highlighted }: { slot: WorkSlot; index: number;
   const ref = useRef<HTMLElement>(null);
   const task = slot.linkedTaskId ? tasks.find((t) => t.id === slot.linkedTaskId) : undefined;
   const reminder = reminders[slot.id];
+
+  useEffect(() => {
+    if (slot.state !== 'focus') return;
+    ref.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  }, [slot.state]);
 
   useEffect(() => {
     if (!highlighted) return;
@@ -128,7 +150,7 @@ function SlotCard({ slot, index, highlighted }: { slot: WorkSlot; index: number;
           {task && (
             <span className="card-task" title={t.slot.linkedTask(task.title)}>
               <ArrowUpRight />
-              {task.title}
+              <span>{task.title}</span>
             </span>
           )}
         </div>
@@ -242,9 +264,11 @@ function NewSlotCard({ onDone }: { onDone: () => void }) {
   const t = useT();
   const [title, setTitle] = useState('');
   const [tag, setTag] = useState('');
+  const cardRef = useRef<HTMLElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    cardRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     titleRef.current?.focus();
   }, []);
 
@@ -270,6 +294,7 @@ function NewSlotCard({ onDone }: { onDone: () => void }) {
 
   return (
     <motion.article
+      ref={cardRef}
       layout
       className="card card-new"
       initial={{ opacity: 0, scale: 0.96 }}

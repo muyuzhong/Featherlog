@@ -201,7 +201,7 @@ function NoteItem({ note, taskTitle }: { note: Note; taskTitle?: string }) {
         {taskTitle && (
           <span className="note-task" title={t.notes.taskNote(taskTitle)}>
             <ArrowUpRight />
-            {taskTitle}
+            <span>{taskTitle}</span>
           </span>
         )}
         {status === 'saved' && !editing && <span className="saved">{t.notes.saved}</span>}

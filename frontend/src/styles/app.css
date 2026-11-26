@@ -759,6 +759,7 @@ html[data-mode="bar"] body,
   bottom: 0;
   left: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 32px 202px minmax(0, 1fr);
   gap: 6px;
   padding: var(--pad-shell);
@@ -800,6 +801,7 @@ html[data-mode="bar"] body,
   align-items: center;
   gap: 6px;
   flex: 0 1 290px;
+  min-width: 0;
   height: 26px;
   margin-left: auto;
   padding: 0 4px 0 8px;
@@ -891,6 +893,7 @@ html[data-mode="bar"] body,
 .deck {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
   padding: var(--pad-section);
   border-radius: var(--r-section);
@@ -902,6 +905,7 @@ html[data-mode="bar"] body,
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   height: 20px;
   padding: 0 0 0 6px;
   flex: none;
@@ -937,6 +941,7 @@ html[data-mode="bar"] body,
   grid-auto-flow: column;
   gap: 6px;
   flex: 1;
+  min-width: 0;
   min-height: 0;
   padding: 6px 1px 1px;
   overflow-x: auto;
@@ -999,6 +1004,7 @@ html[data-mode="bar"] body,
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
   height: 100%;
   padding: 9px 12px 10px;
   transition: translate 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -1012,6 +1018,7 @@ html[data-mode="bar"] body,
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   height: 18px;
 }
 
@@ -1066,6 +1073,7 @@ html[data-mode="bar"] body,
   display: flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
   padding-bottom: 3px;
   border-bottom: 1px solid var(--hair-strong);
   color: var(--ink-3);
@@ -1085,6 +1093,7 @@ html[data-mode="bar"] body,
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   min-height: 22px;
   color: var(--ink-3);
   font-size: 11px;
@@ -1098,10 +1107,16 @@ html[data-mode="bar"] body,
   display: inline-flex;
   align-items: center;
   gap: 2px;
+  min-width: 0;
   max-width: 46%;
   margin-left: auto;
   overflow: hidden;
   color: var(--ink-2);
+}
+
+.card-task > span {
+  min-width: 0;
+  overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -1115,6 +1130,7 @@ html[data-mode="bar"] body,
   display: inline-flex;
   align-items: center;
   gap: 3px;
+  flex: none;
 }
 
 .remind-step {
@@ -1142,6 +1158,7 @@ html[data-mode="bar"] body,
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+  min-width: 0;
   min-height: 24px;
   margin-top: auto;
 }
@@ -1197,6 +1214,7 @@ html[data-mode="bar"] body,
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 6px;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -1204,6 +1222,7 @@ html[data-mode="bar"] body,
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
   min-height: 0;
   padding: 7px 6px 6px;
   border-radius: var(--r-section);
@@ -1215,6 +1234,7 @@ html[data-mode="bar"] body,
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   min-height: 26px;
   padding: 0 2px;
   flex: none;
@@ -1534,6 +1554,7 @@ svg.turned {
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
   width: 136px;
   height: 24px;
   margin-left: auto;
@@ -1633,6 +1654,7 @@ svg.turned {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   height: 18px;
   color: var(--ink-3);
   font-size: 10.5px;
@@ -1642,9 +1664,15 @@ svg.turned {
   display: inline-flex;
   align-items: center;
   gap: 2px;
+  min-width: 0;
   max-width: 50%;
   overflow: hidden;
   color: var(--ink-2);
+}
+
+.note-task > span {
+  min-width: 0;
+  overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }

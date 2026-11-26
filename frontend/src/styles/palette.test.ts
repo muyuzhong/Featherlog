@@ -69,3 +69,18 @@ describe('the drum bar', () => {
     expect(tokens).toMatch(/--shade: 0 0 0;/);
   });
 });
+
+describe('drawer layout containment', () => {
+  it('bounds the drawer grid column and flex children so 4+ deck cards scroll instead of widening the panel', () => {
+    expect(app).toMatch(/\.drawer \{[^}]*grid-template-columns: minmax\(0, 1fr\);/);
+    expect(app).toMatch(/\.deck \{[^}]*min-width: 0;/);
+    expect(app).toMatch(/\.deck-row \{[^}]*min-width: 0;[^}]*overflow-x: auto;/);
+    expect(app).toMatch(/\.lower \{[^}]*min-width: 0;/);
+    expect(app).toMatch(/\.panel \{[^}]*min-width: 0;/);
+  });
+
+  it('truncates linked task titles inside a block/span child rather than on the inline-flex wrapper', () => {
+    expect(app).toMatch(/\.card-task > span \{[^}]*min-width: 0;[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;/);
+    expect(app).toMatch(/\.note-task > span \{[^}]*min-width: 0;[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;/);
+  });
+});
